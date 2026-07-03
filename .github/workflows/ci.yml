@@ -89,7 +89,7 @@ jobs:
           KKZONE: cn
         run: |
           chmod +x ./kk
-          ./kk version --show-supported-k8s
+          ./kk version
           echo yes | sudo -E ./kk create cluster --with-kubernetes v1.31.11
 
       - name: Prepare kubeconfig
