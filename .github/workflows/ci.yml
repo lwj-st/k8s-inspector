@@ -89,7 +89,10 @@ jobs:
           set -o pipefail
           chmod +x ./kk
           ./kk version
-          if ! (echo yes | sudo -E ./kk create cluster --with-kubernetes v1.31.11 2>&1 | tee /tmp/kk-create.log); then
+          if ! (echo yes | sudo -E ./kk create cluster --with-kubernetes v1.31.11 \
+            --set kubernetes.control_plane_endpoint.host=127.0.0.1 \
+            --set kubernetes.control_plane_endpoint.local.address=127.0.0.1 \
+            2>&1 | tee /tmp/kk-create.log); then
             tail -n 50 /tmp/kk-create.log | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g' | while IFS= read -r line; do
               echo "::error::$line"
             done
