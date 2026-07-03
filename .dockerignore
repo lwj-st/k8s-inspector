@@ -1,0 +1,10 @@
+.git
+.github
+frontend/node_modules
+frontend/dist
+frontend/coverage
+backend/.pytest_cache
+backend/**/*.pyc
+backend/**/__pycache__
+backend/*.db
+frontend/tsconfig.tsbuildinfo

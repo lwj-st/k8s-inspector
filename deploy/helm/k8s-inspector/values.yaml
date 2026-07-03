@@ -1,0 +1,84 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/lwj-st/k8s-inspector
+  pullPolicy: IfNotPresent
+  tag: latest
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: k8s-inspector.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+basePath: ""
+
+env:
+  databaseUrl: sqlite:////tmp/k8s_inspector.db
+  providerMode: kubernetes
+  preferIncluster: true
+  k8sRequestTimeout: 10
+  llmEnabled: false
+  llmProvider: qwen
+  modelEndpoint: ""
+  kubeContext: ""
+
+secretEnv:
+  apiKey: ""
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+rbac:
+  create: true
+
+readinessProbe:
+  httpGet:
+    path: ""
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+livenessProbe:
+  httpGet:
+    path: ""
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20

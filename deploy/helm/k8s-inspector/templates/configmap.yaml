@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "k8s-inspector.fullname" . }}
+  labels:
+    {{- include "k8s-inspector.labels" . | nindent 4 }}
+data:
+  BASE_PATH: {{ .Values.basePath | quote }}
+  DATABASE_URL: {{ .Values.env.databaseUrl | quote }}
+  K8S_PROVIDER_MODE: {{ .Values.env.providerMode | quote }}
+  PREFER_INCLUSTER: {{ ternary "true" "false" .Values.env.preferIncluster | quote }}
+  K8S_REQUEST_TIMEOUT: {{ .Values.env.k8sRequestTimeout | quote }}
+  LLM_ENABLED: {{ ternary "true" "false" .Values.env.llmEnabled | quote }}
+  LLM_PROVIDER: {{ .Values.env.llmProvider | quote }}
+  MODEL_ENDPOINT: {{ .Values.env.modelEndpoint | quote }}
+  KUBECONTEXT: {{ .Values.env.kubeContext | quote }}

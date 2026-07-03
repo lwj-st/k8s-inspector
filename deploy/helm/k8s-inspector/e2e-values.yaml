@@ -1,0 +1,12 @@
+image:
+  repository: docker.io/library/k8s-inspector
+  tag: e2e
+  pullPolicy: Never
+
+ingress:
+  enabled: false
+
+env:
+  databaseUrl: sqlite:////tmp/k8s_inspector.db
+  providerMode: kubernetes
+  preferIncluster: true

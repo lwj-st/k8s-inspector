@@ -3,6 +3,7 @@ def test_get_settings_returns_base_path_field(client) -> None:
 
     assert response.status_code == 200
     assert response.json()["base_path"] == ""
+    assert response.json()["provider_mode"] == "mock"
 
 
 def test_update_settings_persists_values(client) -> None:

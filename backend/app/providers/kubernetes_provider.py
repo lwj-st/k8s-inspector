@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from kubernetes import client, config
 from kubernetes.client import ApiClient
 from kubernetes.client.exceptions import ApiException
+from kubernetes.config.config_exception import ConfigException
 
 from app.core.config import Settings
 
@@ -15,18 +16,29 @@ def now_iso() -> str:
 
 class KubernetesInspectionProvider:
     def __init__(self, settings: Settings):
-        if not settings.kubeconfig_path:
-            raise ValueError("kubeconfig_path is required when provider_mode=kubernetes")
-
-        config.load_kube_config(
-            config_file=settings.kubeconfig_path,
-            context=settings.kube_context,
-        )
         self.settings = settings
+        self._load_config()
         self.core = client.CoreV1Api()
         self.apps = client.AppsV1Api()
         self.networking = client.NetworkingV1Api()
         self.api_client = ApiClient()
+
+    def _load_config(self) -> None:
+        if self.settings.kubeconfig_path:
+            config.load_kube_config(
+                config_file=self.settings.kubeconfig_path,
+                context=self.settings.kube_context,
+            )
+            return
+
+        if self.settings.prefer_incluster:
+            try:
+                config.load_incluster_config()
+                return
+            except ConfigException:
+                pass
+
+        raise ValueError("No Kubernetes client configuration available")
 
     def _serialize(self, obj: object) -> str:
         return str(self.api_client.sanitize_for_serialization(obj))
