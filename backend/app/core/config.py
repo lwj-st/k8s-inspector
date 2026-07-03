@@ -1,0 +1,34 @@
+from functools import lru_cache
+from os import getenv
+
+from pydantic import BaseModel, Field
+
+
+class Settings(BaseModel):
+    app_name: str = "K8s Inspector API"
+    base_path: str = ""
+    database_url: str = Field(default="sqlite:///./k8s_inspector.db")
+    provider_mode: str = "mock"
+    kubeconfig_path: str | None = None
+    kube_context: str | None = None
+    k8s_request_timeout: int = 10
+    llm_enabled: bool = False
+    llm_provider: str = "qwen"
+    model_endpoint: str | None = None
+    api_key: str | None = None
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings(
+        base_path=getenv("BASE_PATH", ""),
+        database_url=getenv("DATABASE_URL", "sqlite:///./k8s_inspector.db"),
+        provider_mode=getenv("K8S_PROVIDER_MODE", "mock"),
+        kubeconfig_path=getenv("KUBECONFIG_PATH"),
+        kube_context=getenv("KUBECONTEXT"),
+        k8s_request_timeout=int(getenv("K8S_REQUEST_TIMEOUT", "10")),
+        llm_enabled=getenv("LLM_ENABLED", "false").lower() == "true",
+        llm_provider=getenv("LLM_PROVIDER", "qwen"),
+        model_endpoint=getenv("MODEL_ENDPOINT"),
+        api_key=getenv("API_KEY"),
+    )

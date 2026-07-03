@@ -1,0 +1,9 @@
+[
+  {
+    "namespace": "demo",
+    "label_selector": "app=demo",
+    "keyword": "warmup timeout",
+    "enabled": true,
+    "note": "Known harmless message during startup warmup"
+  }
+]
