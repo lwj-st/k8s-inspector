@@ -86,9 +86,15 @@ jobs:
 
       - name: Create single-node cluster with kk
         run: |
+          set -o pipefail
           chmod +x ./kk
           ./kk version
-          echo yes | sudo -E ./kk create cluster --with-kubernetes v1.31.11
+          if ! (echo yes | sudo -E ./kk create cluster --with-kubernetes v1.31.11 2>&1 | tee /tmp/kk-create.log); then
+            tail -n 50 /tmp/kk-create.log | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g' | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          fi
 
       - name: Prepare kubeconfig
         run: |
@@ -132,3 +138,6 @@ jobs:
           kubectl get all -A || true
           kubectl describe pods -n k8s-inspector || true
           kubectl logs -n k8s-inspector deployment/e2e-k8s-inspector || true
+          if [ -f /tmp/kk-create.log ]; then
+            tail -n 200 /tmp/kk-create.log || true
+          fi
