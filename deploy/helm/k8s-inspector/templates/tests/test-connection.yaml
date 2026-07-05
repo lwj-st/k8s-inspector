@@ -15,3 +15,15 @@ spec:
         - wget
         - -qO-
         - http://{{ include "k8s-inspector.fullname" . }}:{{ .Values.service.port }}{{ include "k8s-inspector.systemStatusPath" . }}
+  {{- with .Values.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.affinity }}
+  affinity:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
