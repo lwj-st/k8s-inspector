@@ -94,26 +94,35 @@ jobs:
           path = "/tmp/config-v1.31.11.yaml"
           config = YAML.load_file(path)
           spec = config.fetch("spec")
+          spec["native"] ||= {}
+          spec["native"]["ntp"] ||= {}
+          spec["kubernetes"] ||= {}
+          spec["kubernetes"]["control_plane_endpoint"] ||= {}
+          spec["kubernetes"]["control_plane_endpoint"]["local"] ||= {}
+          spec["storage_class"] ||= {}
+          spec["storage_class"]["local"] ||= {}
+          spec["dns"] ||= {}
+          spec["dns"]["nodelocaldns"] ||= {}
 
-          spec.fetch("native").merge!(
+          spec["native"].merge!(
             "timezone" => "",
             "set_hostname" => false,
             "localDNS" => ["/etc/hosts"],
           )
-          spec.fetch("native").fetch("ntp").merge!(
+          spec["native"]["ntp"].merge!(
             "enabled" => false,
             "servers" => [],
           )
-          spec.fetch("kubernetes").fetch("control_plane_endpoint").merge!(
+          spec["kubernetes"]["control_plane_endpoint"].merge!(
             "host" => "127.0.0.1",
             "type" => "local",
           )
-          spec.fetch("kubernetes").fetch("control_plane_endpoint").fetch("local")["address"] = ""
-          spec.fetch("storage_class").fetch("local").merge!(
+          spec["kubernetes"]["control_plane_endpoint"]["local"]["address"] = ""
+          spec["storage_class"]["local"].merge!(
             "enabled" => false,
             "default" => false,
           )
-          spec.fetch("dns").fetch("nodelocaldns")["enabled"] = false
+          spec["dns"]["nodelocaldns"]["enabled"] = false
 
           File.write(path, YAML.dump(config))
           RUBY
