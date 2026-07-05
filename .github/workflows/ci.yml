@@ -84,19 +84,52 @@ jobs:
       - name: Install KubeKey
         run: curl -sfL https://get-kk.kubesphere.io | sh -
 
-      - name: Show KubeKey CI inputs
+      - name: Generate KubeKey CI config
         run: |
           chmod +x ./kk
+          ./kk create config --with-kubernetes v1.31.11 -o /tmp
+          ruby <<'RUBY'
+          require "yaml"
+
+          path = "/tmp/config-v1.31.11.yaml"
+          config = YAML.load_file(path)
+          spec = config.fetch("spec")
+
+          spec.fetch("native").merge!(
+            "timezone" => "",
+            "set_hostname" => false,
+            "localDNS" => ["/etc/hosts"],
+          )
+          spec.fetch("native").fetch("ntp").merge!(
+            "enabled" => false,
+            "servers" => [],
+          )
+          spec.fetch("kubernetes").fetch("control_plane_endpoint").merge!(
+            "host" => "127.0.0.1",
+            "type" => "local",
+          )
+          spec.fetch("kubernetes").fetch("control_plane_endpoint").fetch("local")["address"] = ""
+          spec.fetch("storage_class").fetch("local").merge!(
+            "enabled" => false,
+            "default" => false,
+          )
+          spec.fetch("dns").fetch("nodelocaldns")["enabled"] = false
+
+          File.write(path, YAML.dump(config))
+          RUBY
+
+      - name: Show KubeKey CI inputs
+        run: |
           ./kk version
           cat ./deploy/kk/ci-inventory.yaml
-          cat ./deploy/kk/ci-config.yaml
+          cat /tmp/config-v1.31.11.yaml
 
       - name: Create single-node cluster with kk
         run: |
           set -o pipefail
           if ! (echo yes | sudo -E ./kk create cluster \
             -i ./deploy/kk/ci-inventory.yaml \
-            -c ./deploy/kk/ci-config.yaml \
+            -c /tmp/config-v1.31.11.yaml \
             -v=4 \
             2>&1 | tee /tmp/kk-create.log); then
             tail -n 50 /tmp/kk-create.log | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g' | while IFS= read -r line; do
