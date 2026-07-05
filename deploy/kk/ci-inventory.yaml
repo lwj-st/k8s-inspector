@@ -8,13 +8,11 @@ spec:
     k8s_cluster:
       groups:
         - kube_control_plane
-        - kube_worker
     kube_control_plane:
       hosts:
         - localhost
     kube_worker:
-      hosts:
-        - localhost
+      hosts: []
     etcd:
       hosts:
         - localhost
