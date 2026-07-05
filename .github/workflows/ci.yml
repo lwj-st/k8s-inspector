@@ -136,7 +136,8 @@ jobs:
       - name: Create single-node cluster with kk
         run: |
           set -o pipefail
-          if ! (echo yes | sudo -E ./kk create cluster \
+          sudo install -d -m 700 /root/.kube
+          if ! (echo yes | sudo env HOME=/root KUBECONFIG=/etc/kubernetes/admin.conf ./kk create cluster \
             -i ./deploy/kk/ci-inventory.yaml \
             -c /tmp/config-v1.31.11.yaml \
             -v=4 \
