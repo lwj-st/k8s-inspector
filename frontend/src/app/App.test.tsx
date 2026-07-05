@@ -85,7 +85,7 @@ describe("App", () => {
           JSON.stringify({
             base_path: "/inspector",
             provider_mode: "kubernetes",
-            kubeconfig_path: "/Users/liwenjian1.vendor/.kube/config_A100_dev",
+            kubeconfig_path: "/path/to/.kube/config",
             kube_context: "kubernetes-admin@kubernetes",
             llm_provider: "openai",
             model: "gpt-5",

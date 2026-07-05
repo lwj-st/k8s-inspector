@@ -49,7 +49,7 @@ uvicorn app.main:app --reload
 
 ```bash
 K8S_PROVIDER_MODE=kubernetes \
-KUBECONFIG_PATH=/Users/liwenjian1.vendor/.kube/config_A100_dev \
+KUBECONFIG_PATH=/path/to/.kube/config \
 KUBECONTEXT=kubernetes-admin@kubernetes \
 uvicorn app.main:app --reload
 ```
@@ -90,7 +90,7 @@ BASE_PATH=/inspector uvicorn app.main:app --reload
 ```bash
 BASE_PATH=/inspector \
 K8S_PROVIDER_MODE=kubernetes \
-KUBECONFIG_PATH=/Users/liwenjian1.vendor/.kube/config_A100_dev \
+KUBECONFIG_PATH=/path/to/.kube/config \
 KUBECONTEXT=kubernetes-admin@kubernetes \
 uvicorn app.main:app --reload
 ```
