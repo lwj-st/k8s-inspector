@@ -6,6 +6,8 @@ spec:
   native:
     ntp:
       enabled: false
+      servers: []
+    timezone: ""
     set_hostname: false
     localDNS:
       - /etc/hosts
