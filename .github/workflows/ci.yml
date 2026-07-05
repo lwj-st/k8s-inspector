@@ -84,14 +84,20 @@ jobs:
       - name: Install KubeKey
         run: curl -sfL https://get-kk.kubesphere.io | sh -
 
+      - name: Show KubeKey CI inputs
+        run: |
+          chmod +x ./kk
+          ./kk version
+          cat ./deploy/kk/ci-inventory.yaml
+          cat ./deploy/kk/ci-config.yaml
+
       - name: Create single-node cluster with kk
         run: |
           set -o pipefail
-          chmod +x ./kk
-          ./kk version
-          if ! (echo yes | sudo -E ./kk create cluster --with-kubernetes v1.31.11 \
-            --set kubernetes.control_plane_endpoint.host=127.0.0.1 \
-            --set kubernetes.control_plane_endpoint.local.address=127.0.0.1 \
+          if ! (echo yes | sudo -E ./kk create cluster \
+            -i ./deploy/kk/ci-inventory.yaml \
+            -c ./deploy/kk/ci-config.yaml \
+            -v=4 \
             2>&1 | tee /tmp/kk-create.log); then
             tail -n 50 /tmp/kk-create.log | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g' | while IFS= read -r line; do
               echo "::error::$line"

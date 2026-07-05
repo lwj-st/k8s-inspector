@@ -1,0 +1,25 @@
+apiVersion: kubekey.kubesphere.io/v1
+kind: Config
+metadata:
+  name: default
+spec:
+  native:
+    ntp:
+      enabled: false
+    set_hostname: false
+    localDNS:
+      - /etc/hosts
+  kubernetes:
+    kube_version: v1.31.11
+    control_plane_endpoint:
+      host: 127.0.0.1
+      type: local
+      local:
+        address: ""
+  storage_class:
+    local:
+      enabled: false
+      default: false
+  dns:
+    nodelocaldns:
+      enabled: false
