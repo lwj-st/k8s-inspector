@@ -67,17 +67,53 @@ describe("App", () => {
       }
 
       if (url.endsWith("/api/v1/templates")) {
-        return new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify([
+            {
+              id: 1,
+              name: "ingress 控制器故障",
+              scenario: "ingress",
+              object_scope: "deployment",
+              namespace_scope: "ingress-nginx",
+              label_selector: "app.kubernetes.io/component=controller",
+              match_conditions: [
+                {
+                  target_ref: "controller",
+                  condition_type: "log_keyword",
+                  operator: "contains",
+                  expected_value: "failed to load backend"
+                }
+              ],
+              joint_rule: { operator: "AND" },
+              reason: "控制器无法加载后端",
+              suggestion: "检查 upstream 配置与 service",
+              enabled: true
+            }
+          ]),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          },
+        );
       }
 
       if (url.endsWith("/api/v1/whitelists")) {
-        return new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
+        return new Response(
+          JSON.stringify([
+            {
+              id: 1,
+              namespace: "demo",
+              label_selector: "app=demo-api",
+              keyword: "readiness probe failed",
+              enabled: true,
+              note: "已确认是预发布环境的已知噪音"
+            }
+          ]),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          },
+        );
       }
 
       if (url.endsWith("/api/v1/settings")) {
@@ -125,7 +161,7 @@ describe("App", () => {
     fetchMock.mockReset();
   });
 
-  it("renders overview page with navigation and api data", async () => {
+  it("renders workbench style overview with navigation and quick actions", async () => {
     const router = createMemoryRouter(appRoutes, {
       initialEntries: ["/"],
       basename: getRouterBasename("")
@@ -134,12 +170,17 @@ describe("App", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "K8s Inspector" })).toBeInTheDocument();
-    expect(await screen.findByText("Cluster is healthy")).toBeInTheDocument();
-    expect(await screen.findByText(/异常对象数：/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "排障工作台" })).toBeInTheDocument();
+    expect(await screen.findByText("最近异常")).toBeInTheDocument();
+    expect(await screen.findByText("最近使用的模板")).toBeInTheDocument();
+    expect(await screen.findByText("白名单提醒")).toBeInTheDocument();
     expect(await screen.findByText("ingress-nginx-controller: controller restarted")).toBeInTheDocument();
-    expect(await screen.findByText("异常组件分组")).toBeInTheDocument();
-    expect(await screen.findByText("集群自检结果")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /巡检名称空间/ })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /巡检单个 Pod/ })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: /故障模板检查/ })).toBeInTheDocument();
+    expect(await screen.findByText("ingress 控制器故障")).toBeInTheDocument();
+    expect(await screen.findByText("readiness probe failed")).toBeInTheDocument();
     expect(await screen.findByText("controller restarted 3 times")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "工作台" })).toBeInTheDocument();
   });
 });

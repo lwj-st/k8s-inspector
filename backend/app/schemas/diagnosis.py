@@ -1,10 +1,25 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
+
+from app.schemas.common import InspectionTarget, TemplateMatchResult
 
 
 class DiagnosisRequest(BaseModel):
-    namespace: str = Field(min_length=1)
-    direction: str = "generic"
+    namespace: str | None = None
+    direction: str = "template_check"
     scope: str | None = None
+    template_id: int | None = None
+    template_ids: list[int] = Field(default_factory=list)
+
+
+class DiagnosisConditionResult(BaseModel):
+    target_ref: str | None = None
+    type: str
+    operator: str
+    value: Any
+    matched: bool
+    evidence: list[dict] = Field(default_factory=list)
 
 
 class DiagnosisMatch(BaseModel):
@@ -14,15 +29,19 @@ class DiagnosisMatch(BaseModel):
     suggestion: str
     command: str | None = None
     risk_note: str | None = None
-    evidence: list[dict]
+    evidence: list[dict] = Field(default_factory=list)
+    matched_conditions: list[DiagnosisConditionResult] = Field(default_factory=list)
+    unmatched_conditions: list[DiagnosisConditionResult] = Field(default_factory=list)
 
 
 class DiagnosisResponse(BaseModel):
     status: str
-    namespace: str
+    namespace: str | None = None
     direction: str
     scope: str | None = None
     executed_at: str
-    matches: list[DiagnosisMatch]
-    evidence_summary: list[dict]
+    inspection_target: InspectionTarget
+    matches: list[DiagnosisMatch] = Field(default_factory=list)
+    template_match_results: list[TemplateMatchResult] = Field(default_factory=list)
+    evidence_summary: list[dict] = Field(default_factory=list)
     llm_supplement: dict | None = None

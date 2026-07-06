@@ -81,6 +81,96 @@ class KubernetesInspectionProvider:
 
         return describe_summary, log_summary
 
+    def _pod_previous_log_summary(self, pod: client.V1Pod) -> str | None:
+        container_statuses = pod.status.container_statuses or []
+        restart_total = sum(item.restart_count or 0 for item in container_statuses)
+        if restart_total <= 0:
+            return None
+
+        container_name = pod.spec.containers[0].name if pod.spec and pod.spec.containers else None
+        if not container_name:
+            return None
+
+        try:
+            previous_log = self.core.read_namespaced_pod_log(
+                name=pod.metadata.name,
+                namespace=pod.metadata.namespace,
+                container=container_name,
+                previous=True,
+                tail_lines=20,
+                _request_timeout=self.settings.k8s_request_timeout,
+            )
+        except ApiException:
+            return None
+
+        return "\n".join(previous_log.splitlines()[:5]) if previous_log else None
+
+    def _pod_containers(self, pod: client.V1Pod) -> list[dict]:
+        result: list[dict] = []
+        for status in pod.status.container_statuses or []:
+            state = "unknown"
+            reason = None
+            if status.state:
+                if status.state.waiting:
+                    state = "waiting"
+                    reason = status.state.waiting.reason
+                elif status.state.running:
+                    state = "running"
+                elif status.state.terminated:
+                    state = "terminated"
+                    reason = status.state.terminated.reason
+
+            result.append(
+                {
+                    "name": status.name,
+                    "restart_count": status.restart_count or 0,
+                    "state": state,
+                    "reason": reason,
+                }
+            )
+        return result
+
+    def _related_services(self, pod: client.V1Pod, services: list[client.V1Service]) -> list[dict]:
+        pod_labels = pod.metadata.labels or {}
+        related: list[dict] = []
+        for service in services:
+            selector = service.spec.selector or {}
+            if selector and all(pod_labels.get(key) == value for key, value in selector.items()):
+                related.append({"kind": "Service", "name": service.metadata.name, "status": "healthy"})
+        return related
+
+    def _log_hits_from_pod(self, pod_result: dict) -> list[dict]:
+        log_summary = str(pod_result.get("log_summary") or "")
+        if not log_summary:
+            return []
+        return [
+            {
+                "keyword": "log_excerpt",
+                "category": "runtime",
+                "severity": "warning",
+                "source": "current_log",
+                "matched_text": log_summary,
+                "container_name": (pod_result.get("containers") or [{}])[0].get("name"),
+                "whitelisted": False,
+                "whitelist_rule_id": None,
+            }
+        ]
+
+    def _evidence_bundle_from_pod(self, namespace: str, pod_result: dict) -> dict:
+        return {
+            "object_type": "pod",
+            "namespace": namespace,
+            "name": pod_result["name"],
+            "status": pod_result["status"],
+            "node_name": pod_result.get("node_name"),
+            "restarts": pod_result.get("restarts"),
+            "describe_summary": pod_result.get("describe_summary"),
+            "events": pod_result.get("events", []),
+            "resource_usage": pod_result.get("resource_usage", {}),
+            "log_hits": self._log_hits_from_pod(pod_result),
+            "related_resources": pod_result.get("related_resources", []),
+        }
+
     def _pod_events(self, namespace: str, pod_name: str) -> list[str]:
         field_selector = f"involvedObject.kind=Pod,involvedObject.name={pod_name}"
         try:
@@ -263,11 +353,15 @@ class KubernetesInspectionProvider:
                 {
                     "name": pod.metadata.name,
                     "status": waiting_reason or pod.status.phase or "Unknown",
+                    "node_name": pod.spec.node_name,
                     "restarts": restarts,
+                    "containers": self._pod_containers(pod),
                     "events": self._pod_events(namespace, pod.metadata.name),
                     "describe_summary": describe_summary,
                     "log_summary": log_summary,
+                    "previous_log_summary": self._pod_previous_log_summary(pod),
                     "resource_usage": {"cpu": "n/a", "memory": "n/a"},
+                    "related_resources": self._related_services(pod, services),
                 }
             )
 
@@ -310,10 +404,17 @@ class KubernetesInspectionProvider:
             health_status = "warning"
 
         return {
+            "inspection_target": {
+                "type": "namespace",
+                "namespace": namespace,
+                "label_selector": label_selector,
+                "resource_scope": ["pods", "services", "ingresses", "daemonsets", "secrets"],
+            },
             "namespace": namespace,
             "label_selector": label_selector,
             "health_status": health_status,
             "executed_at": now_iso(),
+            "evidence_bundles": [self._evidence_bundle_from_pod(namespace, pod) for pod in pod_results],
             "pods": pod_results,
             "services": service_results,
             "ingresses": ingress_results,
@@ -321,12 +422,43 @@ class KubernetesInspectionProvider:
             "daemonsets": daemonset_results,
         }
 
+    def run_pod_inspection(self, namespace: str, pod_name: str) -> dict:
+        inspection = self.run_namespace_inspection(namespace, None)
+        pod = next((item for item in inspection["pods"] if item["name"] == pod_name), None)
+        if pod is None:
+            raise LookupError(f"pod {namespace}/{pod_name} not found")
+
+        return {
+            "inspection_target": {
+                "type": "pod",
+                "namespace": namespace,
+                "pod_name": pod_name,
+                "resource_scope": ["pods"],
+            },
+            "namespace": namespace,
+            "health_status": "healthy" if pod["status"] == "Running" else "warning",
+            "executed_at": now_iso(),
+            "pod": pod,
+            "evidence_bundle": self._evidence_bundle_from_pod(namespace, pod),
+        }
+
+    def _pods_for_scope(self, pods: list[dict], scope: str | None) -> list[dict]:
+        if not scope or "/" not in scope:
+            return pods
+
+        scope_kind, scope_name = scope.split("/", 1)
+        if scope_kind == "pod":
+            return [pod for pod in pods if pod.get("name") == scope_name]
+
+        workload_prefix = f"{scope_name}-"
+        return [pod for pod in pods if pod.get("name") == scope_name or str(pod.get("name", "")).startswith(workload_prefix)]
+
     def collect_diagnosis_context(self, namespace: str, scope: str | None) -> dict:
         inspection = self.run_namespace_inspection(namespace, None)
         return {
             "namespace": namespace,
             "scope": scope,
-            "pods": inspection["pods"],
+            "pods": self._pods_for_scope(inspection["pods"], scope),
             "related_objects": {
                 "services": inspection["services"],
                 "ingresses": inspection["ingresses"],

@@ -4,12 +4,32 @@ from app.models import FaultTemplate
 from app.schemas.template import FaultTemplateCreate, FaultTemplateUpdate
 
 
+def _serialize_template_payload(payload: FaultTemplateCreate | FaultTemplateUpdate) -> dict:
+    targets = payload.targets
+    primary_target = targets[0] if targets else None
+    return {
+        "name": payload.name,
+        "scenario": payload.scenario,
+        "target_groups": [item.model_dump() for item in targets],
+        "object_scope": (primary_target.resource_scope[0] if primary_target and primary_target.resource_scope else None),
+        "namespace_scope": primary_target.namespace if primary_target else None,
+        "label_selector": primary_target.label_selector if primary_target else None,
+        "match_conditions": [item.model_dump() for item in payload.match_conditions],
+        "joint_rule": payload.joint_rule,
+        "reason": payload.reason,
+        "suggestion": payload.suggestion,
+        "command": payload.command,
+        "risk_note": payload.risk_note,
+        "enabled": payload.enabled,
+    }
+
+
 def list_templates(session: Session) -> list[FaultTemplate]:
     return session.query(FaultTemplate).order_by(FaultTemplate.id.desc()).all()
 
 
 def create_template(session: Session, payload: FaultTemplateCreate) -> FaultTemplate:
-    template = FaultTemplate(**payload.model_dump())
+    template = FaultTemplate(**_serialize_template_payload(payload))
     session.add(template)
     session.commit()
     session.refresh(template)
@@ -21,7 +41,7 @@ def update_template(session: Session, template_id: int, payload: FaultTemplateUp
     if template is None:
         raise ValueError("template not found")
 
-    for key, value in payload.model_dump().items():
+    for key, value in _serialize_template_payload(payload).items():
         setattr(template, key, value)
 
     session.commit()

@@ -47,11 +47,19 @@ describe("NamespaceInspectionPage", () => {
   it("shows pod evidence details after inspection", async () => {
     render(<NamespaceInspectionPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "运行巡检" }));
+    fireEvent.click(screen.getByRole("button", { name: /使用 demo-api/ }));
 
+    expect(await screen.findByText("异常 Pod")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /demo-api-1/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /demo-worker-1/ })).toBeInTheDocument();
     expect(await screen.findByText("证据详情")).toBeInTheDocument();
     expect(await screen.findByText("BackOff: restart container")).toBeInTheDocument();
     expect(await screen.findByText("database connection refused")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "忽略此报错" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "忽略此报错" }));
+
+    expect(await screen.findByText("已在本次会话中忽略该日志命中")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /demo-worker-1/ }));
 

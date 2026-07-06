@@ -1,0 +1,11 @@
+ingress:
+  enabled: true
+  hosts:
+    - host: dev-inspector.sensecore.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: sensecore-tls
+      hosts:
+        - dev-inspector.sensecore.com

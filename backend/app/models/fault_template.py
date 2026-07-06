@@ -16,6 +16,7 @@ class FaultTemplate(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     scenario: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_groups: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
     object_scope: Mapped[str | None] = mapped_column(String(255), nullable=True)
     namespace_scope: Mapped[str | None] = mapped_column(String(255), nullable=True)
     label_selector: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -5,12 +5,15 @@ from app.core.config import Settings
 from app.db.base import Base
 from app.db.session import build_engine
 from app.models import SystemSetting
+from app.services.keyword_service import ensure_default_keywords
 
 
 def initialize_database(settings: Settings) -> None:
     engine = build_engine(settings)
     Base.metadata.create_all(bind=engine)
     _ensure_system_settings_columns(engine)
+    _ensure_whitelist_columns(engine)
+    _ensure_keyword_rule_columns(engine)
 
     with Session(engine) as session:
         existing = session.scalar(select(SystemSetting).where(SystemSetting.id == 1))
@@ -30,6 +33,7 @@ def initialize_database(settings: Settings) -> None:
                 )
             )
             session.commit()
+        ensure_default_keywords(session)
 
 
 def _ensure_system_settings_columns(engine) -> None:
@@ -42,6 +46,43 @@ def _ensure_system_settings_columns(engine) -> None:
         existing = {
             row[1]
             for row in connection.execute(text("PRAGMA table_info(system_settings)"))
+        }
+        for column, ddl in expected_columns.items():
+            if column not in existing:
+                connection.execute(text(ddl))
+
+
+def _ensure_whitelist_columns(engine) -> None:
+    expected_columns = {
+        "pod_name_pattern": "ALTER TABLE whitelists ADD COLUMN pod_name_pattern VARCHAR(255)",
+        "container_name": "ALTER TABLE whitelists ADD COLUMN container_name VARCHAR(255)",
+    }
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(whitelists)"))
+        }
+        for column, ddl in expected_columns.items():
+            if column not in existing:
+                connection.execute(text(ddl))
+
+
+def _ensure_keyword_rule_columns(engine) -> None:
+    with engine.begin() as connection:
+        table_names = {row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
+        if "keyword_rules" not in table_names:
+            return
+
+        expected_columns = {
+            "category": "ALTER TABLE keyword_rules ADD COLUMN category VARCHAR(64) DEFAULT 'generic' NOT NULL",
+            "severity": "ALTER TABLE keyword_rules ADD COLUMN severity VARCHAR(32) DEFAULT 'warning' NOT NULL",
+            "description": "ALTER TABLE keyword_rules ADD COLUMN description TEXT",
+            "enabled": "ALTER TABLE keyword_rules ADD COLUMN enabled BOOLEAN DEFAULT 1 NOT NULL",
+            "builtin": "ALTER TABLE keyword_rules ADD COLUMN builtin BOOLEAN DEFAULT 0 NOT NULL",
+        }
+        existing = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(keyword_rules)"))
         }
         for column, ddl in expected_columns.items():
             if column not in existing:

@@ -1,24 +1,32 @@
 import { NavLink, Outlet } from "react-router-dom";
 
 const navItems = [
-  { to: "/", label: "Overview" },
-  { to: "/inspections/namespace", label: "Namespace" },
-  { to: "/diagnosis", label: "Diagnosis" },
-  { to: "/templates", label: "Templates" },
-  { to: "/whitelists", label: "Whitelists" },
-  { to: "/settings", label: "Settings" },
+  { to: "/", label: "工作台" },
+  { to: "/inspections/namespace", label: "名称空间巡检" },
+  { to: "/diagnosis", label: "模板检查" },
+  { to: "/templates", label: "故障模板" },
+  { to: "/whitelists", label: "白名单" },
+  { to: "/settings", label: "系统配置" },
 ];
 
 export function AppLayout() {
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
-        <h1>K8s Inspector</h1>
+        <div className="brand-block">
+          <h1>K8s Inspector</h1>
+          <p>只读排障工作台</p>
+        </div>
         <nav>
-          <ul>
+          <ul className="nav-list">
             {navItems.map((item) => (
               <li key={item.to}>
-                <NavLink to={item.to}>{item.label}</NavLink>
+                <NavLink
+                  to={item.to}
+                  className={({ isActive }) => `nav-link${isActive ? " nav-link-active" : ""}`}
+                >
+                  {item.label}
+                </NavLink>
               </li>
             ))}
           </ul>

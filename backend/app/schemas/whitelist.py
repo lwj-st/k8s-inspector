@@ -1,9 +1,13 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
+
+from app.schemas.common import TimestampedModel
 
 
 class WhitelistBase(BaseModel):
     namespace: str = Field(min_length=1)
     label_selector: str | None = None
+    pod_name_pattern: str | None = None
+    container_name: str | None = None
     keyword: str = Field(min_length=1)
     enabled: bool = True
     note: str | None = None
@@ -17,7 +21,14 @@ class WhitelistUpdate(WhitelistBase):
     pass
 
 
-class WhitelistRead(WhitelistBase):
-    model_config = ConfigDict(from_attributes=True)
+class WhitelistRead(TimestampedModel, WhitelistBase):
+    pass
 
-    id: int
+
+class WhitelistIgnoreCreate(BaseModel):
+    namespace: str = Field(min_length=1)
+    label_selector: str | None = None
+    pod_name_pattern: str | None = None
+    container_name: str | None = None
+    keyword: str = Field(min_length=1)
+    note: str | None = None

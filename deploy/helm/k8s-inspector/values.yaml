@@ -36,7 +36,7 @@ service:
 
 ingress:
   enabled: true
-  className: ""
+  className: nginx
   annotations: {}
   hosts:
     - host: k8s-inspector.local

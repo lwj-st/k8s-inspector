@@ -149,8 +149,15 @@ docker run --rm -p 8000:8000 ghcr.io/lwj-st/k8s-inspector:local
 helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
-  --set ingress.hosts[0].host=k8s-inspector.example.com
+  -f ./deploy/helm/k8s-inspector/values-prod.yaml
 ```
+
+`values-prod.yaml` 默认示例已经包含：
+
+- 域名 `dev-inspector.sensecore.com`
+- 根路径 `/`
+- TLS Secret `sensecore-tls`
+- IngressClass `nginx`
 
 子路径访问预留给后续 Kong `strip-path`：
 
@@ -161,11 +168,15 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --set basePath=/inspector \
   --set ingress.hosts[0].host=k8s-inspector.example.com \
   --set ingress.hosts[0].paths[0].path=/inspector \
+  --set ingress.hosts[0].paths[0].pathType=Prefix \
   --set ingress.annotations."konghq\.com/strip-path"=true
 ```
 
 说明：
 
+- Helm 对数组项做 `--set` 覆盖时，可能把同级 `paths` 一起覆盖掉，所以不要只单独设置 `ingress.hosts[0].host`
+- 仓库内新增了 `deploy/helm/k8s-inspector/values-prod.yaml`，用于生产部署示例；CI 仍然只使用 `ci-values.yaml` 和 `e2e-values.yaml`
+- `values.yaml` 里默认 `ingress.className=nginx`；其他环境可在自定义 values 中改成 `kong`、`traefik`，或显式置空
 - K8s 内默认 `K8S_PROVIDER_MODE=kubernetes`
 - 默认 `PREFER_INCLUSTER=true`，优先使用 Pod `ServiceAccount`
 - Chart 会创建只读 `RBAC`，不会授予写权限

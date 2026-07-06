@@ -74,6 +74,6 @@ describe("base path helpers", () => {
 
     expect(await screen.findByRole("heading", { name: "系统配置" })).toBeInTheDocument();
     expect(await screen.findByDisplayValue("kubernetes")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/inspector/settings");
+    expect(screen.getByRole("link", { name: "系统配置" })).toHaveAttribute("href", "/inspector/settings");
   });
 });
