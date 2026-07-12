@@ -59,7 +59,9 @@ export function NamespaceInspectionPage() {
   const logHits = selectedPod?.log_hits ?? [];
   const currentSaveNamespace = namespace.trim() || data?.namespace?.trim() || "";
   const currentSaveLabelSelector = labelSelector.trim() || data?.inspection_target.label_selector?.trim() || "";
-  const canSaveCurrentTarget = targetName.trim().length > 0 && currentSaveNamespace.length > 0;
+  const currentSaveScopeText = currentSaveNamespace
+    ? `${currentSaveNamespace}${currentSaveLabelSelector ? ` / ${currentSaveLabelSelector}` : " / 全名称空间"}`
+    : "未填写名称空间";
 
   function resetAfterInspection() {
     setSelectedPodName(null);
@@ -197,17 +199,41 @@ export function NamespaceInspectionPage() {
         </div>
         {data ? <StatusBadge status={data.health_status} /> : null}
       </header>
-      <section className="panel panel-muted">
+      <form
+        className="panel"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit(namespace, labelSelector).then(resetAfterInspection);
+        }}
+      >
         <div className="section-header">
-          <h3>已保存巡检对象</h3>
-          <span className="section-tip">保存常用名称空间范围后，可直接复用</span>
+          <h3>检查范围</h3>
+          <span className="section-tip">先填名称空间；不填 label 时会巡检整个名称空间</span>
         </div>
         <label>
-          保存名称
-          <input value={targetName} onChange={(event) => setTargetName(event.target.value)} placeholder="例如：demo 全名称空间" />
+          名称空间
+          <input value={namespace} onChange={(event) => setNamespace(event.target.value)} placeholder="例如：jialing" />
+        </label>
+        <label>
+          Label Selector（可选）
+          <input value={labelSelector} onChange={(event) => setLabelSelector(event.target.value)} placeholder="例如：app=api" />
+        </label>
+        <button type="submit" disabled={loading}>
+          {loading ? "巡检中..." : "运行巡检"}
+        </button>
+      </form>
+      <section className="panel panel-muted">
+        <div className="section-header">
+          <h3>保存常用范围</h3>
+          <span className="section-tip">把上面的检查范围保存成一个好记的名字</span>
+        </div>
+        <p className="inline-note">当前将保存：{currentSaveScopeText}</p>
+        <label>
+          保存为
+          <input value={targetName} onChange={(event) => setTargetName(event.target.value)} placeholder="例如：jialing 全名称空间巡检" />
         </label>
         <div className="button-row">
-          <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || !canSaveCurrentTarget}>
+          <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || targetName.trim().length === 0}>
             {targetSaving ? (editingTargetId !== null ? "更新中..." : "保存中...") : editingTargetId !== null ? "更新当前对象" : "保存当前范围"}
           </button>
           <button type="button" onClick={() => void handleExportTargets()} disabled={targetsLoading}>
@@ -253,29 +279,6 @@ export function NamespaceInspectionPage() {
           ))}
         </div>
       </section>
-      <form
-        className="panel"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit(namespace, labelSelector).then(resetAfterInspection);
-        }}
-      >
-        <div className="section-header">
-          <h3>检查范围</h3>
-          <span className="section-tip">支持直接巡检整个名称空间或附加 label</span>
-        </div>
-        <label>
-          名称空间
-          <input value={namespace} onChange={(event) => setNamespace(event.target.value)} />
-        </label>
-        <label>
-          Label Selector
-          <input value={labelSelector} onChange={(event) => setLabelSelector(event.target.value)} />
-        </label>
-        <button type="submit" disabled={loading}>
-          {loading ? "巡检中..." : "运行巡检"}
-        </button>
-      </form>
       {error ? <p>巡检失败：{error}</p> : null}
       {data ? (
         <>

@@ -220,13 +220,13 @@ describe("NamespaceInspectionPage", () => {
   it("allows saving the current namespace target", async () => {
     render(<NamespaceInspectionPage />);
 
-    fireEvent.change(await screen.findByLabelText("保存名称"), {
+    fireEvent.change(await screen.findByLabelText("保存为"), {
       target: { value: "demo-api 启动排查" },
     });
     fireEvent.change(screen.getByLabelText("名称空间"), {
       target: { value: "demo" },
     });
-    fireEvent.change(screen.getByLabelText("Label Selector"), {
+    fireEvent.change(screen.getByLabelText(/Label Selector/), {
       target: { value: "app=demo-api" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存当前范围" }));
@@ -237,12 +237,12 @@ describe("NamespaceInspectionPage", () => {
   it("blocks saving namespace target without namespace context", async () => {
     render(<NamespaceInspectionPage />);
 
-    fireEvent.change(await screen.findByLabelText("保存名称"), {
+    fireEvent.change(await screen.findByLabelText("保存为"), {
       target: { value: "缺少名称空间" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "保存当前范围" }));
 
-    expect(await screen.findByText("先填写名称空间，或运行一次巡检后再保存。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保存当前范围" })).toBeDisabled();
+    expect(await screen.findByText("请先填写名称空间，或先完成一次名称空间巡检后再保存")).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(([input, init]) => String(input).endsWith("/inspection-targets") && init?.method === "POST"),
     ).toBe(false);
@@ -278,7 +278,7 @@ describe("NamespaceInspectionPage", () => {
     render(<NamespaceInspectionPage />);
 
     fireEvent.click(await screen.findByRole("button", { name: /编辑 demo 全名称空间/ }));
-    fireEvent.change(screen.getByLabelText("保存名称"), {
+    fireEvent.change(screen.getByLabelText("保存为"), {
       target: { value: "demo 全名称空间-更新" },
     });
     fireEvent.click(screen.getByRole("button", { name: "更新当前对象" }));
