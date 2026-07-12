@@ -29,6 +29,18 @@ def test_match_template_hits_target_group_conditions() -> None:
                         "name": "demo-api",
                         "status": "CrashLoopBackOff",
                         "log_summary": "database connection refused",
+                        "log_hits": [
+                            {
+                                "keyword": "connection refused",
+                                "category": "database",
+                                "severity": "error",
+                                "source": "log_summary",
+                                "matched_text": "database connection refused",
+                                "container_name": "demo-api",
+                                "whitelisted": False,
+                                "whitelist_rule_id": None,
+                            }
+                        ],
                         "events": ["Back-off restarting failed container"],
                         "restarts": 5,
                     }
@@ -88,3 +100,125 @@ def test_match_template_reports_unmatched_related_object_condition() -> None:
     assert len(result["matched_conditions"]) == 1
     assert len(result["unmatched_conditions"]) == 1
     assert result["unmatched_conditions"][0]["type"] == "related_object_status"
+
+
+def test_match_template_ignores_whitelisted_log_hits() -> None:
+    template = {
+        "target_groups": [{"ref": "api", "namespace": "demo", "label_selector": "app=demo-api"}],
+        "match_conditions": [
+            {"target_ref": "api", "type": "log_keyword", "operator": "contains", "value": "connection refused"}
+        ],
+        "joint_rule": {"operator": "AND"},
+    }
+    context = {
+        "targets": {
+            "api": {
+                "namespace": "demo",
+                "label_selector": "app=demo-api",
+                "pods": [
+                    {
+                        "name": "demo-api",
+                        "status": "CrashLoopBackOff",
+                        "log_hits": [
+                            {
+                                "keyword": "connection refused",
+                                "category": "database",
+                                "severity": "error",
+                                "source": "log_summary",
+                                "matched_text": "database connection refused",
+                                "container_name": "demo-api",
+                                "whitelisted": True,
+                                "whitelist_rule_id": 1,
+                            }
+                        ],
+                        "events": [],
+                    }
+                ],
+                "related_objects": {"services": [], "ingresses": [], "daemonsets": [], "tls_secrets": []},
+            }
+        }
+    }
+
+    result = match_template(template, context)
+
+    assert result["matched"] is False
+    assert result["matched_conditions"] == []
+    assert len(result["unmatched_conditions"]) == 1
+
+
+def test_match_template_supports_equals_and_lte_operators() -> None:
+    template = {
+        "target_groups": [{"ref": "api", "namespace": "demo", "label_selector": "app=demo-api"}],
+        "match_conditions": [
+            {"target_ref": "api", "type": "pod_status", "operator": "equals", "value": "Running"},
+            {"target_ref": "api", "type": "restart_count", "operator": "lte", "value": 1},
+        ],
+        "joint_rule": {"operator": "AND"},
+    }
+    context = {
+        "targets": {
+            "api": {
+                "namespace": "demo",
+                "label_selector": "app=demo-api",
+                "pods": [
+                    {
+                        "name": "demo-api",
+                        "status": "Running",
+                        "restarts": 1,
+                        "log_hits": [],
+                        "events": [],
+                    }
+                ],
+                "related_objects": {"services": [], "ingresses": [], "daemonsets": [], "tls_secrets": []},
+            }
+        }
+    }
+
+    result = match_template(template, context)
+
+    assert result["matched"] is True
+    assert len(result["matched_conditions"]) == 2
+
+
+def test_match_template_supports_gte_and_related_object_equals() -> None:
+    template = {
+        "target_groups": [{"ref": "api", "namespace": "demo", "label_selector": "app=demo-api"}],
+        "match_conditions": [
+            {"target_ref": "api", "type": "restart_count", "operator": "gte", "value": 3},
+            {
+                "target_ref": "api",
+                "type": "related_object_status",
+                "operator": "equals",
+                "value": {"resource": "services", "statuses": ["degraded"]},
+            },
+        ],
+        "joint_rule": {"operator": "AND"},
+    }
+    context = {
+        "targets": {
+            "api": {
+                "namespace": "demo",
+                "label_selector": "app=demo-api",
+                "pods": [
+                    {
+                        "name": "demo-api",
+                        "status": "Running",
+                        "restarts": 5,
+                        "log_hits": [],
+                        "events": [],
+                    }
+                ],
+                "related_objects": {
+                    "services": [{"name": "demo-api", "status": "degraded"}],
+                    "ingresses": [],
+                    "daemonsets": [],
+                    "tls_secrets": [],
+                },
+            }
+        }
+    }
+
+    result = match_template(template, context)
+
+    assert result["matched"] is True
+    assert len(result["matched_conditions"]) == 2

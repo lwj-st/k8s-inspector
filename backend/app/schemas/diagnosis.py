@@ -1,8 +1,8 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import InspectionTarget, TemplateMatchResult
+from app.schemas.common import InspectionTarget, TemplateConditionOperator, TemplateConditionType, TemplateMatchResult
 
 
 class DiagnosisRequest(BaseModel):
@@ -15,8 +15,8 @@ class DiagnosisRequest(BaseModel):
 
 class DiagnosisConditionResult(BaseModel):
     target_ref: str | None = None
-    type: str
-    operator: str
+    type: TemplateConditionType
+    operator: TemplateConditionOperator
     value: Any
     matched: bool
     evidence: list[dict] = Field(default_factory=list)
@@ -35,9 +35,9 @@ class DiagnosisMatch(BaseModel):
 
 
 class DiagnosisResponse(BaseModel):
-    status: str
+    status: Literal["matched", "unmatched", "llm_supplemented"]
     namespace: str | None = None
-    direction: str
+    direction: Literal["template_check"]
     scope: str | None = None
     executed_at: str
     inspection_target: InspectionTarget

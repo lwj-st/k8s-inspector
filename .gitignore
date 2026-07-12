@@ -5,3 +5,7 @@ backend/**/*.pyc
 backend/**/__pycache__/
 backend/*.db
 backend/*.egg-info/
+
+# Local test/runtime artifacts.
+/*.db
+frontend/*.tsbuildinfo

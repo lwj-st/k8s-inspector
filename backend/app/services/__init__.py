@@ -3,6 +3,7 @@ __all__ = [
     "inspection_service",
     "keyword_service",
     "overview_service",
+    "saved_target_service",
     "settings_service",
     "template_service",
     "whitelist_service",

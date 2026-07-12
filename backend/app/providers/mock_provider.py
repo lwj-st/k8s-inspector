@@ -38,6 +38,29 @@ def build_evidence_bundle(namespace: str, pod: dict) -> dict:
     }
 
 
+def build_demo_pod(pod_name: str = "demo-api-7c8f6f7c6b-fh2ns") -> dict:
+    return {
+        "name": pod_name,
+        "status": "CrashLoopBackOff",
+        "node_name": "node-a",
+        "restarts": 6,
+        "containers": [
+            {
+                "name": "demo-api",
+                "restart_count": 6,
+                "state": "waiting",
+                "reason": "CrashLoopBackOff",
+            }
+        ],
+        "events": ["Back-off restarting failed container"],
+        "describe_summary": "容器启动后健康检查失败并退出。",
+        "log_summary": "database connection refused",
+        "previous_log_summary": "previous crash: database connection refused",
+        "resource_usage": {"cpu": "220m", "memory": "180Mi"},
+        "related_resources": [{"kind": "Service", "name": "demo-api", "status": "healthy"}],
+    }
+
+
 class MockInspectionProvider:
     def get_overview(self) -> dict:
         return {
@@ -73,28 +96,7 @@ class MockInspectionProvider:
         }
 
     def run_namespace_inspection(self, namespace: str, label_selector: str | None) -> dict:
-        pods = [
-            {
-                "name": "demo-api-7c8f6f7c6b-fh2ns",
-                "status": "CrashLoopBackOff",
-                "node_name": "node-a",
-                "restarts": 6,
-                "containers": [
-                    {
-                        "name": "demo-api",
-                        "restart_count": 6,
-                        "state": "waiting",
-                        "reason": "CrashLoopBackOff",
-                    }
-                ],
-                "events": ["Back-off restarting failed container"],
-                "describe_summary": "容器启动后健康检查失败并退出。",
-                "log_summary": "database connection refused",
-                "previous_log_summary": "previous crash: database connection refused",
-                "resource_usage": {"cpu": "220m", "memory": "180Mi"},
-                "related_resources": [{"kind": "Service", "name": "demo-api", "status": "healthy"}],
-            }
-        ]
+        pods = [build_demo_pod()]
         return {
             "inspection_target": {
                 "type": "namespace",
@@ -117,9 +119,8 @@ class MockInspectionProvider:
         }
 
     def run_pod_inspection(self, namespace: str, pod_name: str) -> dict:
-        inspection = self.run_namespace_inspection(namespace, None)
-        pod = next((item for item in inspection["pods"] if item["name"] == pod_name), None)
-        if pod is None:
+        pod = build_demo_pod(pod_name)
+        if pod["name"] != pod_name:
             raise LookupError(f"pod {namespace}/{pod_name} not found")
         return {
             "inspection_target": {

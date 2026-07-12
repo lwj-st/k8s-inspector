@@ -139,6 +139,32 @@ class KubernetesInspectionProvider:
                 related.append({"kind": "Service", "name": service.metadata.name, "status": "healthy"})
         return related
 
+    def _build_pod_result(self, namespace: str, pod: client.V1Pod, services: list[client.V1Service]) -> dict:
+        describe_summary, log_summary = self._pod_issue_summary(pod)
+        statuses = pod.status.container_statuses or []
+        restarts = sum(item.restart_count or 0 for item in statuses)
+        waiting_reason = next(
+            (
+                item.state.waiting.reason
+                for item in statuses
+                if item.state and item.state.waiting and item.state.waiting.reason
+            ),
+            None,
+        )
+        return {
+            "name": pod.metadata.name,
+            "status": waiting_reason or pod.status.phase or "Unknown",
+            "node_name": pod.spec.node_name,
+            "restarts": restarts,
+            "containers": self._pod_containers(pod),
+            "events": self._pod_events(namespace, pod.metadata.name),
+            "describe_summary": describe_summary,
+            "log_summary": log_summary,
+            "previous_log_summary": self._pod_previous_log_summary(pod),
+            "resource_usage": {"cpu": "n/a", "memory": "n/a"},
+            "related_resources": self._related_services(pod, services),
+        }
+
     def _log_hits_from_pod(self, pod_result: dict) -> list[dict]:
         log_summary = str(pod_result.get("log_summary") or "")
         if not log_summary:
@@ -336,34 +362,7 @@ class KubernetesInspectionProvider:
             _request_timeout=self.settings.k8s_request_timeout,
         ).items
 
-        pod_results: list[dict] = []
-        for pod in pods:
-            describe_summary, log_summary = self._pod_issue_summary(pod)
-            statuses = pod.status.container_statuses or []
-            restarts = sum(item.restart_count or 0 for item in statuses)
-            waiting_reason = next(
-                (
-                    item.state.waiting.reason
-                    for item in statuses
-                    if item.state and item.state.waiting and item.state.waiting.reason
-                ),
-                None,
-            )
-            pod_results.append(
-                {
-                    "name": pod.metadata.name,
-                    "status": waiting_reason or pod.status.phase or "Unknown",
-                    "node_name": pod.spec.node_name,
-                    "restarts": restarts,
-                    "containers": self._pod_containers(pod),
-                    "events": self._pod_events(namespace, pod.metadata.name),
-                    "describe_summary": describe_summary,
-                    "log_summary": log_summary,
-                    "previous_log_summary": self._pod_previous_log_summary(pod),
-                    "resource_usage": {"cpu": "n/a", "memory": "n/a"},
-                    "related_resources": self._related_services(pod, services),
-                }
-            )
+        pod_results = [self._build_pod_result(namespace, pod, services) for pod in pods]
 
         service_results = [
             {
@@ -423,10 +422,21 @@ class KubernetesInspectionProvider:
         }
 
     def run_pod_inspection(self, namespace: str, pod_name: str) -> dict:
-        inspection = self.run_namespace_inspection(namespace, None)
-        pod = next((item for item in inspection["pods"] if item["name"] == pod_name), None)
-        if pod is None:
-            raise LookupError(f"pod {namespace}/{pod_name} not found")
+        try:
+            pod_obj = self.core.read_namespaced_pod(
+                name=pod_name,
+                namespace=namespace,
+                _request_timeout=self.settings.k8s_request_timeout,
+            )
+        except ApiException as exc:
+            if exc.status == 404:
+                raise LookupError(f"pod {namespace}/{pod_name} not found") from exc
+            raise
+        services = self.core.list_namespaced_service(
+            namespace=namespace,
+            _request_timeout=self.settings.k8s_request_timeout,
+        ).items
+        pod = self._build_pod_result(namespace, pod_obj, services)
 
         return {
             "inspection_target": {

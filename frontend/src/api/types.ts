@@ -1,5 +1,17 @@
+export type InspectionTargetType = "namespace" | "pod" | "template";
+export type KeywordHitSeverity = "info" | "warning" | "error" | "critical";
+export type TemplateConditionType =
+  | "pod_status"
+  | "log_keyword"
+  | "event_keyword"
+  | "restart_count"
+  | "related_object_status";
+export type TemplateConditionOperator = "equals" | "in" | "contains" | "gte" | "lte";
+export type TemplateConditionJoinOperator = "AND" | "OR";
+export type DiagnosisDirection = "template_check";
+
 export type InspectionTarget = {
-  type: "namespace" | "pod" | "template";
+  type: InspectionTargetType;
   namespace?: string | null;
   pod_name?: string | null;
   label_selector?: string | null;
@@ -8,15 +20,37 @@ export type InspectionTarget = {
   resource_scope: string[];
 };
 
+export type SavedInspectionTarget = {
+  id: number;
+  name: string;
+  target_type: "namespace" | "pod";
+  namespace: string;
+  label_selector?: string | null;
+  pod_name?: string | null;
+  resource_scope: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type KeywordHit = {
   keyword: string;
   category: string;
-  severity: string;
+  severity: KeywordHitSeverity;
   source: string;
   matched_text: string;
   container_name?: string | null;
   whitelisted: boolean;
   whitelist_rule_id?: number | null;
+};
+
+export type KeywordRule = {
+  id: number;
+  keyword: string;
+  category: string;
+  severity: KeywordHitSeverity;
+  description?: string | null;
+  enabled: boolean;
+  builtin: boolean;
 };
 
 export type EvidenceBundle = {
@@ -43,10 +77,10 @@ export type TemplateTarget = {
 
 export type TemplateCondition = {
   target_ref: string;
-  condition_type: string;
-  operator: string;
+  condition_type: TemplateConditionType;
+  operator: TemplateConditionOperator;
   expected_value: unknown;
-  join_operator?: "AND" | "OR" | null;
+  join_operator?: TemplateConditionJoinOperator | null;
   enabled: boolean;
 };
 
@@ -99,11 +133,25 @@ export type ClusterInspectionResponse = {
 export type InspectedPod = {
   name: string;
   status: string;
+  node_name?: string | null;
   restarts: number;
+  containers: Array<{
+    name: string;
+    restart_count: number;
+    state: string;
+    reason?: string | null;
+  }>;
   events: string[];
   describe_summary: string;
   log_summary?: string | null;
+  previous_log_summary?: string | null;
+  log_hits: KeywordHit[];
   resource_usage: Record<string, string>;
+  related_resources: Array<{
+    kind: string;
+    name: string;
+    status: string;
+  }>;
 };
 
 export type InspectedObject = {
@@ -126,6 +174,15 @@ export type NamespaceInspectionResponse = {
   daemonsets: InspectedObject[];
 };
 
+export type PodInspectionResponse = {
+  inspection_target: InspectionTarget;
+  namespace: string;
+  health_status: string;
+  executed_at: string;
+  pod: InspectedPod;
+  evidence_bundle?: EvidenceBundle | null;
+};
+
 export type DiagnosisMatch = {
   template_id: number;
   template_name: string;
@@ -134,13 +191,29 @@ export type DiagnosisMatch = {
   command?: string | null;
   risk_note?: string | null;
   evidence: Array<Record<string, unknown>>;
+  matched_conditions: Array<{
+    target_ref?: string | null;
+    type: TemplateConditionType;
+    operator: TemplateConditionOperator;
+    value: unknown;
+    matched: boolean;
+    evidence: Array<Record<string, unknown>>;
+  }>;
+  unmatched_conditions: Array<{
+    target_ref?: string | null;
+    type: TemplateConditionType;
+    operator: TemplateConditionOperator;
+    value: unknown;
+    matched: boolean;
+    evidence: Array<Record<string, unknown>>;
+  }>;
 };
 
 export type DiagnosisResponse = {
   status: "matched" | "unmatched" | "llm_supplemented";
   inspection_target: InspectionTarget;
-  namespace: string;
-  direction: string;
+  namespace?: string | null;
+  direction: DiagnosisDirection;
   scope?: string | null;
   executed_at: string;
   matches: DiagnosisMatch[];
@@ -154,6 +227,13 @@ export type FaultTemplate = {
   name: string;
   scenario: string;
   targets: TemplateTarget[];
+  target_groups?: Array<{
+    ref: string;
+    namespace: string;
+    label_selector?: string | null;
+    name?: string | null;
+    object_scope?: string | null;
+  }>;
   object_scope?: string | null;
   namespace_scope?: string | null;
   label_selector?: string | null;

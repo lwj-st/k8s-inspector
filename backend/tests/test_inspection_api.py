@@ -97,3 +97,16 @@ def test_list_pod_inspection_history_returns_latest_runs(client) -> None:
     assert response.status_code == 200
     assert payload[0]["namespace"] == "demo"
     assert payload[0]["pod"]["name"] == "demo-api-7c8f6f7c6b-fh2ns"
+
+
+def test_mock_provider_pod_inspection_does_not_depend_on_namespace_inspection() -> None:
+    from app.providers.mock_provider import MockInspectionProvider
+
+    provider = MockInspectionProvider()
+    provider.run_namespace_inspection = lambda namespace, label_selector: (_ for _ in ()).throw(
+        AssertionError("run_namespace_inspection should not be used for single pod inspection")
+    )
+
+    result = provider.run_pod_inspection("demo", "demo-api-7c8f6f7c6b-fh2ns")
+
+    assert result["pod"]["name"] == "demo-api-7c8f6f7c6b-fh2ns"

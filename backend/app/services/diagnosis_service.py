@@ -6,6 +6,7 @@ from app.engine.matcher import match_template
 from app.models import DiagnosisRecord, FaultTemplate, SystemSetting
 from app.providers.base import InspectionProvider
 from app.schemas.diagnosis import DiagnosisRequest
+from app.services import keyword_service
 
 
 def _normalize_condition_result(condition: dict, matched: bool, evidence: list[dict]) -> dict:
@@ -19,7 +20,23 @@ def _normalize_condition_result(condition: dict, matched: bool, evidence: list[d
     }
 
 
-def _build_target_context(provider: InspectionProvider, template: FaultTemplate) -> dict:
+def _attach_log_hits(session: Session, namespace: str, label_selector: str | None, pod: dict) -> dict:
+    pod_copy = dict(pod)
+    pod_copy["log_hits"] = [
+        hit.model_dump()
+        for hit in keyword_service.match_log_text(
+            session=session,
+            namespace=namespace,
+            label_selector=label_selector,
+            pod_name=pod.get("name", ""),
+            container_name=(pod.get("containers") or [{}])[0].get("name") if pod.get("containers") else None,
+            log_text=pod.get("log_summary"),
+        )
+    ]
+    return pod_copy
+
+
+def _build_target_context(session: Session, provider: InspectionProvider, template: FaultTemplate) -> dict:
     targets: dict[str, dict] = {}
     for target in template.target_groups:
         namespace = target["namespace"]
@@ -28,7 +45,10 @@ def _build_target_context(provider: InspectionProvider, template: FaultTemplate)
         targets[target["target_ref"]] = {
             "namespace": namespace,
             "label_selector": label_selector,
-            "pods": inspection["pods"],
+            "pods": [
+                _attach_log_hits(session, namespace, label_selector, pod)
+                for pod in inspection["pods"]
+            ],
             "related_objects": {
                 "services": inspection["services"],
                 "ingresses": inspection["ingresses"],
@@ -63,7 +83,7 @@ def run_diagnosis(session: Session, provider: InspectionProvider, payload: Diagn
                 "joint_rule": template.joint_rule,
                 "reason": template.reason,
             },
-            _build_target_context(provider, template),
+            _build_target_context(session, provider, template),
         )
         template_match_results.append(
             {

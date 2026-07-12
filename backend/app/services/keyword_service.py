@@ -67,6 +67,16 @@ def update_keyword(session: Session, keyword_id: int, payload: KeywordRuleUpdate
     return keyword
 
 
+def set_keyword_enabled(session: Session, keyword_id: int, enabled: bool) -> KeywordRule:
+    keyword = session.get(KeywordRule, keyword_id)
+    if keyword is None:
+        raise ValueError("keyword not found")
+    keyword.enabled = enabled
+    session.commit()
+    session.refresh(keyword)
+    return keyword
+
+
 def delete_keyword(session: Session, keyword_id: int) -> None:
     keyword = session.get(KeywordRule, keyword_id)
     if keyword is None:

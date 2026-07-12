@@ -56,3 +56,38 @@ def test_collect_diagnosis_context_keeps_matching_pods_for_workload_scope() -> N
     context = provider.collect_diagnosis_context("demo", "deployment/demo-api")
 
     assert [pod["name"] for pod in context["pods"]] == ["demo-api-abc", "demo-api-def"]
+
+
+def test_run_pod_inspection_reads_single_pod_directly() -> None:
+    provider = _make_provider()
+    provider.run_namespace_inspection = lambda namespace, label_selector: (_ for _ in ()).throw(
+        AssertionError("run_namespace_inspection should not be used for single pod inspection")
+    )
+    provider.core.read_namespaced_pod = lambda name, namespace, _request_timeout: SimpleNamespace(
+        metadata=SimpleNamespace(name=name, namespace=namespace, labels={"app": "demo-api"}),
+        spec=SimpleNamespace(
+            node_name="node-a",
+            containers=[SimpleNamespace(name="demo-api")],
+        ),
+        status=SimpleNamespace(
+            phase="Running",
+            container_statuses=[
+                SimpleNamespace(
+                    name="demo-api",
+                    restart_count=0,
+                    state=SimpleNamespace(waiting=None, running=SimpleNamespace(), terminated=None),
+                )
+            ],
+        ),
+    )
+    provider.core.list_namespaced_service = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.networking.list_namespaced_ingress = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.apps.list_namespaced_daemon_set = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.core.list_namespaced_secret = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.core.list_namespaced_event = lambda namespace, field_selector, _request_timeout: SimpleNamespace(items=[])
+    provider.core.read_namespaced_pod_log = lambda **kwargs: ""
+
+    result = provider.run_pod_inspection("demo", "demo-api-abc")
+
+    assert result["pod"]["name"] == "demo-api-abc"
+    assert result["inspection_target"]["type"] == "pod"

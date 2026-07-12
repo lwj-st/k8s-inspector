@@ -31,6 +31,22 @@ def update_whitelist(whitelist_id: int, payload: WhitelistUpdate, session: Sessi
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/whitelists/{whitelist_id}/enable", response_model=WhitelistRead)
+def enable_whitelist(whitelist_id: int, session: Session = Depends(get_db_session)) -> WhitelistRead:
+    try:
+        return WhitelistRead.model_validate(whitelist_service.set_whitelist_enabled(session, whitelist_id, True))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/whitelists/{whitelist_id}/disable", response_model=WhitelistRead)
+def disable_whitelist(whitelist_id: int, session: Session = Depends(get_db_session)) -> WhitelistRead:
+    try:
+        return WhitelistRead.model_validate(whitelist_service.set_whitelist_enabled(session, whitelist_id, False))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.delete("/whitelists/{whitelist_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_whitelist(whitelist_id: int, session: Session = Depends(get_db_session)) -> Response:
     try:

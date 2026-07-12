@@ -1,14 +1,11 @@
 import { useState } from "react";
 
+import { ignoreWhitelistLogHit } from "../api/client";
+import type { KeywordHit, SavedInspectionTarget } from "../api/types";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
-
-const quickTargets = [
-  { name: "demo-api", namespace: "demo", labelSelector: "app=demo-api", description: "常看 API Pod 和启动异常" },
-  { name: "demo-worker", namespace: "demo", labelSelector: "app=demo-worker", description: "适合排查异步任务堆积和重启" },
-  { name: "entire-namespace", namespace: "demo", labelSelector: "", description: "直接巡检整个名称空间" },
-] as const;
+import { useSavedInspectionTargets } from "../features/inspections/useSavedInspectionTargets";
 
 function isHealthyStatus(status: string) {
   const normalized = status.toLowerCase();
@@ -29,11 +26,29 @@ function sortPods<T extends { status: string; restarts: number }>(pods: T[]) {
 }
 
 export function NamespaceInspectionPage() {
-  const [namespace, setNamespace] = useState("demo");
-  const [labelSelector, setLabelSelector] = useState("app=demo");
+  const [namespace, setNamespace] = useState("");
+  const [labelSelector, setLabelSelector] = useState("");
+  const [targetName, setTargetName] = useState("");
+  const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
+  const [exportContent, setExportContent] = useState("");
+  const [importContent, setImportContent] = useState("");
   const [selectedPodName, setSelectedPodName] = useState<string | null>(null);
   const [ignoredLogKeys, setIgnoredLogKeys] = useState<string[]>([]);
+  const [ignoringLogKeys, setIgnoringLogKeys] = useState<string[]>([]);
+  const [ignoreMessage, setIgnoreMessage] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const { data, loading, error, submit } = useRunNamespaceInspection();
+  const {
+    targets,
+    loading: targetsLoading,
+    saving: targetSaving,
+    error: targetsError,
+    saveTarget,
+    updateTarget,
+    deleteTarget,
+    exportTargets,
+    importTargets,
+  } = useSavedInspectionTargets("namespace");
   const sortedPods = data ? sortPods(data.pods) : [];
   const selectedPod =
     sortedPods.find((pod) => pod.name === selectedPodName) ??
@@ -41,18 +56,126 @@ export function NamespaceInspectionPage() {
     null;
   const abnormalPods = sortedPods.filter((pod) => !isHealthyStatus(pod.status));
   const healthyPods = sortedPods.filter((pod) => isHealthyStatus(pod.status));
-  const logHits = (selectedPod?.log_summary ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const logHits = selectedPod?.log_hits ?? [];
 
-  function applyQuickTarget(target: (typeof quickTargets)[number]) {
+  function resetAfterInspection() {
+    setSelectedPodName(null);
+    setIgnoredLogKeys([]);
+    setIgnoringLogKeys([]);
+    setIgnoreMessage(null);
+  }
+
+  function applyQuickTarget(target: SavedInspectionTarget) {
     setNamespace(target.namespace);
-    setLabelSelector(target.labelSelector);
-    void submit(target.namespace, target.labelSelector).then(() => {
-      setSelectedPodName(null);
-      setIgnoredLogKeys([]);
-    });
+    setLabelSelector(target.label_selector ?? "");
+    void submit(target.namespace, target.label_selector ?? "").then(resetAfterInspection);
+  }
+
+  async function handleIgnoreLogHit(hit: KeywordHit) {
+    if (!selectedPod) {
+      return;
+    }
+
+    const hitKey = `${selectedPod.name}:${hit.keyword}:${hit.matched_text}`;
+    setIgnoringLogKeys((current) => [...current, hitKey]);
+    setIgnoreMessage(null);
+
+    try {
+      await ignoreWhitelistLogHit({
+        namespace: data?.namespace ?? namespace,
+        label_selector: data?.inspection_target.label_selector ?? (labelSelector || null),
+        pod_name_pattern: selectedPod.name,
+        container_name: hit.container_name ?? null,
+        keyword: hit.keyword,
+        note: "从巡检结果忽略",
+      });
+      setIgnoredLogKeys((current) => [...current, hitKey]);
+      setIgnoreMessage("已加入白名单，后续巡检会自动忽略该命中");
+    } catch (reason) {
+      setIgnoreMessage(reason instanceof Error ? `加入白名单失败：${reason.message}` : "加入白名单失败");
+    } finally {
+      setIgnoringLogKeys((current) => current.filter((item) => item !== hitKey));
+    }
+  }
+
+  async function handleSaveCurrentTarget() {
+    const normalizedName = targetName.trim();
+    if (!normalizedName) {
+      setSaveMessage("请先填写保存名称");
+      return;
+    }
+
+    try {
+      const payload = {
+        name: normalizedName,
+        namespace,
+        label_selector: labelSelector || null,
+        resource_scope: ["pods", "services", "ingresses", "daemonsets", "secrets"],
+      };
+      if (editingTargetId !== null) {
+        await updateTarget(editingTargetId, payload);
+        setSaveMessage(`已更新 ${normalizedName}`);
+      } else {
+        await saveTarget(payload);
+        setSaveMessage(`已保存 ${normalizedName}`);
+      }
+      setTargetName("");
+      setEditingTargetId(null);
+    } catch {
+      setSaveMessage(editingTargetId !== null ? "更新失败，请稍后重试" : "保存失败，请稍后重试");
+    }
+  }
+
+  function startEditingTarget(target: SavedInspectionTarget) {
+    setEditingTargetId(target.id);
+    setTargetName(target.name);
+    setNamespace(target.namespace);
+    setLabelSelector(target.label_selector ?? "");
+    setSaveMessage(`正在编辑 ${target.name}`);
+  }
+
+  async function handleDeleteTarget(target: SavedInspectionTarget) {
+    try {
+      await deleteTarget(target.id);
+      setSaveMessage(`已删除 ${target.name}`);
+      if (editingTargetId === target.id) {
+        setEditingTargetId(null);
+        setTargetName("");
+      }
+    } catch {
+      setSaveMessage(`删除 ${target.name} 失败，请稍后重试`);
+    }
+  }
+
+  async function handleExportTargets() {
+    try {
+      const items = await exportTargets();
+      setExportContent(JSON.stringify(items, null, 2));
+    } catch {
+      setExportContent("导出失败");
+    }
+  }
+
+  async function handleImportTargets() {
+    try {
+      const parsed = JSON.parse(importContent) as Array<{
+        name: string;
+        target_type: "namespace" | "pod";
+        namespace: string;
+        label_selector?: string | null;
+        pod_name?: string | null;
+        resource_scope: string[];
+      }>;
+      const created = await importTargets(parsed);
+      if (created.length === 0) {
+        setSaveMessage("导入内容不包含当前页面可导入的名称空间对象");
+        return;
+      }
+      setSaveMessage(`已导入 ${created.length} 个名称空间巡检对象`);
+      setImportContent("");
+    } catch {
+      setSaveMessage("导入失败，请检查 JSON 格式");
+    }
   }
 
   return (
@@ -66,22 +189,52 @@ export function NamespaceInspectionPage() {
       </header>
       <section className="panel panel-muted">
         <div className="section-header">
-          <h3>常用巡检对象</h3>
-          <span className="section-tip">先用常用对象，减少重复输入</span>
+          <h3>已保存巡检对象</h3>
+          <span className="section-tip">保存常用名称空间范围后，可直接复用</span>
         </div>
+        <label>
+          保存名称
+          <input value={targetName} onChange={(event) => setTargetName(event.target.value)} placeholder="例如：demo 全名称空间" />
+        </label>
+        <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || targetName.trim().length === 0}>
+          {targetSaving ? (editingTargetId !== null ? "更新中..." : "保存中...") : editingTargetId !== null ? "更新当前对象" : "保存当前范围"}
+        </button>
+        <button type="button" onClick={() => void handleExportTargets()} disabled={targetsLoading}>
+          刷新导出内容
+        </button>
+        {saveMessage ? <p className="inline-note">{saveMessage}</p> : null}
+        {targetsError ? <p>保存对象失败：{targetsError}</p> : null}
+        {targetsLoading ? <p>加载已保存对象中...</p> : null}
+        {!targetsLoading && targets.length === 0 ? <p>暂无保存对象，保存当前巡检范围后可复用。</p> : null}
+        <label>
+          导出内容
+          <textarea aria-label="导出内容" value={exportContent} readOnly rows={6} />
+        </label>
+        <label>
+          导入内容
+          <textarea aria-label="导入内容" value={importContent} onChange={(event) => setImportContent(event.target.value)} rows={6} />
+        </label>
+        <button type="button" onClick={() => void handleImportTargets()} disabled={targetSaving || importContent.trim().length === 0}>
+          导入巡检对象
+        </button>
         <div className="quick-target-grid">
-          {quickTargets.map((target) => (
-            <button
-              key={target.name}
-              type="button"
-              className="quick-target-card"
-              onClick={() => applyQuickTarget(target)}
-              disabled={loading}
-            >
+          {targets.map((target) => (
+            <div key={target.id} className="quick-target-card">
               <strong>使用 {target.name}</strong>
-              <span>{target.namespace}{target.labelSelector ? ` / ${target.labelSelector}` : " / 全名称空间"}</span>
-              <small>{target.description}</small>
-            </button>
+              <span>{target.namespace}{target.label_selector ? ` / ${target.label_selector}` : " / 全名称空间"}</span>
+              <small>{target.target_type === "namespace" ? "名称空间巡检对象" : "Pod 巡检对象"}</small>
+              <div className="log-hit-actions">
+                <button type="button" onClick={() => applyQuickTarget(target)} disabled={loading}>
+                  使用 {target.name}
+                </button>
+                <button type="button" onClick={() => startEditingTarget(target)} disabled={targetSaving}>
+                  编辑 {target.name}
+                </button>
+                <button type="button" onClick={() => void handleDeleteTarget(target)} disabled={targetSaving}>
+                  删除 {target.name}
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       </section>
@@ -89,10 +242,7 @@ export function NamespaceInspectionPage() {
         className="panel"
         onSubmit={(event) => {
           event.preventDefault();
-          void submit(namespace, labelSelector).then(() => {
-            setSelectedPodName(null);
-            setIgnoredLogKeys([]);
-          });
+          void submit(namespace, labelSelector).then(resetAfterInspection);
         }}
       >
         <div className="section-header">
@@ -203,32 +353,39 @@ export function NamespaceInspectionPage() {
                     )}
                   </article>
                   <article className="card">
-                    <strong>日志摘要</strong>
+                    <strong>{logHits.length > 0 ? "关键字命中" : "原始日志摘要"}</strong>
+                    {ignoreMessage ? <p className="inline-note">{ignoreMessage}</p> : null}
                     {logHits.length > 0 ? (
                       <div className="log-hit-list">
                         {logHits.map((hit) => {
-                          const ignored = ignoredLogKeys.includes(`${selectedPod.name}:${hit}`);
+                          const hitKey = `${selectedPod.name}:${hit.keyword}:${hit.matched_text}`;
+                          const ignored = hit.whitelisted || ignoredLogKeys.includes(hitKey);
+                          const ignoring = ignoringLogKeys.includes(hitKey);
                           return (
-                            <article key={`${selectedPod.name}:${hit}`} className={`log-hit-card${ignored ? " log-hit-card-muted" : ""}`}>
-                              <pre className="log-block">{hit}</pre>
+                            <article key={hitKey} className={`log-hit-card${ignored ? " log-hit-card-muted" : ""}`}>
+                              <div className="card-title">
+                                <strong>{hit.keyword}</strong>
+                                <StatusBadge status={ignored ? "disabled" : hit.severity} />
+                              </div>
+                              <p>{hit.category} / {hit.container_name ? `容器 ${hit.container_name}` : "未标记容器"}</p>
+                              <pre className="log-block">{hit.matched_text}</pre>
                               <div className="log-hit-actions">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setIgnoredLogKeys((current) => [...current, `${selectedPod.name}:${hit}`])
-                                  }
-                                  disabled={ignored}
+                                  onClick={() => void handleIgnoreLogHit(hit)}
+                                  disabled={ignored || ignoring}
                                 >
-                                  {ignored ? "已忽略" : "忽略此报错"}
+                                  {hit.whitelisted ? "白名单已生效" : ignored ? "已忽略" : ignoring ? "处理中..." : "忽略此报错"}
                                 </button>
                               </div>
-                              {ignored ? <p className="inline-note">已在本次会话中忽略该日志命中</p> : null}
+                              {hit.whitelisted ? <p className="inline-note">该命中已被白名单忽略</p> : null}
+                              {!hit.whitelisted && ignored ? <p className="inline-note">已加入白名单，后续巡检会自动忽略该命中</p> : null}
                             </article>
                           );
                         })}
                       </div>
                     ) : (
-                      <pre className="log-block">无日志摘要</pre>
+                      <pre className="log-block">{selectedPod.log_summary ?? "无日志摘要"}</pre>
                     )}
                   </article>
                 </div>

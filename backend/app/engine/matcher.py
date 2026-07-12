@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 
+def _operator(condition: dict[str, Any]) -> str:
+    return str(condition.get("operator") or "equals")
+
+
 def _condition_type(condition: dict[str, Any]) -> str:
     return str(condition.get("condition_type") or condition.get("type") or "")
 
@@ -36,49 +40,111 @@ def _condition_result(condition: dict[str, Any], matched: bool, evidence: list[d
     }
 
 
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _matches_scalar(operator: str, actual: Any, expected: Any) -> bool:
+    if operator == "equals":
+        return actual == expected
+    if operator == "in":
+        return actual in set(_as_list(expected))
+    if operator == "contains":
+        if actual is None:
+            return False
+        expected_values = [str(item) for item in _as_list(expected) if item is not None]
+        actual_text = str(actual)
+        return any(item in actual_text for item in expected_values)
+    if operator == "gte":
+        try:
+            return float(actual) >= float(expected)
+        except (TypeError, ValueError):
+            return False
+    if operator == "lte":
+        try:
+            return float(actual) <= float(expected)
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
 def _match_pod_status(condition: dict[str, Any], target: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
-    statuses = set(_expected_value(condition) or [])
-    matched = [pod["name"] for pod in target.get("pods", []) if pod.get("status") in statuses]
+    operator = _operator(condition)
+    expected = _expected_value(condition)
+    matched = [
+        pod["name"]
+        for pod in target.get("pods", [])
+        if _matches_scalar(operator, pod.get("status"), expected)
+    ]
     if not matched:
         return False, []
-    return True, [{"type": "pod_status", "pods": matched, "value": list(statuses)}]
+    return True, [{"type": "pod_status", "pods": matched, "value": expected}]
 
 
 def _match_log_keyword(condition: dict[str, Any], target: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
-    keyword = str(_expected_value(condition) or "")
+    operator = _operator(condition)
+    expected = _expected_value(condition)
     evidence = []
     for pod in target.get("pods", []):
-        log_summary = str(pod.get("log_summary") or "")
-        if keyword and keyword in log_summary:
-            evidence.append({"type": "log_keyword", "pod": pod["name"], "value": keyword, "matched_text": log_summary})
+        for hit in pod.get("log_hits", []):
+            if hit.get("whitelisted"):
+                continue
+            keyword_matched = _matches_scalar(operator, hit.get("keyword"), expected)
+            text_matched = operator == "contains" and _matches_scalar(operator, hit.get("matched_text"), expected)
+            if keyword_matched or text_matched:
+                evidence.append(
+                    {
+                        "type": "log_keyword",
+                        "pod": pod["name"],
+                        "value": expected,
+                        "matched_text": hit.get("matched_text") or "",
+                        "container_name": hit.get("container_name"),
+                    }
+                )
+                break
     return (len(evidence) > 0, evidence)
 
 
 def _match_event_keyword(condition: dict[str, Any], target: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
-    keyword = str(_expected_value(condition) or "")
+    operator = _operator(condition)
+    expected = _expected_value(condition)
     evidence = []
     for pod in target.get("pods", []):
         for event in pod.get("events", []):
-            if keyword and keyword in str(event):
-                evidence.append({"type": "event_keyword", "pod": pod["name"], "value": keyword, "matched_text": str(event)})
+            if _matches_scalar(operator, str(event), expected):
+                evidence.append({"type": "event_keyword", "pod": pod["name"], "value": expected, "matched_text": str(event)})
                 break
     return (len(evidence) > 0, evidence)
 
 
 def _match_restart_count(condition: dict[str, Any], target: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
-    threshold = int(_expected_value(condition) or 0)
-    matched = [pod["name"] for pod in target.get("pods", []) if int(pod.get("restarts", 0)) >= threshold]
+    operator = _operator(condition)
+    expected = _expected_value(condition)
+    matched = [
+        pod["name"]
+        for pod in target.get("pods", [])
+        if _matches_scalar(operator, int(pod.get("restarts", 0)), expected)
+    ]
     if not matched:
         return False, []
-    return True, [{"type": "restart_count", "pods": matched, "value": threshold}]
+    return True, [{"type": "restart_count", "pods": matched, "value": expected}]
 
 
 def _match_related_object_status(condition: dict[str, Any], target: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
     expected = _expected_value(condition) or {}
     resource = expected.get("resource")
-    statuses = set(expected.get("statuses", []))
+    operator = _operator(condition)
+    statuses = expected.get("statuses", [])
     objects = target.get("related_objects", {}).get(resource, [])
-    matched = [item["name"] for item in objects if item.get("status") in statuses]
+    matched = [
+        item["name"]
+        for item in objects
+        if _matches_scalar(operator, item.get("status"), statuses if operator == "in" else (statuses[0] if statuses else None))
+    ]
     if not matched:
         return False, []
     return True, [{"type": "related_object_status", "resource": resource, "objects": matched, "value": expected}]

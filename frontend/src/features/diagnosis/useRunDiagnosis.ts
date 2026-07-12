@@ -8,11 +8,11 @@ export function useRunDiagnosis() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(namespace: string, scope: string) {
+  async function submit(payload: { namespace?: string | null; scope?: string | null; template_ids?: number[] } = {}) {
     setLoading(true);
     setError(null);
     try {
-      const result = await runDiagnosis(namespace, scope);
+      const result = await runDiagnosis(payload);
       setData(result);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "未知错误");

@@ -12,20 +12,46 @@ def _serialize_template(item) -> dict:
     return FaultTemplateRead.model_validate(item).model_dump()
 
 
-@router.get("/templates")
+@router.get("/templates", response_model=list[FaultTemplateRead])
 def list_templates(session: Session = Depends(get_db_session)) -> list[dict]:
     return [_serialize_template(item) for item in template_service.list_templates(session)]
 
 
-@router.post("/templates", status_code=status.HTTP_201_CREATED)
+@router.post("/templates", status_code=status.HTTP_201_CREATED, response_model=FaultTemplateRead)
 def create_template(payload: FaultTemplateCreate, session: Session = Depends(get_db_session)) -> dict:
     return _serialize_template(template_service.create_template(session, payload))
 
 
-@router.put("/templates/{template_id}")
+@router.get("/templates/export", response_model=list[FaultTemplateRead])
+def export_templates(session: Session = Depends(get_db_session)) -> list[dict]:
+    return [_serialize_template(item) for item in template_service.export_templates(session)]
+
+
+@router.post("/templates/import", response_model=list[FaultTemplateRead])
+def import_templates(payload: list[FaultTemplateCreate], session: Session = Depends(get_db_session)) -> list[dict]:
+    return [_serialize_template(item) for item in template_service.import_templates(session, payload)]
+
+
+@router.put("/templates/{template_id}", response_model=FaultTemplateRead)
 def update_template(template_id: int, payload: FaultTemplateUpdate, session: Session = Depends(get_db_session)) -> dict:
     try:
         return _serialize_template(template_service.update_template(session, template_id, payload))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/templates/{template_id}/enable", response_model=FaultTemplateRead)
+def enable_template(template_id: int, session: Session = Depends(get_db_session)) -> dict:
+    try:
+        return _serialize_template(template_service.set_template_enabled(session, template_id, True))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/templates/{template_id}/disable", response_model=FaultTemplateRead)
+def disable_template(template_id: int, session: Session = Depends(get_db_session)) -> dict:
+    try:
+        return _serialize_template(template_service.set_template_enabled(session, template_id, False))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

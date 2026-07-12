@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 const navItems = [
   { to: "/", label: "工作台" },
   { to: "/inspections/namespace", label: "名称空间巡检" },
+  { to: "/inspections/pod", label: "单 Pod 巡检" },
   { to: "/diagnosis", label: "模板检查" },
   { to: "/templates", label: "故障模板" },
   { to: "/whitelists", label: "白名单" },

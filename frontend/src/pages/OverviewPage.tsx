@@ -67,7 +67,7 @@ export function OverviewPage() {
               <strong>巡检名称空间</strong>
               <span>从整个名称空间快速筛出异常 Pod 和关联对象。</span>
             </Link>
-            <Link to="/inspections/namespace#pod-focus" className="quick-action-card">
+            <Link to="/inspections/pod" className="quick-action-card">
               <strong>巡检单个 Pod</strong>
               <span>聚焦某个 Pod 的状态、事件、describe 和日志命中。</span>
             </Link>

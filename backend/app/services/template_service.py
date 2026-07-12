@@ -36,6 +36,17 @@ def create_template(session: Session, payload: FaultTemplateCreate) -> FaultTemp
     return template
 
 
+def import_templates(session: Session, payloads: list[FaultTemplateCreate]) -> list[FaultTemplate]:
+    created: list[FaultTemplate] = []
+    for payload in payloads:
+        created.append(create_template(session, payload))
+    return created
+
+
+def export_templates(session: Session) -> list[FaultTemplate]:
+    return list_templates(session)
+
+
 def update_template(session: Session, template_id: int, payload: FaultTemplateUpdate) -> FaultTemplate:
     template = session.get(FaultTemplate, template_id)
     if template is None:
@@ -44,6 +55,16 @@ def update_template(session: Session, template_id: int, payload: FaultTemplateUp
     for key, value in _serialize_template_payload(payload).items():
         setattr(template, key, value)
 
+    session.commit()
+    session.refresh(template)
+    return template
+
+
+def set_template_enabled(session: Session, template_id: int, enabled: bool) -> FaultTemplate:
+    template = session.get(FaultTemplate, template_id)
+    if template is None:
+        raise ValueError("template not found")
+    template.enabled = enabled
     session.commit()
     session.refresh(template)
     return template

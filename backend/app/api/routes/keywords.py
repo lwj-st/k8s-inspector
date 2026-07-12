@@ -26,6 +26,22 @@ def update_keyword(keyword_id: int, payload: KeywordRuleUpdate, session: Session
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/keywords/{keyword_id}/enable", response_model=KeywordRuleRead)
+def enable_keyword(keyword_id: int, session: Session = Depends(get_db_session)) -> KeywordRuleRead:
+    try:
+        return KeywordRuleRead.model_validate(keyword_service.set_keyword_enabled(session, keyword_id, True))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/keywords/{keyword_id}/disable", response_model=KeywordRuleRead)
+def disable_keyword(keyword_id: int, session: Session = Depends(get_db_session)) -> KeywordRuleRead:
+    try:
+        return KeywordRuleRead.model_validate(keyword_service.set_keyword_enabled(session, keyword_id, False))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.delete("/keywords/{keyword_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_keyword(keyword_id: int, session: Session = Depends(get_db_session)) -> None:
     try:

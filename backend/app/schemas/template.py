@@ -57,7 +57,8 @@ class FaultTemplateBase(BaseModel):
 
         normalized_conditions = []
         first_target_ref = payload.get("targets", [{}])[0].get("target_ref", "default")
-        joint_operator = payload.get("joint_rule", {}).get("operator")
+        joint_rule = payload.get("joint_rule") or {}
+        joint_operator = joint_rule.get("operator")
         for condition in payload.get("match_conditions", []):
             updated = dict(condition)
             updated.setdefault("target_ref", first_target_ref)

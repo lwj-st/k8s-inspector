@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
@@ -12,8 +13,42 @@ class TimestampedModel(BaseModel):
     updated_at: datetime | None = None
 
 
+class InspectionTargetKind(str, Enum):
+    namespace = "namespace"
+    pod = "pod"
+    template = "template"
+
+
+class KeywordHitSeverity(str, Enum):
+    info = "info"
+    warning = "warning"
+    error = "error"
+    critical = "critical"
+
+
+class TemplateConditionType(str, Enum):
+    pod_status = "pod_status"
+    log_keyword = "log_keyword"
+    event_keyword = "event_keyword"
+    restart_count = "restart_count"
+    related_object_status = "related_object_status"
+
+
+class TemplateConditionOperator(str, Enum):
+    equals = "equals"
+    in_ = "in"
+    contains = "contains"
+    gte = "gte"
+    lte = "lte"
+
+
+class TemplateConditionJoinOperator(str, Enum):
+    AND = "AND"
+    OR = "OR"
+
+
 class InspectionTarget(BaseModel):
-    type: Literal["namespace", "pod", "template"]
+    type: InspectionTargetKind
     namespace: str | None = None
     pod_name: str | None = None
     label_selector: str | None = None
@@ -25,7 +60,7 @@ class InspectionTarget(BaseModel):
 class KeywordHit(BaseModel):
     keyword: str
     category: str = "custom"
-    severity: str = "warning"
+    severity: KeywordHitSeverity = KeywordHitSeverity.warning
     source: str
     matched_text: str
     container_name: str | None = None
@@ -78,10 +113,10 @@ class TemplateTarget(BaseModel):
 
 class TemplateCondition(BaseModel):
     target_ref: str
-    condition_type: str = Field(validation_alias=AliasChoices("condition_type", "type"))
-    operator: str
+    condition_type: TemplateConditionType = Field(validation_alias=AliasChoices("condition_type", "type"))
+    operator: TemplateConditionOperator
     expected_value: Any = Field(validation_alias=AliasChoices("expected_value", "value"))
-    join_operator: Literal["AND", "OR"] | None = None
+    join_operator: TemplateConditionJoinOperator | None = None
     enabled: bool = True
 
 

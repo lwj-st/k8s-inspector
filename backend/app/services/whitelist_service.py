@@ -1,3 +1,5 @@
+from fnmatch import fnmatchcase
+
 from sqlalchemy.orm import Session
 
 from app.models import Whitelist
@@ -45,6 +47,16 @@ def update_whitelist(session: Session, whitelist_id: int, payload: WhitelistUpda
     return whitelist
 
 
+def set_whitelist_enabled(session: Session, whitelist_id: int, enabled: bool) -> Whitelist:
+    whitelist = session.get(Whitelist, whitelist_id)
+    if whitelist is None:
+        raise ValueError("whitelist not found")
+    whitelist.enabled = enabled
+    session.commit()
+    session.refresh(whitelist)
+    return whitelist
+
+
 def delete_whitelist(session: Session, whitelist_id: int) -> None:
     whitelist = session.get(Whitelist, whitelist_id)
     if whitelist is None:
@@ -85,7 +97,7 @@ def find_matching_whitelist(
     for rule in rules:
         if rule.label_selector and rule.label_selector != label_selector:
             continue
-        if rule.pod_name_pattern and rule.pod_name_pattern not in pod_name:
+        if rule.pod_name_pattern and not fnmatchcase(pod_name, rule.pod_name_pattern):
             continue
         if rule.container_name and rule.container_name != container_name:
             continue
