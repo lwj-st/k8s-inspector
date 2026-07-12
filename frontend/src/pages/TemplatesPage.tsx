@@ -414,7 +414,7 @@ export function TemplatesPage() {
     <section className="page-section">
       <header className="section-header">
         <div>
-          <p className="eyebrow">Template Studio</p>
+          <p className="eyebrow">故障录入</p>
           <h2>故障模板</h2>
         </div>
         <span className="section-tip">先定义对象组，再组合条件，最后补齐原因和处理建议。</span>

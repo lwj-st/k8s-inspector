@@ -15,8 +15,8 @@ export function AppLayout() {
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="brand-block">
-          <h1>K8s Inspector</h1>
-          <p>只读排障工作台</p>
+          <h1>K8s 巡检台</h1>
+          <p>名称空间、Pod、模板故障检查</p>
         </div>
         <nav>
           <ul className="nav-list">

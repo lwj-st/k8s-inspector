@@ -234,6 +234,20 @@ describe("NamespaceInspectionPage", () => {
     expect(await screen.findByRole("button", { name: /使用 demo-api 启动排查/ })).toBeInTheDocument();
   });
 
+  it("blocks saving namespace target without namespace context", async () => {
+    render(<NamespaceInspectionPage />);
+
+    fireEvent.change(await screen.findByLabelText("保存名称"), {
+      target: { value: "缺少名称空间" },
+    });
+
+    expect(await screen.findByText("先填写名称空间，或运行一次巡检后再保存。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存当前范围" })).toBeDisabled();
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => String(input).endsWith("/inspection-targets") && init?.method === "POST"),
+    ).toBe(false);
+  });
+
   it("shows empty state when there are no saved targets", async () => {
     fetchMock.mockReset();
     fetchMock.mockImplementation((input: RequestInfo | URL) => {

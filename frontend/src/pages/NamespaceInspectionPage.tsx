@@ -57,6 +57,9 @@ export function NamespaceInspectionPage() {
   const abnormalPods = sortedPods.filter((pod) => !isHealthyStatus(pod.status));
   const healthyPods = sortedPods.filter((pod) => isHealthyStatus(pod.status));
   const logHits = selectedPod?.log_hits ?? [];
+  const currentSaveNamespace = namespace.trim() || data?.namespace?.trim() || "";
+  const currentSaveLabelSelector = labelSelector.trim() || data?.inspection_target.label_selector?.trim() || "";
+  const canSaveCurrentTarget = targetName.trim().length > 0 && currentSaveNamespace.length > 0;
 
   function resetAfterInspection() {
     setSelectedPodName(null);
@@ -104,12 +107,16 @@ export function NamespaceInspectionPage() {
       setSaveMessage("请先填写保存名称");
       return;
     }
+    if (!currentSaveNamespace) {
+      setSaveMessage("请先填写名称空间，或先完成一次名称空间巡检后再保存");
+      return;
+    }
 
     try {
       const payload = {
         name: normalizedName,
-        namespace,
-        label_selector: labelSelector || null,
+        namespace: currentSaveNamespace,
+        label_selector: currentSaveLabelSelector || null,
         resource_scope: ["pods", "services", "ingresses", "daemonsets", "secrets"],
       };
       if (editingTargetId !== null) {
@@ -119,10 +126,13 @@ export function NamespaceInspectionPage() {
         await saveTarget(payload);
         setSaveMessage(`已保存 ${normalizedName}`);
       }
+      setNamespace(currentSaveNamespace);
+      setLabelSelector(currentSaveLabelSelector);
       setTargetName("");
       setEditingTargetId(null);
-    } catch {
-      setSaveMessage(editingTargetId !== null ? "更新失败，请稍后重试" : "保存失败，请稍后重试");
+    } catch (reason) {
+      const detail = reason instanceof Error ? `：${reason.message}` : "";
+      setSaveMessage(editingTargetId !== null ? `更新失败${detail}` : `保存失败${detail}`);
     }
   }
 
@@ -182,7 +192,7 @@ export function NamespaceInspectionPage() {
     <section className="page-section">
       <header className="section-header">
         <div>
-          <p className="eyebrow">Namespace Inspection</p>
+          <p className="eyebrow">巡检入口</p>
           <h2>命名空间巡检</h2>
         </div>
         {data ? <StatusBadge status={data.health_status} /> : null}
@@ -196,12 +206,17 @@ export function NamespaceInspectionPage() {
           保存名称
           <input value={targetName} onChange={(event) => setTargetName(event.target.value)} placeholder="例如：demo 全名称空间" />
         </label>
-        <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || targetName.trim().length === 0}>
-          {targetSaving ? (editingTargetId !== null ? "更新中..." : "保存中...") : editingTargetId !== null ? "更新当前对象" : "保存当前范围"}
-        </button>
-        <button type="button" onClick={() => void handleExportTargets()} disabled={targetsLoading}>
-          刷新导出内容
-        </button>
+        <div className="button-row">
+          <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || !canSaveCurrentTarget}>
+            {targetSaving ? (editingTargetId !== null ? "更新中..." : "保存中...") : editingTargetId !== null ? "更新当前对象" : "保存当前范围"}
+          </button>
+          <button type="button" onClick={() => void handleExportTargets()} disabled={targetsLoading}>
+            刷新导出内容
+          </button>
+        </div>
+        {targetName.trim().length > 0 && !currentSaveNamespace ? (
+          <p className="inline-note">先填写名称空间，或运行一次巡检后再保存。</p>
+        ) : null}
         {saveMessage ? <p className="inline-note">{saveMessage}</p> : null}
         {targetsError ? <p>保存对象失败：{targetsError}</p> : null}
         {targetsLoading ? <p>加载已保存对象中...</p> : null}

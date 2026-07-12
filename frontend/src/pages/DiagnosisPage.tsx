@@ -76,7 +76,7 @@ export function DiagnosisPage() {
     <section className="page-section">
       <header className="section-header">
         <div>
-          <p className="eyebrow">Template Check</p>
+          <p className="eyebrow">模板匹配</p>
           <h2>故障模板检查</h2>
         </div>
         {data ? <StatusBadge status={data.status} /> : null}

@@ -169,7 +169,7 @@ describe("App", () => {
 
     render(<RouterProvider router={router} />);
 
-    expect(await screen.findByRole("heading", { name: "K8s Inspector" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "排障工作台" })).toBeInTheDocument();
     expect(await screen.findByText("最近异常")).toBeInTheDocument();
     expect(await screen.findByText("最近使用的模板")).toBeInTheDocument();

@@ -56,7 +56,7 @@ export function OverviewPage() {
         <div className="workbench-copy">
           <header className="section-header">
             <div>
-              <p className="eyebrow">Workbench</p>
+              <p className="eyebrow">总览</p>
               <h2>排障工作台</h2>
             </div>
             <StatusBadge status={data.health_status ?? data.cluster_status ?? "unknown"} />

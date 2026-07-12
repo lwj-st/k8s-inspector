@@ -53,7 +53,8 @@ a {
 
 .brand-block h1 {
   margin: 0 0 8px;
-  font-size: 30px;
+  font-size: 26px;
+  line-height: 1.2;
 }
 
 .brand-block p {
@@ -241,12 +242,26 @@ a {
 
 .panel input,
 .panel select,
-.panel textarea,
-.panel button {
+.panel textarea {
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--line);
   font: inherit;
+}
+
+.panel button,
+.section-header button {
+  width: fit-content;
+  min-height: 38px;
+  padding: 9px 14px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, #f0a323, #ffcd74);
+  color: var(--navy);
+  box-shadow: 0 8px 18px rgba(240, 163, 35, 0.16);
 }
 
 .panel textarea {
@@ -254,17 +269,11 @@ a {
   min-height: 110px;
 }
 
-.panel button {
-  border: none;
-  background: linear-gradient(135deg, #f0a323, #ffcd74);
-  color: var(--navy);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.panel button:disabled {
+.panel button:disabled,
+.section-header button:disabled {
   opacity: 0.62;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .status-badge {
@@ -338,12 +347,15 @@ a {
 
 .pod-list-item {
   width: 100%;
+  min-height: auto;
   text-align: left;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: #fff;
+  color: var(--ink);
   cursor: pointer;
+  box-shadow: none;
 }
 
 .pod-list-item small {
@@ -426,17 +438,28 @@ a {
 
 .log-hit-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
 }
 
 .log-hit-actions button {
-  padding: 10px 12px;
+  width: fit-content;
+  min-height: 36px;
+  padding: 8px 12px;
   border: none;
-  border-radius: 12px;
+  border-radius: 999px;
   cursor: pointer;
   background: linear-gradient(135deg, #d86950, #f59b7c);
   color: #fff;
   font-weight: 700;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 .log-hit-actions button:disabled {

@@ -179,7 +179,7 @@ export function WhitelistsPage() {
     <section className="page-section">
       <header className="section-header">
         <div>
-          <p className="eyebrow">Whitelist Center</p>
+          <p className="eyebrow">规则中心</p>
           <h2>关键字库与白名单</h2>
         </div>
         <span className="section-tip">先定义系统判异常的关键字，再把已知噪音就地忽略成白名单</span>
