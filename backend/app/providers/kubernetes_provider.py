@@ -8,6 +8,7 @@ from kubernetes.client.exceptions import ApiException
 from kubernetes.config.config_exception import ConfigException
 
 from app.core.config import Settings
+from app.services.pod_health import is_abnormal_container, is_abnormal_pod, is_normal_pod_status
 
 
 def now_iso() -> str:
@@ -45,10 +46,27 @@ class KubernetesInspectionProvider:
 
     def _is_abnormal_pod(self, pod: client.V1Pod) -> bool:
         phase = pod.status.phase or "Unknown"
-        if phase != "Running" and not self._is_non_problem_terminal_pod(pod):
+        if not is_normal_pod_status(phase):
             return True
         for status in getattr(pod.status, "container_statuses", None) or []:
-            if status.state and status.state.waiting and status.state.waiting.reason:
+            state = status.state
+            if state and state.waiting:
+                container_state = "waiting"
+                reason = state.waiting.reason
+                exit_code = None
+            elif state and state.running:
+                container_state = "running"
+                reason = None
+                exit_code = None
+            elif state and state.terminated:
+                container_state = "terminated"
+                reason = state.terminated.reason
+                exit_code = state.terminated.exit_code
+            else:
+                container_state = "unknown"
+                reason = None
+                exit_code = None
+            if is_abnormal_container(container_state, reason, exit_code):
                 return True
         return False
 
@@ -157,6 +175,8 @@ class KubernetesInspectionProvider:
                 elif status.state.terminated:
                     state = "terminated"
                     reason = status.state.terminated.reason
+                    if reason == "Completed" and status.state.terminated.exit_code not in (None, 0):
+                        reason = "Error"
 
             result.append(
                 {
@@ -277,13 +297,6 @@ class KubernetesInspectionProvider:
             return "Kubernetes 控制面初始化状态"
         return "cluster component"
 
-    def _is_non_problem_terminal_pod(self, pod: client.V1Pod) -> bool:
-        phase = pod.status.phase or "Unknown"
-        metadata = getattr(pod, "metadata", None)
-        owner_references = getattr(metadata, "owner_references", None) or []
-        owner_kinds = {owner.kind for owner in owner_references if getattr(owner, "kind", None)}
-        return phase == "Succeeded" and "Job" in owner_kinds
-
     def get_overview(self) -> dict:
         issues: list[dict] = []
         nodes = self.core.list_node(_request_timeout=self.settings.k8s_request_timeout).items
@@ -312,9 +325,9 @@ class KubernetesInspectionProvider:
         for namespace in self._target_namespaces_for_cluster():
             pods = self.core.list_namespaced_pod(namespace, _request_timeout=self.settings.k8s_request_timeout).items
             for pod in pods:
-                phase = pod.status.phase or "Unknown"
                 describe_summary, _ = self._pod_issue_summary(pod)
-                if phase != "Running" and not self._is_non_problem_terminal_pod(pod):
+                if self._is_abnormal_pod(pod):
+                    phase = pod.status.phase or "Unknown"
                     issues.append(
                         {
                             "name": pod.metadata.name,
@@ -358,8 +371,8 @@ class KubernetesInspectionProvider:
         for namespace in self._target_namespaces_for_cluster():
             pods = self.core.list_namespaced_pod(namespace, _request_timeout=self.settings.k8s_request_timeout).items
             for pod in pods:
-                phase = pod.status.phase or "Unknown"
-                if phase != "Running" and not self._is_non_problem_terminal_pod(pod):
+                if self._is_abnormal_pod(pod):
+                    phase = pod.status.phase or "Unknown"
                     describe_summary, log_summary = self._pod_issue_summary(pod)
                     results.append(
                         {
@@ -438,16 +451,15 @@ class KubernetesInspectionProvider:
             if secret.type and "tls" in secret.type.lower()
         ]
 
-        all_resource_results = [
-            *pod_results,
-            *service_results,
-            *ingress_results,
-            *daemonset_results,
-            *secret_results,
-        ]
         health_status = (
             "warning"
-            if any(item["status"] not in {"Running", "healthy"} for item in all_resource_results)
+            if any(is_abnormal_pod(item) for item in pod_results)
+            or any(item["status"] not in {"healthy"} for item in [
+                *service_results,
+                *ingress_results,
+                *daemonset_results,
+                *secret_results,
+            ])
             else "healthy"
         )
 
@@ -495,7 +507,7 @@ class KubernetesInspectionProvider:
                 "resource_scope": ["pods"],
             },
             "namespace": namespace,
-            "health_status": "healthy" if pod["status"] == "Running" else "warning",
+            "health_status": "warning" if is_abnormal_pod(pod) else "healthy",
             "executed_at": now_iso(),
             "pod": pod,
             "evidence_bundle": self._evidence_bundle_from_pod(namespace, pod),

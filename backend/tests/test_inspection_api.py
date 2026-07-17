@@ -130,6 +130,33 @@ def test_run_pod_inspection_returns_selected_pod_evidence(client) -> None:
     assert payload["inspection_target"]["resource_scope"] == ["pods"]
 
 
+def test_mock_pod_inspection_uses_shared_health_semantics(client) -> None:
+    client.app.state.provider.run_pod_inspection = lambda namespace, pod_name: {
+        "inspection_target": {"type": "pod", "namespace": namespace, "pod_name": pod_name, "resource_scope": ["pods"]},
+        "namespace": namespace,
+        "health_status": "healthy",
+        "executed_at": "2026-07-17T00:00:00Z",
+        "pod": {
+            "name": pod_name,
+            "status": "Succeeded",
+            "node_name": "node-a",
+            "restarts": 0,
+            "containers": [{"name": "worker", "restart_count": 0, "state": "terminated", "reason": "Completed"}],
+            "events": [],
+            "describe_summary": "completed",
+            "log_summary": None,
+            "previous_log_summary": None,
+            "resource_usage": {},
+            "related_resources": [],
+        },
+    }
+
+    response = client.post("/api/v1/inspections/pod/run", json={"namespace": "demo", "pod_name": "safeapi-migrate"})
+
+    assert response.status_code == 200
+    assert response.json()["health_status"] == "healthy"
+
+
 def test_run_inspection_dispatches_pod_target(client) -> None:
     response = client.post(
         "/api/v1/inspections/run",
@@ -355,6 +382,48 @@ def test_run_namespace_batch_inspection_returns_empty_categories_for_healthy_nam
     assert summary["status"] == "healthy"
     assert summary["abnormal_pod_count"] == 0
     assert summary["abnormal_categories"] == []
+
+
+def test_run_namespace_batch_inspection_treats_succeeded_completed_pod_as_healthy(client) -> None:
+    client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+        health_status="healthy",
+        pods=[
+            _inspected_pod(
+                status="Succeeded",
+                containers=[{"name": "safeapi-migrate", "restart_count": 0, "state": "terminated", "reason": "Completed"}],
+            )
+        ],
+    )
+
+    response = client.post("/api/v1/inspections/namespaces/run", json={"namespaces": ["demo"]})
+
+    assert response.status_code == 200
+    summary = response.json()["results"][0]["summary"]
+    assert summary["abnormal_pod_count"] == 0
+    assert summary["abnormal_categories"] == []
+
+
+def test_namespace_inspection_keeps_completed_pod_evidence(client) -> None:
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+        health_status="healthy",
+        pods=[
+            _inspected_pod(
+                status="Succeeded",
+                containers=[{"name": "safeapi-migrate", "restart_count": 0, "state": "terminated", "reason": "Completed"}],
+                events=["Completed migration"],
+            )
+        ],
+    )
+
+    response = client.post("/api/v1/inspections/namespace/run", json={"namespace": "demo"})
+
+    assert response.status_code == 200
+    pod = response.json()["pods"][0]
+    assert pod["status"] == "Succeeded"
+    assert pod["describe_summary"] == "demo summary"
+    assert pod["events"] == ["Completed migration"]
+    assert "log_hits" in pod
 
 
 def test_run_namespace_batch_inspection_derives_all_abnormal_categories_in_stable_order(client) -> None:

@@ -15,6 +15,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { DiagnosisResultPanel } from "../features/diagnosis/DiagnosisResultPanel";
 import { useRunDiagnosis } from "../features/diagnosis/useRunDiagnosis";
 import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
+import { isHealthyPod } from "../features/inspections/podHealth";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 
 const ABNORMAL_CATEGORY_LABELS = {
@@ -37,12 +38,6 @@ function namespaceStatus(summary: NamespaceSummary) {
 
 function abnormalCategoryLabel(category: string) {
   return ABNORMAL_CATEGORY_LABELS[category as keyof typeof ABNORMAL_CATEGORY_LABELS] ?? category;
-}
-
-function isHealthyPod(pod: InspectedPod) {
-  return (pod.status === "Running" || pod.status === "healthy") && pod.containers.every((container) => {
-    return container.state === "running" && !container.reason;
-  });
 }
 
 function isHealthyObject(item: InspectedObject) {
@@ -304,7 +299,7 @@ function NamespaceEvidenceDrawer({
                 ) : null}
                 {healthyPods.length > 0 ? (
                   <details className="healthy-pods-details">
-                    <summary>{abnormalPods.length > 0 ? `正常 Pod（${healthyPods.length}）` : `Pod（全部正常 ${healthyPods.length}）`}</summary>
+                    <summary>{abnormalPods.length > 0 ? `正常 / 已完成 Pod（${healthyPods.length}）` : `Pod（全部正常 / 已完成 ${healthyPods.length}）`}</summary>
                     <div className="evidence-pod-list">
                       {healthyPods.map((pod) => (
                         <EvidencePodCard

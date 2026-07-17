@@ -4,6 +4,7 @@ from app.models import InspectionRecord
 from app.providers.base import InspectionProvider
 from app.services import discovery_service
 from app.services.keyword_service import match_log_text
+from app.services.pod_health import is_abnormal_container, is_abnormal_pod, is_normal_pod_status
 from app.schemas.inspection import (
     InspectionRunRequest,
     InspectionTargetType,
@@ -236,7 +237,7 @@ def _build_namespace_batch_summary(
     discovered_summary: dict | None,
 ) -> dict:
     pods = inspection.get("pods", [])
-    abnormal_pod_count = len([pod for pod in pods if pod.get("status") not in {"Running", "healthy"}])
+    abnormal_pod_count = len([pod for pod in pods if is_abnormal_pod(pod)])
     abnormal_categories = _derive_namespace_abnormal_categories(inspection)
 
     return {
@@ -269,13 +270,15 @@ def _derive_namespace_abnormal_categories(inspection: dict) -> list[str]:
 
 
 def _is_abnormal_pod_status(status: str | None) -> bool:
-    return str(status or "").lower() not in {"running", "healthy"}
+    return not is_normal_pod_status(status)
 
 
 def _has_abnormal_container(container: dict) -> bool:
-    state = str(container.get("state") or "").lower()
-    reason = str(container.get("reason") or "").strip()
-    return state != "running" or bool(reason)
+    return is_abnormal_container(
+        container.get("state"),
+        container.get("reason"),
+        container.get("exit_code"),
+    )
 
 
 def _has_abnormal_related_object(inspection: dict) -> bool:

@@ -258,10 +258,10 @@ describe("NamespaceInspectionPage", () => {
               },
               {
                 name: "demo-worker-1",
-                status: "Running",
+                status: "Succeeded",
                 restarts: 0,
                 node_name: "node-b",
-                containers: [],
+                containers: [{ name: "worker", restart_count: 0, state: "terminated", reason: "Completed" }],
                 events: [],
                 describe_summary: "running",
                 log_summary: "plain worker output without keyword hit",
@@ -288,8 +288,10 @@ describe("NamespaceInspectionPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: /使用 demo 全名称空间/ }));
 
     expect(await screen.findByText("异常 Pod")).toBeInTheDocument();
+    expect(await screen.findByText("正常 / 已完成 Pod")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /demo-api-1/ })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /demo-worker-1/ })).toBeInTheDocument();
+    expect(await screen.findByText("状态正常 / 已完成")).toBeInTheDocument();
     expect(await screen.findByText("证据详情")).toBeInTheDocument();
     expect(await screen.findByText("BackOff: restart container")).toBeInTheDocument();
     expect(await screen.findByText("database connection refused")).toBeInTheDocument();
@@ -307,6 +309,98 @@ describe("NamespaceInspectionPage", () => {
     expect(await screen.findByText("原始日志摘要")).toBeInTheDocument();
     expect(await screen.findByText("plain worker output without keyword hit")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "忽略此报错" })).not.toBeInTheDocument();
+  });
+
+  it("keeps log evidence visible for succeeded pods with non-whitelisted hits", async () => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/inspection-targets") && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 1,
+                name: "demo 全名称空间",
+                target_type: "namespace",
+                namespace: "demo",
+                label_selector: null,
+                resource_scope: ["pods", "services", "ingresses", "daemonsets", "secrets"],
+                created_at: "2026-07-11T10:00:00Z",
+                updated_at: "2026-07-11T10:00:00Z",
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/api/v1/inspections/namespace/run")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              inspection_target: {
+                type: "namespace",
+                namespace: "demo",
+                label_selector: null,
+                saved_target_id: null,
+                resource_scope: ["pods", "services", "ingresses", "daemonsets", "secrets"],
+              },
+              namespace: "demo",
+              health_status: "warning",
+              executed_at: "2026-07-17T10:00:00Z",
+              evidence_bundles: [],
+              pods: [
+                {
+                  name: "job-cleanup-1",
+                  status: "Succeeded",
+                  restarts: 0,
+                  node_name: "node-b",
+                  containers: [{ name: "cleanup", restart_count: 0, state: "terminated", reason: "Completed" }],
+                  events: [],
+                  describe_summary: "任务执行完成",
+                  log_summary: "cleanup checksum mismatch",
+                  previous_log_summary: null,
+                  log_hits: [
+                    {
+                      keyword: "checksum mismatch",
+                      category: "data",
+                      severity: "warning",
+                      source: "log_summary",
+                      matched_text: "cleanup checksum mismatch",
+                      container_name: "cleanup",
+                      whitelisted: false,
+                      whitelist_rule_id: null,
+                    },
+                  ],
+                  resource_usage: { cpu: "10m", memory: "20Mi" },
+                  related_resources: [],
+                },
+              ],
+              services: [],
+              ingresses: [],
+              tls_secrets: [],
+              daemonsets: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<NamespaceInspectionPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /使用 demo 全名称空间/ }));
+
+    expect(await screen.findByText("正常 / 已完成 Pod")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /job-cleanup-1/ }));
+
+    expect(await screen.findByText("关键字命中")).toBeInTheDocument();
+    expect(await screen.findByText("cleanup checksum mismatch")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "忽略此报错" })).toBeInTheDocument();
   });
 
   it("runs template matching inside namespace inspection and renders matched and unmatched templates", async () => {

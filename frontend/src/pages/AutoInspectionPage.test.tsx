@@ -1307,7 +1307,53 @@ describe("AutoInspectionPage", () => {
     expect(within(drawer).getAllByText("关联对象").length).toBeGreaterThan(0);
     expect(within(drawer).getByText("Ingress/demo：unknown")).toBeInTheDocument();
     expect(within(drawer).getByText("DaemonSet/agent：degraded")).toBeInTheDocument();
-    expect(within(drawer).getByText("Pod（全部正常 1）")).toBeInTheDocument();
+    expect(within(drawer).getByText("Pod（全部正常 / 已完成 1）")).toBeInTheDocument();
     expect(within(drawer).getByText("Service（全部正常 1）")).toBeInTheDocument();
+  });
+
+  it("keeps succeeded completed migration pods in the normal section", async () => {
+    fetchMock.mockImplementation(async (input: string | URL | Request) => {
+      const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.endsWith("/api/v1/discovery/namespaces")) {
+        return new Response(JSON.stringify({ executed_at: "2026-07-17T18:00:00Z", namespaces: [{
+          name: "prod-core", status: "warning", pod_count: 2, abnormal_pod_count: 1,
+          last_inspected_at: null, labels: {}, abnormal_categories: ["pod_status"],
+        }] }), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/inspections/namespaces/run")) {
+        return new Response(JSON.stringify({ executed_at: "2026-07-17T18:01:00Z", all_namespaces: false, requested_namespaces: ["prod-core"], results: [{
+          summary: { name: "prod-core", status: "warning", pod_count: 2, abnormal_pod_count: 1, last_inspected_at: null, labels: {}, abnormal_categories: ["pod_status"] },
+          health_status: "warning", detail_target: { type: "namespace", namespace: "prod-core", resource_scope: ["pods"] },
+        }] }), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/inspections/namespace/run")) {
+        return new Response(JSON.stringify({
+          inspection_target: { type: "namespace", namespace: "prod-core", resource_scope: ["pods"] },
+          namespace: "prod-core", health_status: "warning", executed_at: "2026-07-17T18:02:00Z",
+          evidence_bundles: [], services: [], ingresses: [], tls_secrets: [], daemonsets: [],
+          pods: [
+            { name: "safeapi-migrate", status: "Succeeded", node_name: "real-144", restarts: 0,
+              containers: [{ name: "safeapi-migrate", restart_count: 0, state: "terminated", reason: "Completed" }],
+              events: [], describe_summary: "迁移已完成", log_summary: null, previous_log_summary: null, log_hits: [], resource_usage: {}, related_resources: [] },
+            { name: "broken-api", status: "CrashLoopBackOff", node_name: "real-145", restarts: 3,
+              containers: [{ name: "api", restart_count: 3, state: "waiting", reason: "CrashLoopBackOff" }],
+              events: [], describe_summary: "启动失败", log_summary: null, previous_log_summary: null, log_hits: [], resource_usage: {}, related_resources: [] },
+          ],
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<AutoInspectionPage />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await screen.findByText("批量巡检摘要");
+    fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
+
+    const drawer = await screen.findByRole("complementary", { name: "prod-core 巡检证据" });
+    expect(within(drawer).getByText("异常 Pod")).toBeInTheDocument();
+    expect(within(drawer).getByText("正常 / 已完成 Pod（1）")).toBeInTheDocument();
+    expect(within(drawer).getByText("safeapi-migrate").closest("details")).not.toHaveAttribute("open");
+    expect(within(drawer).getByText("broken-api")).toBeInTheDocument();
   });
 });

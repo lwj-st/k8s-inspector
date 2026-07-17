@@ -1,23 +1,19 @@
 import { useState } from "react";
 
 import { ignoreWhitelistLogHit } from "../api/client";
-import type { KeywordHit, SavedInspectionTarget } from "../api/types";
+import type { InspectedPod, KeywordHit, SavedInspectionTarget } from "../api/types";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
 import { DiagnosisResultPanel } from "../features/diagnosis/DiagnosisResultPanel";
 import { useRunDiagnosis } from "../features/diagnosis/useRunDiagnosis";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
+import { isHealthyPod } from "../features/inspections/podHealth";
 import { useSavedInspectionTargets } from "../features/inspections/useSavedInspectionTargets";
 
-function isHealthyStatus(status: string) {
-  const normalized = status.toLowerCase();
-  return normalized.includes("running") || normalized.includes("ready") || normalized.includes("healthy");
-}
-
-function sortPods<T extends { status: string; restarts: number }>(pods: T[]) {
+function sortPods(pods: InspectedPod[]) {
   return [...pods].sort((left, right) => {
-    const leftRank = isHealthyStatus(left.status) ? 1 : 0;
-    const rightRank = isHealthyStatus(right.status) ? 1 : 0;
+    const leftRank = isHealthyPod(left) ? 1 : 0;
+    const rightRank = isHealthyPod(right) ? 1 : 0;
 
     if (leftRank !== rightRank) {
       return leftRank - rightRank;
@@ -58,8 +54,8 @@ export function NamespaceInspectionPage() {
     sortedPods.find((pod) => pod.name === selectedPodName) ??
     sortedPods[0] ??
     null;
-  const abnormalPods = sortedPods.filter((pod) => !isHealthyStatus(pod.status));
-  const healthyPods = sortedPods.filter((pod) => isHealthyStatus(pod.status));
+  const abnormalPods = sortedPods.filter((pod) => !isHealthyPod(pod));
+  const healthyPods = sortedPods.filter(isHealthyPod);
   const logHits = selectedPod?.log_hits ?? [];
   const currentSaveNamespace = namespace.trim() || data?.namespace?.trim() || "";
   const currentSaveLabelSelector = labelSelector.trim() || data?.inspection_target.label_selector?.trim() || "";
@@ -303,7 +299,7 @@ export function NamespaceInspectionPage() {
             items={[
               { label: "巡检命名空间", value: data.namespace },
               { label: "异常 Pod", value: String(abnormalPods.length) },
-              { label: "正常 Pod", value: String(healthyPods.length) },
+              { label: "正常 / 已完成 Pod", value: String(healthyPods.length) },
               { label: "巡检状态", value: data.health_status },
             ]}
           />
@@ -370,7 +366,7 @@ export function NamespaceInspectionPage() {
                         <StatusBadge status={pod.status} />
                       </div>
                       <p>重启次数：{pod.restarts}</p>
-                      <small>{isHealthyStatus(pod.status) ? "状态正常" : "优先处理"}</small>
+                      <small>{isHealthyPod(pod) ? "状态正常 / 已完成" : "优先处理"}</small>
                     </button>
                   );
                 })}

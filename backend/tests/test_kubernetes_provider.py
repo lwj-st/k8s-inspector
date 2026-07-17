@@ -94,6 +94,97 @@ def test_run_pod_inspection_reads_single_pod_directly() -> None:
     assert result["inspection_target"]["type"] == "pod"
 
 
+def _configure_direct_pod_inspection(provider: KubernetesInspectionProvider, pod_status: SimpleNamespace) -> None:
+    provider.core.read_namespaced_pod = lambda name, namespace, _request_timeout: SimpleNamespace(
+        metadata=SimpleNamespace(name=name, namespace=namespace, labels={}),
+        spec=SimpleNamespace(node_name="node-a", containers=[SimpleNamespace(name="worker")]),
+        status=pod_status,
+    )
+    provider.core.list_namespaced_service = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.networking.list_namespaced_ingress = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.apps.list_namespaced_daemon_set = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.core.list_namespaced_secret = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.core.list_namespaced_event = lambda namespace, field_selector, _request_timeout: SimpleNamespace(items=[])
+    provider.core.read_namespaced_pod_log = lambda **kwargs: ""
+
+
+def test_run_pod_inspection_treats_succeeded_completed_as_healthy() -> None:
+    provider = _make_provider()
+    _configure_direct_pod_inspection(
+        provider,
+        SimpleNamespace(
+            phase="Succeeded",
+            container_statuses=[
+                SimpleNamespace(
+                    name="worker",
+                    restart_count=0,
+                    state=SimpleNamespace(
+                        waiting=None,
+                        running=None,
+                        terminated=SimpleNamespace(reason="Completed", exit_code=0),
+                    ),
+                )
+            ],
+        ),
+    )
+
+    result = provider.run_pod_inspection("demo", "safeapi-migrate")
+
+    assert result["health_status"] == "healthy"
+
+
+def test_run_pod_inspection_keeps_failed_pod_as_warning() -> None:
+    provider = _make_provider()
+    _configure_direct_pod_inspection(
+        provider,
+        SimpleNamespace(phase="Failed", container_statuses=[]),
+    )
+
+    result = provider.run_pod_inspection("demo", "failed-pod")
+
+    assert result["health_status"] == "warning"
+
+
+def test_get_overview_ignores_succeeded_completed_pod() -> None:
+    provider = _make_provider()
+    provider._target_namespaces_for_cluster = lambda: ["migration"]
+    provider.core.list_node = lambda _request_timeout: SimpleNamespace(
+        items=[
+            SimpleNamespace(
+                metadata=SimpleNamespace(name="node-a"),
+                status=SimpleNamespace(conditions=[SimpleNamespace(type="Ready", status="True")]),
+            )
+        ]
+    )
+    provider.core.list_namespaced_pod = lambda namespace, _request_timeout: SimpleNamespace(
+        items=[
+            SimpleNamespace(
+                metadata=SimpleNamespace(name="safeapi-migrate", namespace="migration", owner_references=[]),
+                spec=SimpleNamespace(node_name="node-a", containers=[SimpleNamespace(name="worker")]),
+                status=SimpleNamespace(
+                    phase="Succeeded",
+                    container_statuses=[
+                        SimpleNamespace(
+                            restart_count=0,
+                            state=SimpleNamespace(
+                                waiting=None,
+                                running=None,
+                                terminated=SimpleNamespace(reason="Completed", exit_code=0),
+                            ),
+                        )
+                    ],
+                ),
+            )
+        ]
+    )
+    provider.core.read_namespaced_pod_log = lambda **kwargs: ""
+
+    result = provider.get_overview()
+
+    assert result["issues"] == []
+    assert result["health_status"] == "healthy"
+
+
 def test_list_namespaces_returns_namespace_summaries() -> None:
     provider = _make_provider()
     provider.core.list_namespace = lambda _request_timeout: SimpleNamespace(
@@ -127,6 +218,118 @@ def test_list_namespaces_returns_namespace_summaries() -> None:
     assert result["namespaces"][0]["labels"] == {"team": "platform"}
     assert result["namespaces"][0]["abnormal_categories"] == ["pod_status"]
     assert result["namespaces"][1]["name"] == "prod"
+
+
+def test_succeeded_completed_pod_is_not_abnormal() -> None:
+    provider = _make_provider()
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="safeapi-migrate", owner_references=[]),
+        status=SimpleNamespace(
+            phase="Succeeded",
+            container_statuses=[
+                SimpleNamespace(
+                    state=SimpleNamespace(
+                        waiting=None,
+                        running=None,
+                        terminated=SimpleNamespace(reason="Completed", exit_code=0),
+                    )
+                )
+            ],
+        ),
+    )
+
+    assert provider._is_abnormal_pod(pod) is False
+
+
+def test_provider_keeps_failed_and_container_failures_abnormal() -> None:
+    provider = _make_provider()
+
+    failed_pod = SimpleNamespace(
+        status=SimpleNamespace(phase="Failed", container_statuses=[]),
+        metadata=SimpleNamespace(owner_references=[]),
+    )
+    crashloop_pod = SimpleNamespace(
+        status=SimpleNamespace(
+            phase="Running",
+            container_statuses=[
+                SimpleNamespace(
+                    state=SimpleNamespace(
+                        waiting=SimpleNamespace(reason="CrashLoopBackOff"),
+                        running=None,
+                        terminated=None,
+                    )
+                )
+            ],
+        ),
+        metadata=SimpleNamespace(owner_references=[]),
+    )
+    error_pod = SimpleNamespace(
+        status=SimpleNamespace(
+            phase="Succeeded",
+            container_statuses=[
+                SimpleNamespace(
+                    state=SimpleNamespace(
+                        waiting=None,
+                        running=None,
+                        terminated=SimpleNamespace(reason="Error", exit_code=1),
+                    )
+                )
+            ],
+        ),
+        metadata=SimpleNamespace(owner_references=[]),
+    )
+    non_zero_completed_pod = SimpleNamespace(
+        status=SimpleNamespace(
+            phase="Succeeded",
+            container_statuses=[
+                SimpleNamespace(
+                    state=SimpleNamespace(
+                        waiting=None,
+                        running=None,
+                        terminated=SimpleNamespace(reason="Completed", exit_code=1),
+                    )
+                )
+            ],
+        ),
+        metadata=SimpleNamespace(owner_references=[]),
+    )
+
+    assert provider._is_abnormal_pod(failed_pod) is True
+    assert provider._is_abnormal_pod(crashloop_pod) is True
+    assert provider._is_abnormal_pod(error_pod) is True
+    assert provider._is_abnormal_pod(non_zero_completed_pod) is True
+
+
+def test_list_namespaces_does_not_count_succeeded_completed_pod_as_abnormal() -> None:
+    provider = _make_provider()
+    provider.core.list_namespace = lambda _request_timeout: SimpleNamespace(
+        items=[SimpleNamespace(metadata=SimpleNamespace(name="migration", labels={}))]
+    )
+    provider.core.list_namespaced_pod = lambda namespace, _request_timeout: SimpleNamespace(
+        items=[
+            SimpleNamespace(
+                metadata=SimpleNamespace(name="safeapi-migrate", owner_references=[]),
+                status=SimpleNamespace(
+                    phase="Succeeded",
+                    container_statuses=[
+                        SimpleNamespace(
+                            state=SimpleNamespace(
+                                waiting=None,
+                                running=None,
+                                terminated=SimpleNamespace(reason="Completed", exit_code=0),
+                            )
+                        )
+                    ],
+                ),
+            )
+        ]
+    )
+
+    result = provider.list_namespaces()
+
+    assert result["namespaces"][0]["abnormal_pod_count"] == 0
+    assert result["namespaces"][0]["status"] == "healthy"
+    assert result["namespaces"][0]["abnormal_categories"] == []
 
 
 def _configure_namespace_inspection_provider(

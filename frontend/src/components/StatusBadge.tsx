@@ -12,7 +12,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     normalized.includes("backoff");
   const tone = isBad
     ? "status-badge status-bad"
-    : normalized.includes("healthy") || normalized.includes("ready") || normalized.includes("running")
+    : normalized.includes("healthy") || normalized.includes("ready") || normalized.includes("running") || normalized.includes("succeeded") || normalized.includes("completed")
       ? "status-badge status-good"
       : normalized.includes("warning") || normalized.includes("degraded") || normalized.includes("enabled")
         ? "status-badge status-warn"

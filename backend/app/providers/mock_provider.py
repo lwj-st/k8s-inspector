@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from app.services.pod_health import is_abnormal_pod
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -164,7 +166,7 @@ class MockInspectionProvider:
                 "resource_scope": ["pods"],
             },
             "namespace": namespace,
-            "health_status": "healthy" if pod["status"] == "Running" else "warning",
+            "health_status": "warning" if is_abnormal_pod(pod) else "healthy",
             "executed_at": now_iso(),
             "pod": pod,
             "evidence_bundle": build_evidence_bundle(namespace, pod),
