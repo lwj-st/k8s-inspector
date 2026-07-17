@@ -106,6 +106,34 @@
 - 导出为 JSON
 - 从 JSON 导入
 
+### 5. 批量名称空间巡检入口补齐
+
+已完成：
+
+- `POST /api/v1/inspections/namespaces/run`
+
+本轮补充后的行为约束：
+
+- 支持显式传入多个 `namespaces`
+- 支持 `all_namespaces=true` 时对发现结果批量巡检
+- `results` 按 namespace name 排序返回，便于前端稳定展示
+- 单个 namespace 巡检失败时只影响该 namespace 自己
+
+失败隔离策略：
+
+- `run_namespace_batch_inspection` 对每个 namespace 单独执行
+- 如果某个 namespace 的 provider 巡检抛异常：
+  - 整个接口仍返回 `200`
+  - 该 namespace 在 `results` 中标记为 `health_status=error`
+  - 该 namespace 的 `summary.status=error`
+  - 其他 namespace 继续正常返回，不受影响
+
+这样前端可以同时拿到：
+
+- 正常 namespace 的巡检结果
+- 失败 namespace 的错误占位结果
+- 一个稳定排序后的批量结果列表
+
 ### 4. 命名空间巡检页接入真实保存对象
 
 前端已不再只依赖写死的演示卡片。
@@ -205,6 +233,35 @@ npm test -- --run src/pages/NamespaceInspectionPage.test.tsx
 
 - `1 file passed`
 - `3 tests passed`
+
+本轮补充后执行后端批量巡检专项测试：
+
+```bash
+cd /Users/liwenjian1.vendor/Documents/Codex/k8s-inspector
+python3 -m pytest backend/tests/test_inspection_api.py -k "namespace_batch" -v
+```
+
+覆盖点：
+
+- 指定 namespace 批量巡检
+- `all_namespaces=true` 批量巡检
+- 单个 namespace 失败隔离，不影响整个接口
+- 显式传入乱序 namespace 时，`results` 仍按 name 排序
+
+结果：
+
+- `4 passed`
+
+本轮补充后执行后端巡检接口全量测试：
+
+```bash
+cd /Users/liwenjian1.vendor/Documents/Codex/k8s-inspector
+python3 -m pytest backend/tests/test_inspection_api.py -v
+```
+
+结果：
+
+- `11 passed, 1 warning`
 
 ## 当前结论
 

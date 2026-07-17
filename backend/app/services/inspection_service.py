@@ -2,10 +2,12 @@ from sqlalchemy.orm import Session
 
 from app.models import InspectionRecord
 from app.providers.base import InspectionProvider
+from app.services import discovery_service
 from app.services.keyword_service import match_log_text
 from app.schemas.inspection import (
     InspectionRunRequest,
     InspectionTargetType,
+    NamespaceBatchInspectionRequest,
     NamespaceInspectionRequest,
     PodInspectionRequest,
 )
@@ -33,6 +35,82 @@ def run_namespace_inspection(session: Session, provider: InspectionProvider, pay
     result = provider.run_namespace_inspection(payload.namespace, payload.label_selector)
     _attach_namespace_evidence(session, result, payload.namespace, payload.label_selector)
     _save_record(session, "namespace", payload.model_dump(), result)
+    return result
+
+
+def run_namespace_batch_inspection(
+    session: Session,
+    provider: InspectionProvider,
+    payload: NamespaceBatchInspectionRequest,
+) -> dict:
+    discovery = discovery_service.discover_namespaces(provider)
+    summaries_by_name = {item["name"]: item for item in discovery.get("namespaces", [])}
+    requested_namespaces = (
+        [item["name"] for item in discovery.get("namespaces", [])]
+        if payload.all_namespaces
+        else payload.namespaces
+    )
+    sorted_namespaces = sorted(requested_namespaces)
+
+    results: list[dict] = []
+    for namespace in sorted_namespaces:
+        try:
+            inspection = provider.run_namespace_inspection(namespace, None)
+            _attach_namespace_evidence(session, inspection, namespace, None)
+            summary = _build_namespace_batch_summary(
+                namespace=namespace,
+                inspection=inspection,
+                discovered_summary=summaries_by_name.get(namespace),
+            )
+            results.append(
+                {
+                    "summary": summary,
+                    "health_status": inspection["health_status"],
+                    "detail_target": inspection["inspection_target"],
+                }
+            )
+        except Exception:
+            summary = summaries_by_name.get(
+                namespace,
+                {
+                    "name": namespace,
+                    "status": "error",
+                    "pod_count": 0,
+                    "abnormal_pod_count": 0,
+                    "last_inspected_at": discovery["executed_at"],
+                    "labels": {},
+                    "abnormal_categories": [],
+                },
+            ) | {"name": namespace, "status": "error"}
+            results.append(
+                {
+                    "summary": summary,
+                    "health_status": "error",
+                    "detail_target": {
+                        "type": "namespace",
+                        "namespace": namespace,
+                        "pod_name": None,
+                        "label_selector": None,
+                        "saved_target_id": None,
+                        "template_id": None,
+                        "resource_scope": ["pods", "services", "ingresses", "daemonsets", "secrets"],
+                    },
+                }
+            )
+
+    result = {
+        "executed_at": discovery["executed_at"],
+        "all_namespaces": payload.all_namespaces,
+        "requested_namespaces": requested_namespaces,
+        "results": results,
+    }
+    overall_health_status = (
+        "error"
+        if any(item["health_status"] == "error" for item in results)
+        else "warning" if any(item["health_status"] != "healthy" for item in results) else "healthy"
+    )
+    _save_record(session, "namespaces", payload.model_dump(), result | {"health_status": overall_health_status})
+    result.pop("health_status", None)
     return result
 
 
@@ -150,3 +228,76 @@ def _build_evidence_bundle(namespace: str, pod: dict) -> dict:
         "log_hits": pod.get("log_hits", []),
         "related_resources": pod.get("related_resources", []),
     }
+
+
+def _build_namespace_batch_summary(
+    namespace: str,
+    inspection: dict,
+    discovered_summary: dict | None,
+) -> dict:
+    pods = inspection.get("pods", [])
+    abnormal_pod_count = len([pod for pod in pods if pod.get("status") not in {"Running", "healthy"}])
+    abnormal_categories = _derive_namespace_abnormal_categories(inspection)
+
+    return {
+        "name": namespace,
+        "status": inspection["health_status"],
+        "pod_count": len(pods),
+        "abnormal_pod_count": abnormal_pod_count,
+        "last_inspected_at": inspection.get("executed_at"),
+        "labels": (discovered_summary or {}).get("labels", {}),
+        "abnormal_categories": abnormal_categories,
+    }
+
+
+def _derive_namespace_abnormal_categories(inspection: dict) -> list[str]:
+    pods = inspection.get("pods", [])
+    categories: list[str] = []
+
+    if any(_is_abnormal_pod_status(pod.get("status")) for pod in pods):
+        categories.append("pod_status")
+    if any(_has_abnormal_container(container) for pod in pods for container in pod.get("containers", [])):
+        categories.append("container_status")
+    if any(pod.get("events") for pod in pods):
+        categories.append("event")
+    if _has_effective_log_hit(pods):
+        categories.append("log_keyword")
+    if _has_abnormal_related_object(inspection):
+        categories.append("related_object")
+
+    return categories
+
+
+def _is_abnormal_pod_status(status: str | None) -> bool:
+    return str(status or "").lower() not in {"running", "healthy"}
+
+
+def _has_abnormal_container(container: dict) -> bool:
+    state = str(container.get("state") or "").lower()
+    reason = str(container.get("reason") or "").strip()
+    return state != "running" or bool(reason)
+
+
+def _has_abnormal_related_object(inspection: dict) -> bool:
+    namespace_objects = (
+        inspection.get("services", []),
+        inspection.get("ingresses", []),
+        inspection.get("daemonsets", []),
+        inspection.get("tls_secrets", []),
+    )
+    if any(_is_unhealthy_object(item) for objects in namespace_objects for item in objects):
+        return True
+
+    return any(_is_unhealthy_object(item) for pod in inspection.get("pods", []) for item in pod.get("related_resources", []))
+
+
+def _has_effective_log_hit(pods: list[dict]) -> bool:
+    return any(
+        not hit.get("whitelisted")
+        for pod in pods
+        for hit in pod.get("log_hits", [])
+    )
+
+
+def _is_unhealthy_object(resource: dict) -> bool:
+    return str(resource.get("status") or "").lower() != "healthy"

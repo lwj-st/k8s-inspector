@@ -12,21 +12,30 @@ describe("App", () => {
     fetchMock.mockImplementation(async (input: string | URL | Request) => {
       const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
-      if (url.endsWith("/api/v1/overview")) {
+      if (url.endsWith("/api/v1/discovery/namespaces")) {
         return new Response(
           JSON.stringify({
-            cluster_status: "healthy",
-            health_score: 93,
-            last_checked_at: "2026-07-02T12:00:00Z",
-            issues: [
+            executed_at: "2026-07-12T12:00:00Z",
+            namespaces: [
               {
-                name: "ingress-nginx-controller",
-                component: "ingress-nginx",
-                status: "degraded",
-                summary: "controller restarted",
-              }
+                name: "default",
+                status: "healthy",
+                pod_count: 12,
+                abnormal_pod_count: 0,
+                last_inspected_at: null,
+                labels: {},
+                abnormal_categories: [],
+              },
+              {
+                name: "prod-core",
+                status: "warning",
+                pod_count: 18,
+                abnormal_pod_count: 2,
+                last_inspected_at: "2026-07-12T11:30:00Z",
+                labels: { env: "prod" },
+                abnormal_categories: ["pod_status"],
+              },
             ],
-            recent_summary: "Cluster is healthy"
           }),
           {
             status: 200,
@@ -161,7 +170,7 @@ describe("App", () => {
     fetchMock.mockReset();
   });
 
-  it("renders workbench style overview with navigation and quick actions", async () => {
+  it("renders auto inspection home with namespace list", async () => {
     const router = createMemoryRouter(appRoutes, {
       initialEntries: ["/"],
       basename: getRouterBasename("")
@@ -170,17 +179,10 @@ describe("App", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "排障工作台" })).toBeInTheDocument();
-    expect(await screen.findByText("最近异常")).toBeInTheDocument();
-    expect(await screen.findByText("最近使用的模板")).toBeInTheDocument();
-    expect(await screen.findByText("白名单提醒")).toBeInTheDocument();
-    expect(await screen.findByText("ingress-nginx-controller: controller restarted")).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /巡检名称空间/ })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /巡检单个 Pod/ })).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /故障模板检查/ })).toBeInTheDocument();
-    expect(await screen.findByText("ingress 控制器故障")).toBeInTheDocument();
-    expect(await screen.findByText("readiness probe failed")).toBeInTheDocument();
-    expect(await screen.findByText("controller restarted 3 times")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "工作台" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "自动巡检" })).toBeInTheDocument();
+    expect(await screen.findByText("名称空间列表")).toBeInTheDocument();
+    expect(await screen.findByText("default")).toBeInTheDocument();
+    expect(await screen.findByText("prod-core")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "自动巡检" })).toBeInTheDocument();
   });
 });

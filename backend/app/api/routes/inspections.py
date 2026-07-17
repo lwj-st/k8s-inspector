@@ -7,6 +7,8 @@ from app.schemas.inspection import (
     ClusterInspectionResponse,
     InspectionRunRequest,
     InspectionRunResponse,
+    NamespaceBatchInspectionRequest,
+    NamespaceBatchInspectionResponse,
     NamespaceInspectionRequest,
     NamespaceInspectionResponse,
     PodInspectionRequest,
@@ -44,6 +46,17 @@ def run_namespace_inspection(
 def list_namespace_history(session: Session = Depends(get_db_session)) -> list[dict]:
     records = inspection_service.list_history(session, "namespace")
     return [record.result_payload for record in records]
+
+
+@router.post("/inspections/namespaces/run", response_model=NamespaceBatchInspectionResponse)
+def run_namespace_batch_inspection(
+    payload: NamespaceBatchInspectionRequest,
+    session: Session = Depends(get_db_session),
+    provider: InspectionProvider = Depends(get_provider),
+) -> NamespaceBatchInspectionResponse:
+    return NamespaceBatchInspectionResponse.model_validate(
+        inspection_service.run_namespace_batch_inspection(session, provider, payload)
+    )
 
 
 @router.post("/inspections/pod/run", response_model=PodInspectionResponse)

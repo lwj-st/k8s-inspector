@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from fnmatch import fnmatchcase
 
 from sqlalchemy.orm import Session
 
@@ -36,6 +37,11 @@ def _attach_log_hits(session: Session, namespace: str, label_selector: str | Non
     return pod_copy
 
 
+def _pod_matches_target(pod: dict, target: dict) -> bool:
+    pattern = target.get("pod_name_pattern") or target.get("name")
+    return not pattern or fnmatchcase(str(pod.get("name") or ""), str(pattern))
+
+
 def _build_target_context(session: Session, provider: InspectionProvider, template: FaultTemplate) -> dict:
     targets: dict[str, dict] = {}
     for target in template.target_groups:
@@ -48,6 +54,7 @@ def _build_target_context(session: Session, provider: InspectionProvider, templa
             "pods": [
                 _attach_log_hits(session, namespace, label_selector, pod)
                 for pod in inspection["pods"]
+                if _pod_matches_target(pod, target)
             ],
             "related_objects": {
                 "services": inspection["services"],
@@ -57,6 +64,31 @@ def _build_target_context(session: Session, provider: InspectionProvider, templa
             },
         }
     return {"targets": targets}
+
+
+def _build_template_failure_result(template: FaultTemplate, error: Exception) -> dict:
+    return {
+        "template_id": template.id,
+        "template_name": template.name,
+        "matched": False,
+        "matched_conditions": [],
+        "unmatched_conditions": [
+            {
+                "target_ref": condition.get("target_ref"),
+                "condition_type": condition.get("condition_type") or condition.get("type"),
+                "operator": condition.get("operator"),
+                "expected_value": condition.get("expected_value", condition.get("value")),
+                "join_operator": template.joint_rule.get("operator") if template.joint_rule else None,
+                "enabled": condition.get("enabled", True),
+            }
+            for condition in template.match_conditions
+        ],
+        "summary": f"{template.name} 采集失败",
+        "reason": str(error),
+        "suggestion": template.suggestion,
+        "risk_note": template.risk_note,
+        "evidence_refs": [],
+    }
 
 
 def _list_enabled_templates(session: Session, payload: DiagnosisRequest) -> list[FaultTemplate]:
@@ -76,70 +108,73 @@ def run_diagnosis(session: Session, provider: InspectionProvider, payload: Diagn
     evidence_summary: list[dict] = []
 
     for template in templates:
-        matched = match_template(
-            {
-                "target_groups": template.target_groups,
-                "match_conditions": template.match_conditions,
-                "joint_rule": template.joint_rule,
-                "reason": template.reason,
-            },
-            _build_target_context(session, provider, template),
-        )
-        template_match_results.append(
-            {
-                "template_id": template.id,
-                "template_name": template.name,
-                "matched": matched["matched"],
-                "matched_conditions": [
-                    {
-                        "target_ref": condition.get("target_ref"),
-                        "condition_type": condition.get("condition_type") or condition.get("type"),
-                        "operator": condition.get("operator"),
-                        "expected_value": condition.get("expected_value", condition.get("value")),
-                        "join_operator": template.joint_rule.get("operator") if template.joint_rule else None,
-                        "enabled": True,
-                    }
-                    for condition in matched["matched_conditions"]
-                ],
-                "unmatched_conditions": [
-                    {
-                        "target_ref": condition.get("target_ref"),
-                        "condition_type": condition.get("condition_type") or condition.get("type"),
-                        "operator": condition.get("operator"),
-                        "expected_value": condition.get("expected_value", condition.get("value")),
-                        "join_operator": template.joint_rule.get("operator") if template.joint_rule else None,
-                        "enabled": True,
-                    }
-                    for condition in matched["unmatched_conditions"]
-                ],
-                "summary": f"{template.name} {'命中' if matched['matched'] else '未命中'}",
-                "reason": template.reason,
-                "suggestion": template.suggestion,
-                "risk_note": template.risk_note,
-                "evidence_refs": matched["evidence"],
-            }
-        )
-        if matched["matched"]:
-            evidence_summary.extend(matched["evidence"])
-            matches.append(
+        try:
+            matched = match_template(
+                {
+                    "target_groups": template.target_groups,
+                    "match_conditions": template.match_conditions,
+                    "joint_rule": template.joint_rule,
+                    "reason": template.reason,
+                },
+                _build_target_context(session, provider, template),
+            )
+            template_match_results.append(
                 {
                     "template_id": template.id,
                     "template_name": template.name,
-                    "reason": template.reason,
-                    "suggestion": template.suggestion,
-                    "command": template.command,
-                    "risk_note": template.risk_note,
-                    "evidence": matched["evidence"],
+                    "matched": matched["matched"],
                     "matched_conditions": [
-                        _normalize_condition_result(condition, True, [item for item in matched["evidence"] if item.get("type") == (condition.get("type") or condition.get("condition_type"))])
+                        {
+                            "target_ref": condition.get("target_ref"),
+                            "condition_type": condition.get("condition_type") or condition.get("type"),
+                            "operator": condition.get("operator"),
+                            "expected_value": condition.get("expected_value", condition.get("value")),
+                            "join_operator": template.joint_rule.get("operator") if template.joint_rule else None,
+                            "enabled": True,
+                        }
                         for condition in matched["matched_conditions"]
                     ],
                     "unmatched_conditions": [
-                        _normalize_condition_result(condition, False, [])
+                        {
+                            "target_ref": condition.get("target_ref"),
+                            "condition_type": condition.get("condition_type") or condition.get("type"),
+                            "operator": condition.get("operator"),
+                            "expected_value": condition.get("expected_value", condition.get("value")),
+                            "join_operator": template.joint_rule.get("operator") if template.joint_rule else None,
+                            "enabled": True,
+                        }
                         for condition in matched["unmatched_conditions"]
                     ],
+                    "summary": f"{template.name} {'命中' if matched['matched'] else '未命中'}",
+                    "reason": template.reason,
+                    "suggestion": template.suggestion,
+                    "risk_note": template.risk_note,
+                    "evidence_refs": matched["evidence"],
                 }
             )
+            if matched["matched"]:
+                evidence_summary.extend(matched["evidence"])
+                matches.append(
+                    {
+                        "template_id": template.id,
+                        "template_name": template.name,
+                        "reason": template.reason,
+                        "suggestion": template.suggestion,
+                        "command": template.command,
+                        "risk_note": template.risk_note,
+                        "evidence": matched["evidence"],
+                        "matched_conditions": [
+                            _normalize_condition_result(condition, True, [item for item in matched["evidence"] if item.get("type") == (condition.get("type") or condition.get("condition_type"))])
+                            for condition in matched["matched_conditions"]
+                        ],
+                        "unmatched_conditions": [
+                            _normalize_condition_result(condition, False, [])
+                            for condition in matched["unmatched_conditions"]
+                        ],
+                    }
+                )
+        except Exception as error:
+            template_match_results.append(_build_template_failure_result(template, error))
 
     settings = session.get(SystemSetting, 1)
     llm_supplement = None

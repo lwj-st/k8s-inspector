@@ -4,6 +4,8 @@ import { ignoreWhitelistLogHit } from "../api/client";
 import type { KeywordHit, SavedInspectionTarget } from "../api/types";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
+import { DiagnosisResultPanel } from "../features/diagnosis/DiagnosisResultPanel";
+import { useRunDiagnosis } from "../features/diagnosis/useRunDiagnosis";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 import { useSavedInspectionTargets } from "../features/inspections/useSavedInspectionTargets";
 
@@ -37,7 +39,9 @@ export function NamespaceInspectionPage() {
   const [ignoringLogKeys, setIgnoringLogKeys] = useState<string[]>([]);
   const [ignoreMessage, setIgnoreMessage] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [diagnosisVisible, setDiagnosisVisible] = useState(false);
   const { data, loading, error, submit } = useRunNamespaceInspection();
+  const diagnosis = useRunDiagnosis();
   const {
     targets,
     loading: targetsLoading,
@@ -68,6 +72,7 @@ export function NamespaceInspectionPage() {
     setIgnoredLogKeys([]);
     setIgnoringLogKeys([]);
     setIgnoreMessage(null);
+    setDiagnosisVisible(false);
   }
 
   function applyQuickTarget(target: SavedInspectionTarget) {
@@ -190,6 +195,18 @@ export function NamespaceInspectionPage() {
     }
   }
 
+  async function handleRunDiagnosis() {
+    if (!data) {
+      return;
+    }
+
+    setDiagnosisVisible(true);
+    await diagnosis.submit({
+      namespace: data.namespace,
+      scope: data.inspection_target.label_selector ?? null,
+    });
+  }
+
   return (
     <section className="page-section">
       <header className="section-header">
@@ -309,6 +326,29 @@ export function NamespaceInspectionPage() {
               </p>
             </article>
           </div>
+          <section className="panel panel-muted">
+            <div className="section-header">
+              <div>
+                <h3>模板匹配</h3>
+                <p className="inline-note">基于当前名称空间巡检范围运行故障模板，不展示完整日志和完整 describe。</p>
+              </div>
+              {diagnosis.data ? <StatusBadge status={diagnosis.data.status} /> : null}
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={() => void handleRunDiagnosis()} disabled={diagnosis.loading}>
+                {diagnosis.loading ? "模板匹配中..." : "模板匹配"}
+              </button>
+            </div>
+            {diagnosisVisible ? (
+              <DiagnosisResultPanel
+                data={diagnosis.data}
+                loading={diagnosis.loading}
+                error={diagnosis.error}
+                title="当前范围模板匹配结果"
+                idleMessage="点击模板匹配后，系统会按当前名称空间和标签范围检查已录入模板。"
+              />
+            ) : null}
+          </section>
           <div className="inspection-layout">
             <div className="panel">
               <div className="section-header">

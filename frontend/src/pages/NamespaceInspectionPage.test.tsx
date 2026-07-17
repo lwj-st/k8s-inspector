@@ -114,6 +114,98 @@ describe("NamespaceInspectionPage", () => {
         );
       }
 
+      if (url.endsWith("/diagnoses/run") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: "matched",
+              namespace: "demo",
+              direction: "template_check",
+              scope: "app=demo-api",
+              executed_at: "2026-07-17T09:00:00Z",
+              inspection_target: {
+                type: "template",
+                namespace: "demo",
+                pod_name: null,
+                label_selector: "app=demo-api",
+                saved_target_id: null,
+                template_id: null,
+                resource_scope: ["pods"],
+              },
+              matches: [
+                {
+                  template_id: 1,
+                  template_name: "API 启动失败模板",
+                  reason: "启动依赖不可达",
+                  suggestion: "检查数据库与网络",
+                  command: null,
+                  risk_note: null,
+                  evidence: [{ type: "log_keyword", pod: "demo-api-1", matched_text: "database connection refused" }],
+                  matched_conditions: [
+                    {
+                      target_ref: "api",
+                      type: "log_keyword",
+                      operator: "contains",
+                      value: "connection refused",
+                      matched: true,
+                      evidence: [{ type: "log_keyword", pod: "demo-api-1", matched_text: "database connection refused" }],
+                    },
+                  ],
+                  unmatched_conditions: [],
+                },
+              ],
+              template_match_results: [
+                {
+                  template_id: 1,
+                  template_name: "API 启动失败模板",
+                  matched: true,
+                  matched_conditions: [
+                    {
+                      target_ref: "api",
+                      type: "log_keyword",
+                      operator: "contains",
+                      value: "connection refused",
+                      matched: true,
+                      evidence: [{ type: "log_keyword", pod: "demo-api-1", matched_text: "database connection refused" }],
+                    },
+                  ],
+                  unmatched_conditions: [],
+                  summary: "日志关键字已命中",
+                  reason: "启动依赖不可达",
+                  suggestion: "检查数据库与网络",
+                  risk_note: null,
+                  evidence_refs: [{ type: "log_keyword", pod: "demo-api-1", matched_text: "database connection refused" }],
+                },
+                {
+                  template_id: 2,
+                  template_name: "Worker 堵塞模板",
+                  matched: false,
+                  matched_conditions: [],
+                  unmatched_conditions: [
+                    {
+                      target_ref: "worker",
+                      type: "pod_status",
+                      operator: "equals",
+                      value: "Failed",
+                      matched: false,
+                      evidence: [],
+                    },
+                  ],
+                  summary: "worker 当前没有 Failed 状态",
+                  reason: "后台任务执行失败",
+                  suggestion: "检查 worker 依赖",
+                  risk_note: null,
+                  evidence_refs: [],
+                },
+              ],
+              evidence_summary: [{ type: "namespace", value: "demo" }],
+              llm_supplement: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -215,6 +307,32 @@ describe("NamespaceInspectionPage", () => {
     expect(await screen.findByText("原始日志摘要")).toBeInTheDocument();
     expect(await screen.findByText("plain worker output without keyword hit")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "忽略此报错" })).not.toBeInTheDocument();
+  });
+
+  it("runs template matching inside namespace inspection and renders matched and unmatched templates", async () => {
+    render(<NamespaceInspectionPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /使用 demo 全名称空间/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "模板匹配" }));
+
+    const diagnosisRequest = await waitFor(() =>
+      fetchMock.mock.calls.find(
+        ([input, init]) => String(input).endsWith("/diagnoses/run") && init?.method === "POST",
+      ),
+    );
+
+    expect(diagnosisRequest).toBeDefined();
+    expect(JSON.parse(String(diagnosisRequest?.[1]?.body))).toEqual({
+      namespace: "demo",
+      scope: "app=demo-api",
+    });
+
+    expect(await screen.findByText("当前范围模板匹配结果")).toBeInTheDocument();
+    expect(await screen.findByText("API 启动失败模板")).toBeInTheDocument();
+    expect(await screen.findByText("Worker 堵塞模板")).toBeInTheDocument();
+    expect(await screen.findByText(/对象组 api 在日志中包含 connection refused/)).toBeInTheDocument();
+    expect(await screen.findByText(/对象组 worker 的 Pod 状态等于 Failed/)).toBeInTheDocument();
+    expect(await screen.findByText("worker 当前没有 Failed 状态")).toBeInTheDocument();
   });
 
   it("allows saving the current namespace target", async () => {

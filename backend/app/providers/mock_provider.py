@@ -62,6 +62,40 @@ def build_demo_pod(pod_name: str = "demo-api-7c8f6f7c6b-fh2ns") -> dict:
 
 
 class MockInspectionProvider:
+    def list_namespaces(self) -> dict:
+        return {
+            "executed_at": now_iso(),
+            "namespaces": [
+                {
+                    "name": "demo",
+                    "status": "warning",
+                    "pod_count": 1,
+                    "abnormal_pod_count": 1,
+                    "last_inspected_at": now_iso(),
+                    "labels": {"team": "platform"},
+                    "abnormal_categories": ["pod_status", "log_keyword"],
+                },
+                {
+                    "name": "prod-core",
+                    "status": "healthy",
+                    "pod_count": 4,
+                    "abnormal_pod_count": 0,
+                    "last_inspected_at": now_iso(),
+                    "labels": {"team": "platform", "environment": "production"},
+                    "abnormal_categories": [],
+                },
+                {
+                    "name": "kube-system",
+                    "status": "healthy",
+                    "pod_count": 6,
+                    "abnormal_pod_count": 0,
+                    "last_inspected_at": now_iso(),
+                    "labels": {"team": "infrastructure"},
+                    "abnormal_categories": [],
+                },
+            ],
+        }
+
     def get_overview(self) -> dict:
         return {
             "health_status": "warning",

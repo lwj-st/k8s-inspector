@@ -218,6 +218,152 @@ python3 -m pytest -q backend/tests
 
 后续 agent 不要再扩一套新的模板条件字段。
 
+## 追加记录：2026-07-17 slice 6 手动模板匹配入口
+
+### 1. 本轮目标
+
+根据 `docs/superpowers/plans/2026-07-17-auto-inspection-slice-5-acceptance-and-slice-6-instructions.md`，本轮只补前端手动模板匹配入口与结果展示，不改后端 matcher 语义，不把诊断结果塞回模板录入页。
+
+本轮只做：
+
+1. 在名称空间巡检页增加“模板匹配”入口
+2. 复用诊断接口结果，展示命中模板与未命中模板
+3. 展示每个模板的命中条件、未命中条件、证据摘要、执行状态
+4. 补齐前端测试与构建验证
+
+本轮不做：
+
+1. 完整日志原文
+2. 完整 describe 原文
+3. AI 补充诊断交互
+4. 自动定时诊断
+5. 模板录入器能力扩展
+
+### 2. 已落地实现
+
+新增可复用结果面板：
+
+- `frontend/src/features/diagnosis/DiagnosisResultPanel.tsx`
+
+职责：
+
+1. 统一承接 `DiagnosisResponse`
+2. 处理 4 种前端状态：
+   - idle
+   - loading
+   - error
+   - result
+3. 统一展示：
+   - 命中模板
+   - 未命中模板
+   - 命中条件
+   - 未命中条件
+   - 模板级证据摘要
+   - 全局证据摘要
+
+这样 `DiagnosisPage` 和 `NamespaceInspectionPage` 不再各自拼一套模板结果 UI。
+
+### 3. 名称空间巡检页新增模板匹配入口
+
+已调整：
+
+- `frontend/src/pages/NamespaceInspectionPage.tsx`
+
+行为：
+
+1. 只有完成一次名称空间巡检后，页面中部才会出现“模板匹配”区域
+2. 点击“模板匹配”后调用：
+   - `POST /api/v1/diagnoses/run`
+3. 请求参数来自当前巡检范围：
+   - `namespace = 当前巡检 namespace`
+   - `scope = 当前巡检 label_selector`
+4. 结果以内联紧凑面板方式展示，不跳新页，不展开完整日志
+
+这样用户在看名称空间异常 Pod 时，可以直接继续判断“这是不是某个已录入故障模板”。
+
+### 4. 独立模板检查页已同步复用结果面板
+
+已调整：
+
+- `frontend/src/pages/DiagnosisPage.tsx`
+
+当前页面仍然保留“按已录入模板直接检查”的单按钮入口，但结果展示改成复用统一面板，避免：
+
+1. 命名空间巡检页和模板检查页展示不一致
+2. 只展示命中模板、不展示未命中模板
+3. loading / error / empty 状态表现分裂
+
+### 5. 测试覆盖
+
+已补测试：
+
+- `frontend/src/pages/DiagnosisPage.test.tsx`
+- `frontend/src/pages/NamespaceInspectionPage.test.tsx`
+
+新增覆盖点：
+
+1. 模板检查页：
+   - 命中模板
+   - 未命中模板
+   - loading
+   - failure
+   - empty
+2. 名称空间巡检页：
+   - 手动触发模板匹配
+   - 请求参数带当前 namespace / label scope
+   - 内联展示命中模板与未命中模板
+
+### 6. 本轮边界结论
+
+本轮仍保持边界清晰：
+
+1. 模板录入器只负责录入模板，不展示诊断运行结果
+2. 巡检页只负责触发并查看当前范围诊断结果，不修改模板定义
+3. 诊断结果面板只负责解释后端返回，不自己做模板命中判断
+4. 模板匹配结果只展示摘要证据，不展示完整日志和完整 describe
+
+后续 agent 如果继续做这块，应继续遵守：
+
+1. 不要把模板录入页改成“录入 + 运行 + 结果”三合一大页
+2. 不要让前端自己推断模板是否命中
+3. 不要重新引入手工填写模板检查 namespace 的旧交互
+
+### 7. 本轮验收命令
+
+已执行：
+
+```bash
+cd /Users/liwenjian1.vendor/Documents/Codex/k8s-inspector/frontend
+npm test -- --run
+```
+
+结果：
+
+- `8 files passed`
+- `41 tests passed`
+
+已执行：
+
+```bash
+cd /Users/liwenjian1.vendor/Documents/Codex/k8s-inspector/frontend
+npm run build
+```
+
+结果：
+
+- 前端生产构建通过
+
+### 8. 协作提醒
+
+当前工作区里还有其他 agent 的未提交改动，例如：
+
+- `backend/`
+- `docs/superpowers/plans/`
+- `frontend/src/api/`
+- `frontend/src/styles.css`
+
+本轮未回退这些改动，也未尝试整理它们。后续合并时应按功能边界分别审阅，不要把本轮“模板匹配入口”与其他切片混在一起判断。
+
 ### 2. 与《关键字库与白名单》协同
 
 需要继续保持：

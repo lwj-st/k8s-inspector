@@ -1,4 +1,5 @@
 __all__ = [
+    "discovery_service",
     "diagnosis_service",
     "inspection_service",
     "keyword_service",

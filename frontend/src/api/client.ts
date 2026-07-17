@@ -1,9 +1,13 @@
 import { appConfig } from "../app/config";
 import type {
+  NamespaceBatchInspectionRequest,
+  NamespaceBatchInspectionResponse,
   ClusterInspectionResponse,
+  DiagnosisRequest,
   DiagnosisResponse,
   FaultTemplate,
   KeywordRule,
+  NamespaceDiscoveryResponse,
   NamespaceInspectionResponse,
   OverviewResponse,
   PodInspectionResponse,
@@ -11,6 +15,8 @@ import type {
   SettingsResponse,
   SystemStatusResponse,
   Whitelist,
+  WhitelistCreate,
+  WhitelistIgnoreCreate,
   KeywordHitSeverity,
 } from "./types";
 
@@ -54,10 +60,23 @@ export function runClusterInspection(): Promise<ClusterInspectionResponse> {
   });
 }
 
-export function runNamespaceInspection(namespace: string, labelSelector: string): Promise<NamespaceInspectionResponse> {
+export function discoverNamespaces(): Promise<NamespaceDiscoveryResponse> {
+  return request("/discovery/namespaces");
+}
+
+export function runNamespaceInspection(namespace: string, labelSelector: string | null): Promise<NamespaceInspectionResponse> {
   return request("/inspections/namespace/run", {
     method: "POST",
     body: JSON.stringify({ namespace, label_selector: labelSelector || null }),
+  });
+}
+
+export function runNamespaceBatchInspection(
+  payload: NamespaceBatchInspectionRequest,
+): Promise<NamespaceBatchInspectionResponse> {
+  return request("/inspections/namespaces/run", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -68,7 +87,7 @@ export function runPodInspection(namespace: string, podName: string): Promise<Po
   });
 }
 
-export function runDiagnosis(payload: { namespace?: string | null; scope?: string | null; template_ids?: number[] } = {}): Promise<DiagnosisResponse> {
+export function runDiagnosis(payload: DiagnosisRequest = {}): Promise<DiagnosisResponse> {
   return request("/diagnoses/run", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -258,14 +277,7 @@ export function importSavedInspectionTargets(
   });
 }
 
-export function ignoreWhitelistLogHit(payload: {
-  namespace: string;
-  label_selector?: string | null;
-  pod_name_pattern?: string | null;
-  container_name?: string | null;
-  keyword: string;
-  note?: string | null;
-}): Promise<Whitelist> {
+export function ignoreWhitelistLogHit(payload: WhitelistIgnoreCreate): Promise<Whitelist> {
   return request("/whitelists/ignore", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -349,15 +361,7 @@ export function listWhitelists(): Promise<Whitelist[]> {
   return request("/whitelists");
 }
 
-export function createWhitelist(payload: {
-  namespace: string;
-  label_selector?: string | null;
-  pod_name_pattern?: string | null;
-  container_name?: string | null;
-  keyword: string;
-  enabled: boolean;
-  note?: string | null;
-}): Promise<Whitelist> {
+export function createWhitelist(payload: WhitelistCreate): Promise<Whitelist> {
   return request("/whitelists", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -366,15 +370,7 @@ export function createWhitelist(payload: {
 
 export function updateWhitelist(
   whitelistId: number,
-  payload: {
-    namespace: string;
-    label_selector?: string | null;
-    pod_name_pattern?: string | null;
-    container_name?: string | null;
-    keyword: string;
-    enabled: boolean;
-    note?: string | null;
-  },
+  payload: WhitelistCreate,
 ): Promise<Whitelist> {
   return request(`/whitelists/${whitelistId}`, {
     method: "PUT",
@@ -393,15 +389,7 @@ export function exportWhitelists(): Promise<Whitelist[]> {
 }
 
 export function importWhitelists(
-  payload: Array<{
-    namespace: string;
-    label_selector?: string | null;
-    pod_name_pattern?: string | null;
-    container_name?: string | null;
-    keyword: string;
-    enabled: boolean;
-    note?: string | null;
-  }>,
+  payload: WhitelistCreate[],
 ): Promise<Whitelist[]> {
   return request("/whitelists/import", {
     method: "POST",

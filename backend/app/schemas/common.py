@@ -26,6 +26,14 @@ class KeywordHitSeverity(str, Enum):
     critical = "critical"
 
 
+class AbnormalCategory(str, Enum):
+    pod_status = "pod_status"
+    container_status = "container_status"
+    event = "event"
+    log_keyword = "log_keyword"
+    related_object = "related_object"
+
+
 class TemplateConditionType(str, Enum):
     pod_status = "pod_status"
     log_keyword = "log_keyword"

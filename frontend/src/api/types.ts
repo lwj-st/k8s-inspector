@@ -1,5 +1,6 @@
 export type InspectionTargetType = "namespace" | "pod" | "template";
 export type KeywordHitSeverity = "info" | "warning" | "error" | "critical";
+export type AbnormalCategory = "pod_status" | "container_status" | "event" | "log_keyword" | "related_object";
 export type TemplateConditionType =
   | "pod_status"
   | "log_keyword"
@@ -130,6 +131,21 @@ export type ClusterInspectionResponse = {
   results: ClusterInspectionResult[];
 };
 
+export type NamespaceSummary = {
+  name: string;
+  status: string;
+  pod_count: number;
+  abnormal_pod_count: number;
+  last_inspected_at?: string | null;
+  labels: Record<string, string>;
+  abnormal_categories: AbnormalCategory[];
+};
+
+export type NamespaceDiscoveryResponse = {
+  executed_at: string;
+  namespaces: NamespaceSummary[];
+};
+
 export type InspectedPod = {
   name: string;
   status: string;
@@ -174,6 +190,24 @@ export type NamespaceInspectionResponse = {
   daemonsets: InspectedObject[];
 };
 
+export type NamespaceBatchInspectionRequest = {
+  namespaces: string[];
+  all_namespaces?: boolean;
+};
+
+export type NamespaceBatchInspectionResult = {
+  summary: NamespaceSummary;
+  health_status: string;
+  detail_target: InspectionTarget;
+};
+
+export type NamespaceBatchInspectionResponse = {
+  executed_at: string;
+  all_namespaces: boolean;
+  requested_namespaces: string[];
+  results: NamespaceBatchInspectionResult[];
+};
+
 export type PodInspectionResponse = {
   inspection_target: InspectionTarget;
   namespace: string;
@@ -207,6 +241,14 @@ export type DiagnosisMatch = {
     matched: boolean;
     evidence: Array<Record<string, unknown>>;
   }>;
+};
+
+export type DiagnosisRequest = {
+  namespace?: string | null;
+  direction?: DiagnosisDirection;
+  scope?: string | null;
+  template_id?: number | null;
+  template_ids?: number[];
 };
 
 export type DiagnosisResponse = {
@@ -259,6 +301,25 @@ export type Whitelist = {
   note?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+};
+
+export type WhitelistCreate = {
+  namespace: string;
+  label_selector?: string | null;
+  pod_name_pattern?: string | null;
+  container_name?: string | null;
+  keyword: string;
+  enabled: boolean;
+  note?: string | null;
+};
+
+export type WhitelistIgnoreCreate = {
+  namespace: string;
+  label_selector?: string | null;
+  pod_name_pattern?: string | null;
+  container_name?: string | null;
+  keyword: string;
+  note?: string | null;
 };
 
 export type SettingsResponse = {

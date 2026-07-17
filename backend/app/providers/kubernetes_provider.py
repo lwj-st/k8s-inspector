@@ -43,6 +43,44 @@ class KubernetesInspectionProvider:
     def _serialize(self, obj: object) -> str:
         return str(self.api_client.sanitize_for_serialization(obj))
 
+    def _is_abnormal_pod(self, pod: client.V1Pod) -> bool:
+        phase = pod.status.phase or "Unknown"
+        if phase != "Running" and not self._is_non_problem_terminal_pod(pod):
+            return True
+        for status in getattr(pod.status, "container_statuses", None) or []:
+            if status.state and status.state.waiting and status.state.waiting.reason:
+                return True
+        return False
+
+    def list_namespaces(self) -> dict:
+        namespaces = self.core.list_namespace(_request_timeout=self.settings.k8s_request_timeout).items
+        results: list[dict] = []
+        executed_at = now_iso()
+
+        for namespace in namespaces:
+            namespace_name = namespace.metadata.name
+            pods = self.core.list_namespaced_pod(
+                namespace=namespace_name,
+                _request_timeout=self.settings.k8s_request_timeout,
+            ).items
+            abnormal_pod_count = sum(1 for pod in pods if self._is_abnormal_pod(pod))
+            results.append(
+                {
+                    "name": namespace_name,
+                    "status": "warning" if abnormal_pod_count > 0 else "healthy",
+                    "pod_count": len(pods),
+                    "abnormal_pod_count": abnormal_pod_count,
+                    "last_inspected_at": executed_at,
+                    "labels": namespace.metadata.labels or {},
+                    "abnormal_categories": ["pod_status"] if abnormal_pod_count > 0 else [],
+                }
+            )
+
+        return {
+            "executed_at": executed_at,
+            "namespaces": results,
+        }
+
     def _pod_issue_summary(self, pod: client.V1Pod) -> tuple[str, str | None]:
         phase = pod.status.phase or "Unknown"
         container_statuses = pod.status.container_statuses or []
@@ -241,7 +279,9 @@ class KubernetesInspectionProvider:
 
     def _is_non_problem_terminal_pod(self, pod: client.V1Pod) -> bool:
         phase = pod.status.phase or "Unknown"
-        owner_kinds = {owner.kind for owner in (pod.metadata.owner_references or []) if owner.kind}
+        metadata = getattr(pod, "metadata", None)
+        owner_references = getattr(metadata, "owner_references", None) or []
+        owner_kinds = {owner.kind for owner in owner_references if getattr(owner, "kind", None)}
         return phase == "Succeeded" and "Job" in owner_kinds
 
     def get_overview(self) -> dict:
@@ -398,9 +438,18 @@ class KubernetesInspectionProvider:
             if secret.type and "tls" in secret.type.lower()
         ]
 
-        health_status = "healthy"
-        if any(item["status"] not in {"Running", "healthy"} for item in pod_results):
-            health_status = "warning"
+        all_resource_results = [
+            *pod_results,
+            *service_results,
+            *ingress_results,
+            *daemonset_results,
+            *secret_results,
+        ]
+        health_status = (
+            "warning"
+            if any(item["status"] not in {"Running", "healthy"} for item in all_resource_results)
+            else "healthy"
+        )
 
         return {
             "inspection_target": {

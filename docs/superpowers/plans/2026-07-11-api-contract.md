@@ -50,7 +50,22 @@
 - `restart_count`
 - `related_object_status`
 
-### 2.4 TemplateCondition.operator
+### 2.4 AbnormalCategory
+
+允许值：
+
+- `pod_status`
+- `container_status`
+- `event`
+- `log_keyword`
+- `related_object`
+
+说明：
+
+- 该枚举用于名称空间自动发现摘要和批量名称空间巡检摘要。
+- 这里只表达异常归类，不替代 `KeywordHit`、`EvidenceBundle` 或模板条件语义。
+
+### 2.5 TemplateCondition.operator
 
 允许值：
 
@@ -60,7 +75,7 @@
 - `gte`
 - `lte`
 
-### 2.5 TemplateCondition.join_operator
+### 2.6 TemplateCondition.join_operator
 
 允许值：
 
@@ -103,6 +118,104 @@
 
 - 模板中的 `log_keyword` 条件必须使用 `KeywordHit`
 - 默认只使用 `whitelisted=false` 的命中
+
+### 3.2E WhitelistIgnoreCreate / WhitelistRead
+
+一键忽略主字段：
+
+- `namespace`
+- `label_selector`
+- `pod_name_pattern`
+- `container_name`
+- `keyword`
+- `note`
+
+白名单读模型主字段：
+
+- `id`
+- `namespace`
+- `label_selector`
+- `pod_name_pattern`
+- `container_name`
+- `keyword`
+- `enabled`
+- `note`
+
+说明：
+
+- 自动巡检证据抽屉的一键忽略优先复用现有白名单契约，不新增重复模型。
+- 推荐默认忽略范围为 `namespace + pod_name_pattern + container_name + keyword`。
+- 如果当前巡检详情来自 `detail_target.label_selector`，一键忽略请求应同时带上该 `label_selector`。
+- `pod_name_pattern` 当前默认可直接使用当前 Pod 名，后续如需通配规则编辑，再由 UI 单独扩展。
+- `note` 默认可写入来源说明，例如“自动巡检证据抽屉忽略”。
+- 创建后返回 `WhitelistRead`，后续是否生效由白名单过滤逻辑决定。
+
+### 3.2A NamespaceSummary
+
+主字段：
+
+- `name`
+- `status`
+- `pod_count`
+- `abnormal_pod_count`
+- `last_inspected_at`
+- `labels`
+- `abnormal_categories`
+
+说明：
+
+- 用于自动发现名称空间列表和批量名称空间巡检摘要。
+- `status` 表示名称空间摘要状态，不等价于某一个 Pod 的 phase。
+- `abnormal_categories` 只表达该名称空间当前已发现的异常类型集合。
+
+### 3.2B NamespaceDiscoveryResponse
+
+主字段：
+
+- `executed_at`
+- `namespaces`
+
+说明：
+
+- 对应自动发现名称空间接口。
+- 返回轻量摘要，不内联 Pod 详情。
+
+### 3.2C NamespaceBatchInspectionRequest
+
+主字段：
+
+- `namespaces`
+- `all_namespaces`
+
+规则：
+
+- `all_namespaces=true` 时允许 `namespaces=[]`。
+- `all_namespaces=false` 时必须显式传入至少一个 namespace。
+- 该契约用于名称空间批量巡检主流程，不依赖 `SavedInspectionTarget`。
+
+### 3.2D NamespaceBatchInspectionResponse
+
+主字段：
+
+- `executed_at`
+- `all_namespaces`
+- `requested_namespaces`
+- `results`
+
+结果项主字段：
+
+- `summary`
+- `health_status`
+- `detail_target`
+
+说明：
+
+- `results[].summary` 复用 `NamespaceSummary`。
+- `results[].detail_target` 是详情引用目标，供后续进入单名称空间详情或详情抽屉。
+- 自动巡检页下钻 namespace 详情时，前端应取 `results[].detail_target.namespace` 作为 `POST /api/v1/inspections/namespace/run` 的 `namespace` 参数。
+- 如果 `results[].detail_target.label_selector` 有值，前端在二次请求中可一并透传；没有值时传 `null` 即可。
+- 批量结果当前只冻结“摘要 + 详情引用”，不在此层内联完整 `NamespaceInspectionResponse`。
+- namespace 详情统一通过二次请求获取，`NamespaceBatchInspectionResponse` 不承担完整详情载荷。
 
 ### 3.3 EvidenceBundle
 
@@ -179,6 +292,63 @@
 - `target_groups` 兼容输入字段可使用 `ref/name/object_scope`，其中 `object_scope` 会在 `FaultTemplate` 归一化阶段转换为 `targets[].resource_scope`
 - `target_groups` 兼容输出字段为 `ref/name/object_scope`，不会输出 `resource_scope`
 
+模板匹配边界：
+
+- `targets[]` / `target_groups[]` 支持为每个目标单独指定 `namespace` 和 `label_selector`。
+- 一个模板可以包含多个 target group，条件通过 `target_ref` 绑定到对应目标。
+- 当某个目标范围内匹配到多个 Pod 时，条件语义为“任一 Pod 命中即可”，而不是要求全部 Pod 同时命中。
+
+### 3.7 DiagnosisRequest / DiagnosisResponse
+
+DiagnosisRequest 主字段：
+
+- `namespace`
+- `direction`
+- `scope`
+- `template_id`
+- `template_ids`
+
+DiagnosisResponse 主字段：
+
+- `status`
+- `inspection_target`
+- `namespace`
+- `direction`
+- `scope`
+- `matches`
+- `template_match_results`
+- `evidence_summary`
+
+DiagnosisMatch 主字段：
+
+- `template_id`
+- `template_name`
+- `reason`
+- `suggestion`
+- `command`
+- `risk_note`
+- `evidence`
+- `matched_conditions`
+- `unmatched_conditions`
+
+DiagnosisConditionResult 主字段：
+
+- `target_ref`
+- `type`
+- `operator`
+- `value`
+- `matched`
+- `evidence`
+
+说明：
+
+- 手动模板匹配当前主方向为 `direction=template_check`。
+- 诊断服务按模板目标中的 `namespace` 和 `label_selector` 采集证据，不要求用户在检查页重复输入模板范围。
+- `matches` 用于前端突出“已命中模板”。
+- `template_match_results` 保留每个模板的 matched/unmatched 条件拆解，适合前端展示“为什么命中 / 为什么未命中”。
+- `evidence_summary` 只返回匹配证据摘要，不内联完整 namespace 巡检详情。
+- 本层不新增 AI 总结字段，现有 `llm_supplement` 仅保留兼容，不作为本切片主契约。
+
 ## 4. 前后端对齐要求
 
 前端类型文件：
@@ -199,6 +369,7 @@
 
 - 前端联合类型必须覆盖后端枚举
 - 后端新增共享字段时，先改本文档，再改 schema，再改前端类型
+- 自动发现名称空间和批量名称空间巡检主流程不得再把 `SavedInspectionTarget` 作为必填前置
 
 ## 5. 禁止事项
 

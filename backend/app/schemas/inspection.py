@@ -2,7 +2,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.schemas.common import EvidenceBundle, InspectionTarget, KeywordHit
+from app.schemas.common import AbnormalCategory, EvidenceBundle, InspectionTarget, KeywordHit
 
 
 class InspectionTargetType(str, Enum):
@@ -29,6 +29,17 @@ class ClusterInspectionResponse(BaseModel):
 class NamespaceInspectionRequest(BaseModel):
     namespace: str = Field(min_length=1)
     label_selector: str | None = None
+
+
+class NamespaceBatchInspectionRequest(BaseModel):
+    namespaces: list[str] = Field(default_factory=list)
+    all_namespaces: bool = False
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> "NamespaceBatchInspectionRequest":
+        if self.all_namespaces or self.namespaces:
+            return self
+        raise ValueError("namespaces is required when all_namespaces is false")
 
 
 class PodInspectionRequest(BaseModel):
@@ -87,6 +98,21 @@ class InspectedObject(BaseModel):
     summary: str
 
 
+class NamespaceSummary(BaseModel):
+    name: str
+    status: str
+    pod_count: int = 0
+    abnormal_pod_count: int = 0
+    last_inspected_at: str | None = None
+    labels: dict[str, str] = Field(default_factory=dict)
+    abnormal_categories: list[AbnormalCategory] = Field(default_factory=list)
+
+
+class NamespaceDiscoveryResponse(BaseModel):
+    executed_at: str
+    namespaces: list[NamespaceSummary] = Field(default_factory=list)
+
+
 class NamespaceInspectionResponse(BaseModel):
     inspection_target: InspectionTarget
     namespace: str
@@ -99,6 +125,19 @@ class NamespaceInspectionResponse(BaseModel):
     ingresses: list[InspectedObject]
     tls_secrets: list[InspectedObject]
     daemonsets: list[InspectedObject]
+
+
+class NamespaceBatchInspectionResult(BaseModel):
+    summary: NamespaceSummary
+    health_status: str
+    detail_target: InspectionTarget
+
+
+class NamespaceBatchInspectionResponse(BaseModel):
+    executed_at: str
+    all_namespaces: bool = False
+    requested_namespaces: list[str] = Field(default_factory=list)
+    results: list[NamespaceBatchInspectionResult] = Field(default_factory=list)
 
 
 class PodInspectionResponse(BaseModel):
