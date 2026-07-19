@@ -35,6 +35,9 @@ def test_run_diagnosis_uses_template_targets_and_returns_condition_breakdown(cli
     assert body["matches"][0]["unmatched_conditions"] == []
     assert body["matches"][0]["matched_conditions"][0]["type"] == "pod_status"
     assert body["template_match_results"][0]["matched_conditions"][0]["condition_type"] == "pod_status"
+    assert body["template_match_results"][0]["summary"] == (
+        "命中 2/2 个条件：api Pod 状态匹配 CrashLoopBackOff；api 日志命中 connection refused。"
+    )
 
 
 def test_run_diagnosis_passes_template_target_namespace_and_label_selector(client) -> None:
@@ -190,8 +193,10 @@ def test_run_diagnosis_isolates_single_template_collection_failure(client) -> No
     result_by_name = {item["template_name"]: item for item in body["template_match_results"]}
     assert result_by_name["Healthy collection template"]["matched"] is True
     assert result_by_name["Broken collection template"]["matched"] is False
-    assert result_by_name["Broken collection template"]["summary"] == "Broken collection template 采集失败"
-    assert result_by_name["Broken collection template"]["reason"] == "provider failed"
+    assert result_by_name["Broken collection template"]["summary"] == "无法判断：采集 broken/app=broken 失败，错误：provider failed。"
+    assert result_by_name["Broken collection template"]["reason"] == (
+        "模板范围采集失败，暂时无法判断是否命中：采集 broken/app=broken 失败，错误：provider failed"
+    )
 
 
 def test_run_diagnosis_ignore_whitelist_prevents_log_keyword_template_match(client) -> None:
@@ -244,6 +249,7 @@ def test_run_diagnosis_ignore_whitelist_prevents_log_keyword_template_match(clie
     assert body["template_match_results"][0]["matched_conditions"] == []
     assert len(body["template_match_results"][0]["unmatched_conditions"]) == 1
     assert body["template_match_results"][0]["unmatched_conditions"][0]["condition_type"] == "log_keyword"
+    assert body["template_match_results"][0]["summary"] == "未命中：缺少 api 日志关键字 connection refused。"
 
 
 def test_run_diagnosis_filters_pods_by_template_name_pattern(client) -> None:
@@ -306,3 +312,63 @@ def test_run_diagnosis_filters_pods_by_template_name_pattern(client) -> None:
     result = response.json()["template_match_results"][0]
     assert result["matched"] is True
     assert result["evidence_refs"][0]["pods"] == ["demo-api-1"]
+    assert result["summary"] == "命中 1/1 个条件：api Pod 状态匹配 CrashLoopBackOff。"
+
+
+def test_run_diagnosis_reports_missing_restart_count_and_related_object_status(client) -> None:
+    template_response = client.post(
+        "/api/v1/templates",
+        json={
+            "name": "Worker failure template",
+            "scenario": "targeted_diagnosis",
+            "target_groups": [
+                {
+                    "ref": "worker",
+                    "namespace": "demo",
+                    "label_selector": "app=worker",
+                }
+            ],
+            "match_conditions": [
+                {"target_ref": "worker", "type": "restart_count", "operator": "gte", "value": 3},
+                {
+                    "target_ref": "worker",
+                    "type": "related_object_status",
+                    "operator": "equals",
+                    "value": {"resource": "services", "statuses": ["degraded"]},
+                },
+            ],
+            "joint_rule": {"operator": "AND"},
+            "reason": "Worker unhealthy",
+            "suggestion": "Check worker dependencies",
+            "enabled": True,
+        },
+    )
+    assert template_response.status_code == 201
+
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: {
+        "namespace": namespace,
+        "label_selector": label_selector,
+        "health_status": "warning",
+        "executed_at": "2026-07-19T00:00:00Z",
+        "pods": [
+            {
+                "name": "demo-worker-1",
+                "status": "Running",
+                "containers": [],
+                "events": [],
+                "restarts": 1,
+                "log_summary": None,
+            }
+        ],
+        "services": [{"name": "worker-svc", "status": "healthy"}],
+        "ingresses": [],
+        "daemonsets": [],
+        "tls_secrets": [],
+    }
+
+    response = client.post("/api/v1/diagnoses/run", json={})
+
+    assert response.status_code == 200
+    result = response.json()["template_match_results"][0]
+    assert result["matched"] is False
+    assert result["summary"] == "未命中：worker 重启次数未达到 >= 3；worker 缺少 services 状态 = degraded。"

@@ -30,6 +30,8 @@ type NormalizedMatchResult = {
   evidence_refs: Array<Record<string, unknown>>;
 };
 
+type MatchResultKind = "matched" | "undetermined" | "unmatched";
+
 function normalizeCondition(condition: RawCondition): NormalizedCondition {
   if ("condition_type" in condition) {
     return {
@@ -86,37 +88,74 @@ function summarizeEvidence(item: Record<string, unknown>) {
   return [type, pod ?? pods, matchedText ?? value].filter(Boolean).join(" / ");
 }
 
-function MatchResultCard({ item }: { item: NormalizedMatchResult }) {
+function getResultKind(item: NormalizedMatchResult): MatchResultKind {
+  if (item.matched) {
+    return "matched";
+  }
+
+  const summary = item.summary?.trim() ?? "";
+  const reason = item.reason?.trim() ?? "";
+  const combined = `${summary} ${reason}`.toLowerCase();
+  const indicatesCollectionFailure =
+    combined.includes("无法判断") ||
+    combined.includes("采集失败") ||
+    combined.includes("forbidden") ||
+    combined.includes("permission denied") ||
+    combined.includes("error:");
+
+  if (indicatesCollectionFailure || reason.includes("采集") || summary.includes("采集")) {
+    return "undetermined";
+  }
+
+  return "unmatched";
+}
+
+function MatchResultCard({ item, kind }: { item: NormalizedMatchResult; kind: MatchResultKind }) {
+  const badgeStatus = kind === "matched" ? "matched" : kind === "undetermined" ? "warning" : "info";
+  const heading = kind === "matched" ? "已命中故障" : kind === "undetermined" ? "无法判断" : "未命中";
+
   return (
-    <article className="card">
+    <article className={`card diagnosis-card diagnosis-card-${kind}`}>
       <div className="section-header">
         <div>
           <strong>{item.template_name}</strong>
-          <p>{item.reason}</p>
+          <p className="inline-note">{heading}</p>
         </div>
-        <StatusBadge status={item.matched ? "matched" : "info"} />
+        <StatusBadge status={badgeStatus} />
       </div>
-      <p>{item.suggestion}</p>
-      {item.summary ? <p className="inline-note">{item.summary}</p> : null}
-      <p className="inline-note">命中条件 {item.matched_conditions.length}</p>
-      <div className="condition-list">
-        {item.matched_conditions.map((condition, index: number) => (
-          <div key={`${item.template_id}-matched-${index}`} className="condition-item">
-            {describeCondition(condition)}
+      {item.summary ? <p className="diagnosis-summary">{item.summary}</p> : null}
+      <div className="diagnosis-meta">
+        <p><strong>判断原因：</strong>{item.reason}</p>
+        <p><strong>建议动作：</strong>{item.suggestion}</p>
+        {item.risk_note ? <p><strong>风险说明：</strong>{item.risk_note}</p> : null}
+      </div>
+      {item.matched_conditions.length > 0 ? (
+        <>
+          <p className="inline-note">命中条件 {item.matched_conditions.length}</p>
+          <div className="condition-list">
+            {item.matched_conditions.map((condition, index: number) => (
+              <div key={`${item.template_id}-matched-${index}`} className="condition-item">
+                {describeCondition(condition)}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <p className="inline-note">未命中条件 {item.unmatched_conditions.length}</p>
-      <div className="condition-list">
-        {item.unmatched_conditions.map((condition, index: number) => (
-          <div key={`${item.template_id}-unmatched-${index}`} className="condition-item condition-item-muted">
-            {describeCondition(condition)}
+        </>
+      ) : null}
+      {item.unmatched_conditions.length > 0 ? (
+        <>
+          <p className="inline-note">未命中条件 {item.unmatched_conditions.length}</p>
+          <div className="condition-list">
+            {item.unmatched_conditions.map((condition, index: number) => (
+              <div key={`${item.template_id}-unmatched-${index}`} className="condition-item condition-item-muted">
+                {describeCondition(condition)}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      ) : null}
       {item.evidence_refs.length > 0 ? (
         <>
-          <p className="inline-note">证据摘要</p>
+          <p className="inline-note">关键证据</p>
           <ul className="plain-list">
             {item.evidence_refs.map((evidence, index) => (
               <li key={`${item.template_id}-evidence-${index}`}>{summarizeEvidence(evidence)}</li>
@@ -124,7 +163,6 @@ function MatchResultCard({ item }: { item: NormalizedMatchResult }) {
           </ul>
         </>
       ) : null}
-      {item.risk_note ? <p className="inline-note">风险说明：{item.risk_note}</p> : null}
     </article>
   );
 }
@@ -195,8 +233,9 @@ export function DiagnosisResultPanel({
   }
 
   const results = normalizeResults(data);
-  const matchedResults = results.filter((item) => item.matched);
-  const unmatchedResults = results.filter((item) => !item.matched);
+  const matchedResults = results.filter((item) => getResultKind(item) === "matched");
+  const undeterminedResults = results.filter((item) => getResultKind(item) === "undetermined");
+  const unmatchedResults = results.filter((item) => getResultKind(item) === "unmatched");
 
   return (
     <section className="page-section" aria-label={title}>
@@ -210,7 +249,7 @@ export function DiagnosisResultPanel({
           {data.executed_at ? ` / ${data.executed_at}` : ""}
         </p>
         <p className="inline-note">
-          命中模板 {matchedResults.length} / 未命中模板 {unmatchedResults.length}
+          命中模板 {matchedResults.length} / 未命中模板 {unmatchedResults.length} / 无法判断 {undeterminedResults.length}
         </p>
         {data.evidence_summary.length > 0 ? (
           <>
@@ -232,23 +271,34 @@ export function DiagnosisResultPanel({
         <section className="page-section">
           <div className="section-header">
             <h3>已命中模板</h3>
-            <span className="section-tip">至少有一个对象满足模板条件</span>
+            <span className="section-tip">优先处理这些已知故障</span>
           </div>
           {matchedResults.map((item) => (
-            <MatchResultCard key={`matched-${item.template_id}`} item={item} />
+            <MatchResultCard key={`matched-${item.template_id}`} item={item} kind="matched" />
+          ))}
+        </section>
+      ) : null}
+      {undeterminedResults.length > 0 ? (
+        <section className="page-section">
+          <div className="section-header">
+            <h3>无法判断</h3>
+            <span className="section-tip">这些模板因采集失败或证据不足，当前无法下结论</span>
+          </div>
+          {undeterminedResults.map((item) => (
+            <MatchResultCard key={`undetermined-${item.template_id}`} item={item} kind="undetermined" />
           ))}
         </section>
       ) : null}
       {unmatchedResults.length > 0 ? (
-        <section className="page-section">
-          <div className="section-header">
-            <h3>未命中模板</h3>
-            <span className="section-tip">用于解释为什么这次不属于该故障</span>
+        <details className="diagnosis-collapsible">
+          <summary>未命中模板（{unmatchedResults.length}）</summary>
+          <div className="page-section diagnosis-collapsible-body">
+            <p className="inline-note">展开后可查看为什么这次不属于这些故障模板。</p>
+            {unmatchedResults.map((item) => (
+              <MatchResultCard key={`unmatched-${item.template_id}`} item={item} kind="unmatched" />
+            ))}
           </div>
-          {unmatchedResults.map((item) => (
-            <MatchResultCard key={`unmatched-${item.template_id}`} item={item} />
-          ))}
-        </section>
+        </details>
       ) : null}
     </section>
   );

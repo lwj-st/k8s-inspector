@@ -3,7 +3,7 @@ from fnmatch import fnmatchcase
 
 from sqlalchemy.orm import Session
 
-from app.engine.matcher import match_template
+from app.engine.matcher import describe_condition, match_template
 from app.models import DiagnosisRecord, FaultTemplate, SystemSetting
 from app.providers.base import InspectionProvider
 from app.schemas.diagnosis import DiagnosisRequest
@@ -42,12 +42,32 @@ def _pod_matches_target(pod: dict, target: dict) -> bool:
     return not pattern or fnmatchcase(str(pod.get("name") or ""), str(pattern))
 
 
+def _scope_text(namespace: str, label_selector: str | None) -> str:
+    return f"{namespace}/{label_selector}" if label_selector else namespace
+
+
+def _build_result_summary(matched: bool, matched_conditions: list[dict], unmatched_conditions: list[dict]) -> str:
+    if matched:
+        matched_text = "；".join(describe_condition(condition, True) for condition in matched_conditions) or "无明确条件"
+        total = len(matched_conditions) + len(unmatched_conditions)
+        return f"命中 {len(matched_conditions)}/{total} 个条件：{matched_text}。"
+
+    if unmatched_conditions:
+        missing_text = "；".join(describe_condition(condition, False) for condition in unmatched_conditions)
+        return f"未命中：{missing_text}。"
+
+    return "未命中：没有满足模板条件。"
+
+
 def _build_target_context(session: Session, provider: InspectionProvider, template: FaultTemplate) -> dict:
     targets: dict[str, dict] = {}
     for target in template.target_groups:
         namespace = target["namespace"]
         label_selector = target.get("label_selector")
-        inspection = provider.run_namespace_inspection(namespace, label_selector)
+        try:
+            inspection = provider.run_namespace_inspection(namespace, label_selector)
+        except Exception as error:
+            raise RuntimeError(f"采集 {_scope_text(namespace, label_selector)} 失败，错误：{error}") from error
         targets[target["target_ref"]] = {
             "namespace": namespace,
             "label_selector": label_selector,
@@ -67,6 +87,7 @@ def _build_target_context(session: Session, provider: InspectionProvider, templa
 
 
 def _build_template_failure_result(template: FaultTemplate, error: Exception) -> dict:
+    failure_reason = str(error)
     return {
         "template_id": template.id,
         "template_name": template.name,
@@ -83,8 +104,8 @@ def _build_template_failure_result(template: FaultTemplate, error: Exception) ->
             }
             for condition in template.match_conditions
         ],
-        "summary": f"{template.name} 采集失败",
-        "reason": str(error),
+        "summary": f"无法判断：{failure_reason}。",
+        "reason": f"模板范围采集失败，暂时无法判断是否命中：{failure_reason}",
         "suggestion": template.suggestion,
         "risk_note": template.risk_note,
         "evidence_refs": [],
@@ -145,7 +166,11 @@ def run_diagnosis(session: Session, provider: InspectionProvider, payload: Diagn
                         }
                         for condition in matched["unmatched_conditions"]
                     ],
-                    "summary": f"{template.name} {'命中' if matched['matched'] else '未命中'}",
+                    "summary": _build_result_summary(
+                        matched["matched"],
+                        matched["matched_conditions"],
+                        matched["unmatched_conditions"],
+                    ),
                     "reason": template.reason,
                     "suggestion": template.suggestion,
                     "risk_note": template.risk_note,

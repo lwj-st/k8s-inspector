@@ -15,6 +15,73 @@ def _expected_value(condition: dict[str, Any]) -> Any:
     return condition.get("expected_value", condition.get("value"))
 
 
+def _target_ref_text(condition: dict[str, Any]) -> str:
+    return str(condition.get("target_ref") or "默认对象组")
+
+
+def _format_value(value: Any) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    if isinstance(value, dict):
+        resource = value.get("resource")
+        statuses = _format_value(value.get("statuses", []))
+        if resource:
+            return f"{resource} 状态 {statuses}".strip()
+        return str(value)
+    return str(value)
+
+
+def _operator_text(operator: str) -> str:
+    return {
+        "equals": "=",
+        "in": "属于",
+        "contains": "包含",
+        "gte": ">=",
+        "lte": "<=",
+    }.get(operator, operator)
+
+
+def describe_condition(condition: dict[str, Any], matched: bool) -> str:
+    target_ref = _target_ref_text(condition)
+    operator = _operator(condition)
+    expected = _expected_value(condition)
+    expected_text = _format_value(expected)
+    kind = _condition_type(condition)
+
+    if kind == "pod_status":
+        return (
+            f"{target_ref} Pod 状态匹配 {expected_text}"
+            if matched
+            else f"{target_ref} Pod 状态未匹配 {_operator_text(operator)} {expected_text}"
+        )
+    if kind == "log_keyword":
+        return f"{target_ref} 日志命中 {expected_text}" if matched else f"缺少 {target_ref} 日志关键字 {expected_text}"
+    if kind == "event_keyword":
+        return f"{target_ref} 事件命中 {expected_text}" if matched else f"缺少 {target_ref} 事件关键字 {expected_text}"
+    if kind == "restart_count":
+        return (
+            f"{target_ref} 重启次数达到 {_operator_text(operator)} {expected_text}"
+            if matched
+            else f"{target_ref} 重启次数未达到 {_operator_text(operator)} {expected_text}"
+        )
+    if kind == "related_object_status":
+        resource = expected.get("resource") if isinstance(expected, dict) else None
+        statuses = expected.get("statuses", []) if isinstance(expected, dict) else expected
+        resource_text = str(resource or "关联对象")
+        status_text = _format_value(statuses)
+        return (
+            f"{target_ref} {resource_text} 状态匹配 {_operator_text(operator)} {status_text}"
+            if matched
+            else f"{target_ref} 缺少 {resource_text} 状态 {_operator_text(operator)} {status_text}"
+        )
+
+    return (
+        f"{target_ref} 满足 {kind} {_operator_text(operator)} {expected_text}"
+        if matched
+        else f"{target_ref} 未满足 {kind} {_operator_text(operator)} {expected_text}"
+    )
+
+
 def _normalize_targets(context: dict[str, Any]) -> dict[str, dict[str, Any]]:
     targets = context.get("targets")
     if isinstance(targets, dict) and targets:

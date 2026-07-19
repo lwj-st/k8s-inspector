@@ -1,4 +1,4 @@
-from app.engine.matcher import match_template
+from app.engine.matcher import describe_condition, match_template
 
 
 def test_match_template_hits_target_group_conditions() -> None:
@@ -222,3 +222,34 @@ def test_match_template_supports_gte_and_related_object_equals() -> None:
 
     assert result["matched"] is True
     assert len(result["matched_conditions"]) == 2
+
+
+def test_describe_condition_covers_existing_condition_types() -> None:
+    assert (
+        describe_condition({"target_ref": "api", "type": "pod_status", "operator": "in", "value": ["CrashLoopBackOff"]}, True)
+        == "api Pod 状态匹配 CrashLoopBackOff"
+    )
+    assert (
+        describe_condition({"target_ref": "api", "type": "log_keyword", "operator": "contains", "value": "connection refused"}, False)
+        == "缺少 api 日志关键字 connection refused"
+    )
+    assert (
+        describe_condition({"target_ref": "api", "type": "event_keyword", "operator": "contains", "value": "Back-off restarting"}, False)
+        == "缺少 api 事件关键字 Back-off restarting"
+    )
+    assert (
+        describe_condition({"target_ref": "worker", "type": "restart_count", "operator": "gte", "value": 3}, False)
+        == "worker 重启次数未达到 >= 3"
+    )
+    assert (
+        describe_condition(
+            {
+                "target_ref": "gateway",
+                "type": "related_object_status",
+                "operator": "equals",
+                "value": {"resource": "services", "statuses": ["degraded"]},
+            },
+            True,
+        )
+        == "gateway services 状态匹配 = degraded"
+    )

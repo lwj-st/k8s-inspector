@@ -789,6 +789,53 @@ a {
   background: rgba(241, 246, 250, 0.92);
 }
 
+.diagnosis-card {
+  gap: 14px;
+}
+
+.diagnosis-card-matched {
+  border-color: rgba(15, 118, 110, 0.28);
+  background: linear-gradient(180deg, rgba(239, 252, 248, 0.94), rgba(255, 255, 255, 0.92));
+}
+
+.diagnosis-card-undetermined {
+  border-color: rgba(221, 138, 18, 0.32);
+  background: linear-gradient(180deg, rgba(255, 248, 233, 0.96), rgba(255, 255, 255, 0.92));
+}
+
+.diagnosis-summary {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.diagnosis-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnosis-meta p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.diagnosis-collapsible {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(157, 182, 202, 0.24);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow);
+}
+
+.diagnosis-collapsible summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.diagnosis-collapsible-body {
+  margin-top: 16px;
+}
+
 .log-hit-card {
   display: grid;
   gap: 12px;

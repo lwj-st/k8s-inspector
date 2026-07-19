@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,7 +17,7 @@ describe("DiagnosisPage", () => {
     vi.stubGlobal("fetch", fetchMock);
   });
 
-  it("runs template diagnosis without manual scope inputs and renders matched and unmatched conditions", async () => {
+  it("runs template diagnosis without manual scope inputs and prioritizes matched, undetermined and collapsed unmatched templates", async () => {
     const user = userEvent.setup();
     fetchMock.mockResolvedValue(
       new Response(
@@ -123,6 +123,18 @@ describe("DiagnosisPage", () => {
               risk_note: null,
               evidence_refs: [],
             },
+            {
+              template_id: 3,
+              template_name: "API 采集失败模板",
+              matched: false,
+              matched_conditions: [],
+              unmatched_conditions: [],
+              summary: "无法判断：采集 demo/app=api 失败，错误：Forbidden。",
+              reason: "采集 demo/app=api 失败，错误：Forbidden。",
+              suggestion: "检查账号权限后重试",
+              risk_note: "当前结论不完整",
+              evidence_refs: [],
+            },
           ],
           evidence_summary: [{ type: "namespace", value: "demo" }],
           llm_supplement: null,
@@ -145,15 +157,25 @@ describe("DiagnosisPage", () => {
         body: JSON.stringify({}),
       }),
     );
-    expect(await screen.findByText("CrashLoop 模板")).toBeInTheDocument();
+    const panel = await screen.findByLabelText("模板匹配结果");
+    expect(within(panel).getByText("CrashLoop 模板")).toBeInTheDocument();
     expect(await screen.findByText("已命中模板")).toBeInTheDocument();
-    expect(await screen.findByText("未命中模板")).toBeInTheDocument();
-    expect(await screen.findByText("命中条件 2")).toBeInTheDocument();
-    expect(await screen.findByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();
-    expect(await screen.findByText(/对象组 api 在日志中包含 connection refused/)).toBeInTheDocument();
-    expect(await screen.findByText("Redis 连接失败模板")).toBeInTheDocument();
-    expect(await screen.findByText(/对象组 redis 在日志中包含 redis timeout/)).toBeInTheDocument();
-    expect(await screen.findByText("当前没有发现 redis timeout 日志")).toBeInTheDocument();
+    expect(within(panel).getByRole("heading", { name: "无法判断" })).toBeInTheDocument();
+    expect(within(panel).getByText("未命中模板（1）")).toBeInTheDocument();
+    expect(within(panel).getByText("命中条件 2")).toBeInTheDocument();
+    expect(within(panel).getByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();
+    expect(within(panel).getByText(/对象组 api 在日志中包含 connection refused/)).toBeInTheDocument();
+    expect(within(panel).getByText("API 采集失败模板")).toBeInTheDocument();
+    expect(within(panel).getByText("无法判断：采集 demo/app=api 失败，错误：Forbidden。")).toBeInTheDocument();
+
+    const unmatchedDetails = within(panel).getByText("未命中模板（1）").closest("details");
+    expect(unmatchedDetails).not.toHaveAttribute("open");
+    expect(within(unmatchedDetails as HTMLDetailsElement).getByText("Redis 连接失败模板")).toBeInTheDocument();
+
+    await user.click(within(unmatchedDetails as HTMLDetailsElement).getByText("未命中模板（1）"));
+    expect(unmatchedDetails).toHaveAttribute("open");
+    expect(within(unmatchedDetails as HTMLDetailsElement).getByText(/对象组 redis 在日志中包含 redis timeout/)).toBeInTheDocument();
+    expect(within(unmatchedDetails as HTMLDetailsElement).getByText("当前没有发现 redis timeout 日志")).toBeInTheDocument();
   });
 
   it("shows loading state while diagnosis is running", async () => {

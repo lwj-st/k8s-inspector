@@ -710,7 +710,7 @@ describe("AutoInspectionPage", () => {
     ]);
   });
 
-  it("triggers manual template diagnosis and renders matched plus unmatched conditions", async () => {
+  it("triggers manual template diagnosis and keeps unmatched templates collapsed by default", async () => {
     fetchMock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
@@ -773,6 +773,18 @@ describe("AutoInspectionPage", () => {
               risk_note: null,
               evidence_refs: [],
             },
+            {
+              template_id: 3,
+              template_name: "采集失败模板",
+              matched: false,
+              matched_conditions: [],
+              unmatched_conditions: [],
+              summary: "无法判断：采集 prod-core/app=api 失败，错误：Forbidden。",
+              reason: "采集 prod-core/app=api 失败，错误：Forbidden。",
+              suggestion: "检查权限并重试",
+              risk_note: null,
+              evidence_refs: [],
+            },
           ],
           evidence_summary: [{ type: "namespace", value: "prod-core" }],
           llm_supplement: null,
@@ -793,11 +805,18 @@ describe("AutoInspectionPage", () => {
     const drawer = await screen.findByRole("complementary", { name: "模板匹配结果" });
     expect(within(drawer).getByText("故障模板手动匹配")).toBeInTheDocument();
     expect(within(drawer).getByText("已命中模板")).toBeInTheDocument();
-    expect(within(drawer).getByText("未命中模板")).toBeInTheDocument();
+    expect(within(drawer).getByRole("heading", { name: "无法判断" })).toBeInTheDocument();
+    expect(within(drawer).getByText("未命中模板（1）")).toBeInTheDocument();
     expect(within(drawer).getByText("CrashLoop 模板")).toBeInTheDocument();
-    expect(within(drawer).getByText("Redis 连接失败模板")).toBeInTheDocument();
     expect(within(drawer).getByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();
-    expect(within(drawer).getByText(/对象组 redis 在日志中包含 redis timeout/)).toBeInTheDocument();
+    expect(within(drawer).getByText("采集失败模板")).toBeInTheDocument();
+
+    const unmatchedDetails = within(drawer).getByText("未命中模板（1）").closest("details");
+    expect(unmatchedDetails).not.toHaveAttribute("open");
+    fireEvent.click(within(unmatchedDetails as HTMLDetailsElement).getByText("未命中模板（1）"));
+    expect(unmatchedDetails).toHaveAttribute("open");
+    expect(within(unmatchedDetails as HTMLDetailsElement).getByText("Redis 连接失败模板")).toBeInTheDocument();
+    expect(within(unmatchedDetails as HTMLDetailsElement).getByText(/对象组 redis 在日志中包含 redis timeout/)).toBeInTheDocument();
   });
 
   it("shows diagnosis loading state in auto inspection page", async () => {
