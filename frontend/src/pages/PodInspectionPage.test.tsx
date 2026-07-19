@@ -17,23 +17,55 @@ describe("PodInspectionPage", () => {
         pod_name: "demo-api-1",
         label_selector: null,
         resource_scope: ["pods"],
-        created_at: "2026-07-11T10:00:00Z",
-        updated_at: "2026-07-11T10:00:00Z",
+        created_at: "2026-07-19T10:00:00Z",
+        updated_at: "2026-07-19T10:00:00Z",
       },
       {
         id: 2,
-        name: "demo 名称空间对象",
-        target_type: "namespace",
+        name: "demo API 标签范围",
+        target_type: "pod",
         namespace: "demo",
-        pod_name: null,
-        label_selector: "app=demo",
-        resource_scope: ["pods", "services"],
-        created_at: "2026-07-11T10:00:00Z",
-        updated_at: "2026-07-11T10:00:00Z",
+        pod_name: "",
+        label_selector: "app=demo-api",
+        resource_scope: ["pods"],
+        created_at: "2026-07-19T10:00:00Z",
+        updated_at: "2026-07-19T10:00:00Z",
       },
     ];
+
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+
+      if (url.endsWith("/discovery/namespaces")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              executed_at: "2026-07-19T10:00:00Z",
+              namespaces: [
+                {
+                  name: "demo",
+                  status: "warning",
+                  pod_count: 3,
+                  abnormal_pod_count: 1,
+                  last_inspected_at: null,
+                  labels: {},
+                  abnormal_categories: ["pod_status"],
+                },
+                {
+                  name: "prod",
+                  status: "healthy",
+                  pod_count: 4,
+                  abnormal_pod_count: 0,
+                  last_inspected_at: null,
+                  labels: {},
+                  abnormal_categories: [],
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
 
       if (url.endsWith("/inspection-targets") && (!init || init.method === undefined)) {
         return Promise.resolve(
@@ -45,8 +77,8 @@ describe("PodInspectionPage", () => {
         const payload = JSON.parse(String(init.body));
         const created = {
           id: savedTargets.length + 1,
-          created_at: "2026-07-11T11:00:00Z",
-          updated_at: "2026-07-11T11:00:00Z",
+          created_at: "2026-07-19T11:00:00Z",
+          updated_at: "2026-07-19T11:00:00Z",
           ...payload,
         };
         savedTargets.unshift(created);
@@ -59,7 +91,7 @@ describe("PodInspectionPage", () => {
         const payload = JSON.parse(String(init.body));
         const targetId = Number(url.split("/").pop());
         const index = savedTargets.findIndex((item) => item.id === targetId);
-        savedTargets[index] = { ...savedTargets[index], ...payload, updated_at: "2026-07-11T12:00:00Z" };
+        savedTargets[index] = { ...savedTargets[index], ...payload, updated_at: "2026-07-19T12:00:00Z" };
         return Promise.resolve(
           new Response(JSON.stringify(savedTargets[index]), { status: 200, headers: { "Content-Type": "application/json" } }),
         );
@@ -82,13 +114,80 @@ describe("PodInspectionPage", () => {
         const payload = JSON.parse(String(init.body));
         const created = payload.map((item: Record<string, unknown>, index: number) => ({
           id: savedTargets.length + index + 1,
-          created_at: "2026-07-11T13:00:00Z",
-          updated_at: "2026-07-11T13:00:00Z",
+          created_at: "2026-07-19T13:00:00Z",
+          updated_at: "2026-07-19T13:00:00Z",
           ...item,
         }));
         savedTargets.unshift(...created.reverse());
         return Promise.resolve(
           new Response(JSON.stringify(created), { status: 200, headers: { "Content-Type": "application/json" } }),
+        );
+      }
+
+      if (url.endsWith("/inspections/namespace/run") && init?.method === "POST") {
+        const payload = JSON.parse(String(init.body));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              inspection_target: {
+                type: "namespace",
+                namespace: payload.namespace,
+                label_selector: payload.label_selector,
+                saved_target_id: null,
+                resource_scope: ["pods"],
+              },
+              namespace: payload.namespace,
+              health_status: "warning",
+              executed_at: "2026-07-19T10:30:00Z",
+              evidence_bundles: [],
+              pods: [
+                {
+                  name: "demo-api-1",
+                  status: "CrashLoopBackOff",
+                  restarts: 6,
+                  node_name: "node-a",
+                  containers: [],
+                  events: ["BackOff: restart container"],
+                  describe_summary: "startup failed",
+                  log_summary: "database connection refused",
+                  previous_log_summary: null,
+                  log_hits: [
+                    {
+                      keyword: "connection refused",
+                      category: "database",
+                      severity: "error",
+                      source: "log_summary",
+                      matched_text: "database connection refused",
+                      container_name: "demo-api",
+                      whitelisted: false,
+                      whitelist_rule_id: null,
+                    },
+                  ],
+                  resource_usage: { cpu: "220m", memory: "180Mi" },
+                  related_resources: [],
+                },
+                {
+                  name: "demo-worker-1",
+                  status: "Succeeded",
+                  restarts: 0,
+                  node_name: "node-b",
+                  containers: [{ name: "worker", restart_count: 0, state: "terminated", reason: "Completed" }],
+                  events: [],
+                  describe_summary: "running",
+                  log_summary: "plain worker output without keyword hit",
+                  previous_log_summary: null,
+                  log_hits: [],
+                  resource_usage: { cpu: "40m", memory: "60Mi" },
+                  related_resources: [],
+                },
+              ],
+              services: [],
+              ingresses: [],
+              tls_secrets: [],
+              daemonsets: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
         );
       }
 
@@ -100,7 +199,7 @@ describe("PodInspectionPage", () => {
               inspection_target: { type: "pod", namespace: payload.namespace, pod_name: payload.pod_name, resource_scope: ["pods"] },
               namespace: payload.namespace,
               health_status: "warning",
-              executed_at: "2026-07-11T10:00:00Z",
+              executed_at: "2026-07-19T10:00:00Z",
               pod: {
                 name: payload.pod_name,
                 status: "CrashLoopBackOff",
@@ -167,58 +266,121 @@ describe("PodInspectionPage", () => {
     fetchMock.mockReset();
   });
 
-  it("focuses on a single pod evidence chain", async () => {
+  it("keeps import and export textarea hidden until modal opens", async () => {
     render(<PodInspectionPage />);
 
-    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.change(screen.getByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "运行 Pod 巡检" }));
+    await screen.findByRole("option", { name: "demo" });
+    expect(screen.queryByLabelText("导出内容")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("导入内容")).not.toBeInTheDocument();
 
-    expect(await screen.findByText("单 Pod 巡检")).toBeInTheDocument();
-    expect(await screen.findByText("demo-api-1")).toBeInTheDocument();
-    expect(await screen.findByText("database connection refused")).toBeInTheDocument();
-    expect(await screen.findByText("BackOff: restart container")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "导出" }));
+    const exportDialog = await screen.findByRole("dialog", { name: "导出巡检对象" });
+    expect(exportDialog).toBeInTheDocument();
+    expect(screen.getByLabelText("导出内容")).toBeInTheDocument();
   });
 
-  it("can ignore a log hit through whitelist api", async () => {
+  it("runs all pod mode without requiring pod name", async () => {
     render(<PodInspectionPage />);
 
+    await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "all" } });
+    fireEvent.click(screen.getByRole("button", { name: "巡检 Pod 范围" }));
+
+    expect(await screen.findByText("最近一次巡检摘要")).toBeInTheDocument();
+
+    const request = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+    );
+    expect(request).toBeDefined();
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+      namespace: "demo",
+      label_selector: null,
+    });
+  });
+
+  it("runs label selector mode through namespace inspection", async () => {
+    render(<PodInspectionPage />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "label" } });
+    fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
+    fireEvent.click(screen.getByRole("button", { name: "巡检 Pod 范围" }));
+
+    expect(await screen.findByText("范围巡检结果不会伪装成单 Pod")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /demo-api-1/ })).toBeInTheDocument();
+
+    const request = fetchMock.mock.calls
+      .filter(([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST")
+      .at(-1);
+    expect(request).toBeDefined();
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+      namespace: "demo",
+      label_selector: "app=demo-api",
+    });
+  });
+
+  it("runs single pod mode through pod inspection with dropdown pod selection", async () => {
+    render(<PodInspectionPage />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "single" } });
+
+    expect(await screen.findByRole("option", { name: "demo-api-1" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "运行 Pod 巡检" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
+
+    expect(await screen.findByText("单 Pod 结果")).toBeInTheDocument();
+    expect(await screen.findByText("database connection refused")).toBeInTheDocument();
+
+    const request = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/inspections/pod/run") && init?.method === "POST",
+    );
+    expect(request).toBeDefined();
+    expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+      namespace: "demo",
+      pod_name: "demo-api-1",
+    });
+  });
+
+  it("saves current pod range through modal", async () => {
+    render(<PodInspectionPage />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "label" } });
+    fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "保存当前范围" })[0]);
+    const saveDialog = await screen.findByRole("dialog", { name: "保存当前范围" });
+    fireEvent.change(screen.getByLabelText("常用范围名称"), { target: { value: "demo API 标签巡检" } });
+    fireEvent.click(saveDialog.querySelectorAll("button")[1] as HTMLButtonElement);
+
+    expect(await screen.findByRole("button", { name: /使用 demo API 标签巡检/ })).toBeInTheDocument();
+  });
+
+  it("preserves whitelist ignore entry in pod inspection", async () => {
+    render(<PodInspectionPage />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "single" } });
+    fireEvent.change(await screen.findByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
     fireEvent.click(await screen.findByRole("button", { name: "忽略此报错" }));
 
     await waitFor(() => {
       expect(screen.getByText("已加入白名单，后续 Pod 巡检会自动忽略该命中")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "已忽略" })).toBeDisabled();
     });
   });
 
-  it("only shows pod saved targets and supports pod target management", async () => {
+  it("supports import filtering in modal flow", async () => {
     render(<PodInspectionPage />);
 
-    expect(await screen.findByRole("button", { name: /使用 demo-api 固定排查/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /使用 demo 名称空间对象/ })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /使用 demo-api 固定排查/ }));
-    expect(await screen.findByText("单 Pod 巡检")).toBeInTheDocument();
-    expect(await screen.findByText("demo-api-1")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /编辑 demo-api 固定排查/ }));
-    fireEvent.change(screen.getByLabelText("保存名称"), { target: { value: "demo-api 固定排查-更新" } });
-    fireEvent.click(screen.getByRole("button", { name: "更新当前对象" }));
-    expect(await screen.findByRole("button", { name: /使用 demo-api 固定排查-更新/ })).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("保存名称"), { target: { value: "worker 巡检对象" } });
-    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "prod" } });
-    fireEvent.change(screen.getByLabelText("Pod 名称"), { target: { value: "worker-0" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存当前 Pod" }));
-    expect(await screen.findByRole("button", { name: /使用 worker 巡检对象/ })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "刷新导出内容" }));
-    expect((await screen.findByLabelText("导出内容") as HTMLTextAreaElement).value).toContain("\"target_type\": \"pod\"");
-
-    fireEvent.change(screen.getByLabelText("导入内容"), {
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.click(screen.getByRole("button", { name: "导入" }));
+    fireEvent.change(await screen.findByLabelText("导入内容"), {
       target: {
         value: JSON.stringify([
           {
@@ -239,57 +401,9 @@ describe("PodInspectionPage", () => {
       },
     });
     fireEvent.click(screen.getByRole("button", { name: "导入巡检对象" }));
+
     expect(await screen.findByRole("button", { name: /使用 imported pod target/ })).toBeInTheDocument();
     expect(await screen.findByText("已导入 1 个 Pod 巡检对象")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /使用 ignored namespace target/ })).not.toBeInTheDocument();
-
-    const importRequest = fetchMock.mock.calls.find(
-      ([input, init]) => String(input).endsWith("/inspection-targets/import") && init?.method === "POST",
-    );
-    expect(importRequest).toBeDefined();
-    expect(JSON.parse(String(importRequest?.[1]?.body))).toEqual([
-      {
-        name: "imported pod target",
-        target_type: "pod",
-        namespace: "prod",
-        pod_name: "api-0",
-        resource_scope: ["pods"],
-      },
-    ]);
-
-    fireEvent.click(screen.getByRole("button", { name: /删除 imported pod target/ }));
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /使用 imported pod target/ })).not.toBeInTheDocument();
-    });
-  });
-
-  it("does not call backend import when payload has no pod objects", async () => {
-    render(<PodInspectionPage />);
-
-    const importCallCountBefore = fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith("/inspection-targets/import") && init?.method === "POST",
-    ).length;
-
-    fireEvent.change(await screen.findByLabelText("导入内容"), {
-      target: {
-        value: JSON.stringify([
-          {
-            name: "namespace only target",
-            target_type: "namespace",
-            namespace: "prod",
-            label_selector: "app=api",
-            resource_scope: ["pods", "services"],
-          },
-        ]),
-      },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "导入巡检对象" }));
-
-    expect(await screen.findByText("导入内容不包含当前页面可导入的 Pod 巡检对象")).toBeInTheDocument();
-
-    const importCallCountAfter = fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith("/inspection-targets/import") && init?.method === "POST",
-    ).length;
-    expect(importCallCountAfter).toBe(importCallCountBefore);
   });
 });

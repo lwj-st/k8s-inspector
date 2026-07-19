@@ -212,6 +212,18 @@ a {
   font-size: 18px;
 }
 
+.text-button {
+  min-height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--teal);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: none;
+}
+
 .quick-action-card-primary {
   background:
     linear-gradient(180deg, rgba(255, 248, 233, 0.98), rgba(255, 255, 255, 0.9)),
@@ -287,8 +299,29 @@ a {
   min-height: 110px;
 }
 
+.entry-form-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.secondary-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.saved-target-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(157, 182, 202, 0.22);
+}
+
 .panel button:disabled,
-.section-header button:disabled {
+.section-header button:disabled,
+.text-button:disabled {
   opacity: 0.62;
   cursor: not-allowed;
   box-shadow: none;
@@ -525,6 +558,29 @@ a {
 .batch-summary-card {
   display: grid;
   gap: 12px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(13, 27, 42, 0.4);
+}
+
+.modal-card {
+  width: min(720px, 100%);
+  max-height: min(80vh, 820px);
+  overflow-y: auto;
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 24px;
+  background: #f7f4ee;
+  box-shadow: 0 24px 48px rgba(13, 27, 42, 0.18);
+  border: 1px solid rgba(157, 182, 202, 0.24);
 }
 
 .batch-summary-overview {
