@@ -40,6 +40,16 @@ function abnormalCategoryLabel(category: string) {
   return ABNORMAL_CATEGORY_LABELS[category as keyof typeof ABNORMAL_CATEGORY_LABELS] ?? category;
 }
 
+function batchSectionTitle(status: "error" | "warning" | "healthy") {
+  if (status === "error") {
+    return "巡检失败";
+  }
+  if (status === "warning") {
+    return "需要处理";
+  }
+  return "巡检正常";
+}
+
 function isHealthyObject(item: InspectedObject) {
   return item.status === "healthy";
 }
@@ -227,81 +237,59 @@ function NamespaceEvidenceDrawer({
           </div>
           <button type="button" onClick={onClose}>关闭</button>
         </div>
-        <div className="evidence-drawer-summary">
-          <StatusBadge status={data?.health_status ?? summary.status} />
-          <span>Pod {data?.pods.length ?? summary.pod_count}</span>
-          <span>异常 Pod {data ? abnormalPods.length : summary.abnormal_pod_count}</span>
-        </div>
-        <div className="batch-category-block">
-          <span className="inline-note">异常分类</span>
-          <div className="batch-category-list">
-            {abnormalCategoryLabels.length > 0 ? (
-              abnormalCategoryLabels.map((label) => (
-                <span key={`${namespace}-${label}`} className="batch-category-chip">
-                  {label}
-                </span>
-              ))
-            ) : (
-              <span className="batch-category-chip batch-category-chip-muted">无异常分类</span>
-            )}
+        <section className="panel panel-muted">
+          <div className="section-header">
+            <div>
+              <h4>结论</h4>
+              <p className="inline-note">先看名称空间结论，再决定是否下钻到 Pod 和日志证据。</p>
+            </div>
+            <StatusBadge status={data?.health_status ?? summary.status} />
           </div>
-        </div>
-        {ignoreMessage ? (
-          <section className="panel panel-muted">
-            <p>{ignoreMessage}</p>
-          </section>
-        ) : null}
-        {ignoreTarget ? (
-          <section className="panel panel-muted" aria-label="忽略关键字命中确认">
-            <div className="section-header">
-              <h4>确认忽略此命中</h4>
-              <span className="section-tip">忽略后，当前范围的相同命中会加入白名单</span>
+          <div className="evidence-drawer-summary">
+            <span>Pod {data?.pods.length ?? summary.pod_count}</span>
+            <span>异常 Pod {data ? abnormalPods.length : summary.abnormal_pod_count}</span>
+          </div>
+          <KeyValueList
+            items={[
+              { label: "名称空间", value: namespace },
+              { label: "Label Selector", value: data?.inspection_target.label_selector ?? item.detail_target.label_selector ?? "未设置" },
+              { label: "健康状态", value: data?.health_status ?? summary.status },
+              { label: "异常分类数", value: String(abnormalCategoryLabels.length) },
+            ]}
+          />
+          <div className="batch-category-block">
+            <span className="inline-note">异常分类</span>
+            <div className="batch-category-list">
+              {abnormalCategoryLabels.length > 0 ? (
+                abnormalCategoryLabels.map((label) => (
+                  <span key={`${namespace}-${label}`} className="batch-category-chip">
+                    {label}
+                  </span>
+                ))
+              ) : (
+                <span className="batch-category-chip batch-category-chip-muted">无异常分类</span>
+              )}
             </div>
-            <KeyValueList
-              items={[
-                { label: "名称空间", value: namespace },
-                { label: "Label Selector", value: data?.inspection_target.label_selector ?? item.detail_target.label_selector ?? "未设置" },
-                { label: "Pod", value: ignoreTarget.pod.name },
-                { label: "容器", value: ignoreTarget.hit.container_name ?? "未区分容器" },
-                { label: "关键字", value: ignoreTarget.hit.keyword },
-              ]}
-            />
-            <div className="button-row">
-              <button type="button" onClick={onConfirmIgnore}>
-                确认忽略
-              </button>
-              <button type="button" onClick={onCancelIgnore}>
-                取消
-              </button>
-            </div>
-          </section>
-        ) : null}
+          </div>
+        </section>
         {loading ? <p>正在读取名称空间证据...</p> : null}
         {error ? <section className="panel panel-muted"><h4>证据读取失败</h4><p>{error}</p></section> : null}
         {!loading && !error && data && pods.length === 0 && !hasNamespaceObjects ? <p>本次没有返回可展示的证据。</p> : null}
         {!loading && !error && data ? (
           <>
-            {pods.length > 0 ? (
-              <div className="evidence-pod-list">
-                {abnormalPods.length > 0 ? (
-                  <>
-                    <div className="section-header"><h4>异常 Pod</h4><span className="section-tip">优先处理</span></div>
-                    {abnormalPods.map((pod) => (
-                      <EvidencePodCard
-                        key={pod.name}
-                        pod={pod}
-                        ignoredLogKeys={ignoredLogKeys}
-                        ignoringLogKeys={ignoringLogKeys}
-                        onRequestIgnore={onRequestIgnore}
-                      />
-                    ))}
-                  </>
-                ) : null}
-                {healthyPods.length > 0 ? (
-                  <details className="healthy-pods-details">
-                    <summary>{abnormalPods.length > 0 ? `正常 / 已完成 Pod（${healthyPods.length}）` : `Pod（全部正常 / 已完成 ${healthyPods.length}）`}</summary>
-                    <div className="evidence-pod-list">
-                      {healthyPods.map((pod) => (
+            <section className="panel panel-muted">
+              <div className="section-header">
+                <div>
+                  <h4>证据</h4>
+                  <p className="inline-note">异常 Pod、关键字命中和名称空间级对象异常都会在这里展开。</p>
+                </div>
+              </div>
+              {pods.length > 0 ? (
+                <div className="evidence-pod-list">
+                  {abnormalPods.length > 0 ? (
+                    <>
+                      <div className="section-header"><h4>异常 Pod</h4><span className="section-tip">优先处理</span></div>
+                      {abnormalPods.map((pod) => (
                         <EvidencePodCard
                           key={pod.name}
                           pod={pod}
@@ -310,25 +298,84 @@ function NamespaceEvidenceDrawer({
                           onRequestIgnore={onRequestIgnore}
                         />
                       ))}
-                    </div>
-                  </details>
-                ) : null}
+                    </>
+                  ) : null}
+                  {healthyPods.length > 0 ? (
+                    <details className="healthy-pods-details">
+                      <summary>{abnormalPods.length > 0 ? `正常 / 已完成 Pod（${healthyPods.length}）` : `Pod（全部正常 / 已完成 ${healthyPods.length}）`}</summary>
+                      <div className="evidence-pod-list">
+                        {healthyPods.map((pod) => (
+                          <EvidencePodCard
+                            key={pod.name}
+                            pod={pod}
+                            ignoredLogKeys={ignoredLogKeys}
+                            ignoringLogKeys={ignoringLogKeys}
+                            onRequestIgnore={onRequestIgnore}
+                          />
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              ) : null}
+              {hasNamespaceObjects ? (
+                <section className="panel panel-muted evidence-nested-panel">
+                  <div className="section-header">
+                    <h4>名称空间级关联对象</h4>
+                    <span className="section-tip">用于定位 Ingress、DaemonSet、Service、TLS Secret 异常</span>
+                  </div>
+                  <div className="evidence-pod-list">
+                    <NamespaceObjectSection title="Service" kindLabel="Service" items={services} />
+                    <NamespaceObjectSection title="Ingress" kindLabel="Ingress" items={ingresses} />
+                    <NamespaceObjectSection title="DaemonSet" kindLabel="DaemonSet" items={daemonsets} />
+                    <NamespaceObjectSection title="TLS Secret" kindLabel="TLS Secret" items={tlsSecrets} />
+                  </div>
+                </section>
+              ) : null}
+            </section>
+            <section className="panel panel-muted">
+              <div className="section-header">
+                <div>
+                  <h4>后续操作</h4>
+                  <p className="inline-note">白名单忽略只影响相同范围下的同类命中；模板匹配入口保留在批量巡检摘要区。</p>
+                </div>
               </div>
-            ) : null}
-            {hasNamespaceObjects ? (
-              <section className="panel panel-muted">
-                <div className="section-header">
-                  <h4>名称空间级关联对象</h4>
-                  <span className="section-tip">用于定位 Ingress、DaemonSet、Service、TLS Secret 异常</span>
-                </div>
-                <div className="evidence-pod-list">
-                  <NamespaceObjectSection title="Service" kindLabel="Service" items={services} />
-                  <NamespaceObjectSection title="Ingress" kindLabel="Ingress" items={ingresses} />
-                  <NamespaceObjectSection title="DaemonSet" kindLabel="DaemonSet" items={daemonsets} />
-                  <NamespaceObjectSection title="TLS Secret" kindLabel="TLS Secret" items={tlsSecrets} />
-                </div>
-              </section>
-            ) : null}
+              {ignoreMessage ? (
+                <section className="panel panel-muted evidence-nested-panel">
+                  <p>{ignoreMessage}</p>
+                </section>
+              ) : null}
+              {ignoreTarget ? (
+                <section className="panel panel-muted evidence-nested-panel" aria-label="忽略关键字命中确认">
+                  <div className="section-header">
+                    <h4>确认忽略此命中</h4>
+                    <span className="section-tip">忽略后，当前范围的相同命中会加入白名单</span>
+                  </div>
+                  <KeyValueList
+                    items={[
+                      { label: "名称空间", value: namespace },
+                      { label: "Label Selector", value: data?.inspection_target.label_selector ?? item.detail_target.label_selector ?? "未设置" },
+                      { label: "Pod", value: ignoreTarget.pod.name },
+                      { label: "容器", value: ignoreTarget.hit.container_name ?? "未区分容器" },
+                      { label: "关键字", value: ignoreTarget.hit.keyword },
+                    ]}
+                  />
+                  <div className="button-row">
+                    <button type="button" onClick={onConfirmIgnore}>
+                      确认忽略
+                    </button>
+                    <button type="button" onClick={onCancelIgnore}>
+                      取消
+                    </button>
+                  </div>
+                </section>
+              ) : (
+                <article className="quick-action-card evidence-action-card">
+                  <strong>下一步</strong>
+                  <span>先看异常 Pod 和日志关键字；如果需要判断是否属于已知故障，请关闭抽屉后点击“运行模板匹配”。</span>
+                </article>
+              )}
+            </section>
           </>
         ) : null}
       </aside>
@@ -494,7 +541,25 @@ export function AutoInspectionPage() {
   });
   const errorBatchCount = batchResults.filter((item) => item.health_status === "error").length;
   const warningBatchCount = batchResults.filter((item) => item.health_status === "warning").length;
+  const healthyBatchCount = batchResults.filter((item) => item.health_status === "healthy").length;
   const batchSummaryStatus = errorBatchCount > 0 ? "error" : warningBatchCount > 0 ? "warning" : "healthy";
+  const groupedBatchResultsSource: Array<{
+    status: "error" | "warning" | "healthy";
+    items: NamespaceBatchInspectionResult[];
+  }> = [
+    { status: "error", items: sortedBatchResults.filter((item) => item.health_status === "error") },
+    { status: "warning", items: sortedBatchResults.filter((item) => item.health_status === "warning") },
+    { status: "healthy", items: sortedBatchResults.filter((item) => item.health_status === "healthy") },
+  ];
+  const groupedBatchResults = groupedBatchResultsSource.filter((group) => group.items.length > 0);
+  const batchGuidance =
+    errorBatchCount > 0
+      ? "先处理巡检失败的名称空间，再进入告警名称空间查看证据。"
+      : warningBatchCount > 0
+        ? "先打开告警名称空间证据，确认是 Pod、事件还是日志关键字导致告警。"
+        : batchResults.length > 0
+          ? "本轮没有发现异常名称空间；如需判断是否属于已知故障，可继续运行模板匹配。"
+          : "先选择名称空间，再触发巡检。";
 
   return (
     <section className="page-section">
@@ -511,31 +576,45 @@ export function AutoInspectionPage() {
           <div className="section-header">
             <div>
               <h3>名称空间选择</h3>
-              <p className="inline-note">默认加载全部名称空间，支持搜索、多选和后续批量巡检。</p>
+              <p className="inline-note">先筛选范围，再决定巡检选中或巡检全部；证据和模板匹配都从这里继续。</p>
             </div>
           </div>
-          <label className="inline-search">
-            搜索名称空间
-            <input
-              aria-label="搜索名称空间"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="例如：prod、kube-system"
-            />
-          </label>
-          <div className="toolbar-row">
-            <button type="button" onClick={selectFiltered} disabled={filteredNamespaces.length === 0}>
-              全选当前结果
-            </button>
-            <button type="button" onClick={clearFiltered} disabled={selectedFilteredCount === 0}>
-              取消当前结果
-            </button>
-            <button type="button" onClick={handleRunSelected} disabled={!hasSelectedNamespaces || batchLoading}>
-              {batchLoading ? "巡检中..." : "巡检选中"}
-            </button>
-            <button type="button" onClick={handleRunAll} disabled={!hasNamespaces || batchLoading}>
-              {batchLoading ? "巡检中..." : "巡检全部"}
-            </button>
+          <div className="workbench-command-panel">
+            <label className="inline-search">
+              搜索名称空间
+              <input
+                aria-label="搜索名称空间"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="例如：prod、kube-system"
+              />
+            </label>
+            <div className="workbench-command-grid">
+              <div className="quick-action-card quick-action-card-primary">
+                <strong>主操作</strong>
+                <span>先选定名称空间，再触发巡检；“巡检全部”用于完整复查。</span>
+                <div className="toolbar-row">
+                  <button type="button" onClick={handleRunSelected} disabled={!hasSelectedNamespaces || batchLoading}>
+                    {batchLoading ? "巡检中..." : "巡检选中"}
+                  </button>
+                  <button type="button" onClick={handleRunAll} disabled={!hasNamespaces || batchLoading}>
+                    {batchLoading ? "巡检中..." : "巡检全部"}
+                  </button>
+                </div>
+              </div>
+              <div className="quick-action-card">
+                <strong>范围操作</strong>
+                <span>多选后的结果会保留，便于先筛选再执行。</span>
+                <div className="toolbar-row">
+                  <button type="button" onClick={selectFiltered} disabled={filteredNamespaces.length === 0}>
+                    全选当前结果
+                  </button>
+                  <button type="button" onClick={clearFiltered} disabled={selectedFilteredCount === 0}>
+                    取消当前结果
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div className="hero-metric-stack">
@@ -647,54 +726,82 @@ export function AutoInspectionPage() {
               </button>
             </div>
           </div>
-          <div className="batch-summary-metrics">
-            <article className="hero-metric hero-metric-compact batch-summary-metric">
-              <span>巡检名称空间</span>
-              <strong>{batchResults.length}</strong>
-            </article>
-            <article className="hero-metric hero-metric-compact batch-summary-metric">
-              <span>告警名称空间</span>
-              <strong>{warningBatchCount}</strong>
-            </article>
-            <article className="hero-metric hero-metric-compact batch-summary-metric">
-              <span>失败名称空间</span>
-              <strong>{errorBatchCount}</strong>
-            </article>
-          </div>
-          <div className="card-grid">
-            {sortedBatchResults.map((item) => (
-              <article
-                key={item.summary.name}
-                aria-label={`批量结果 ${item.summary.name}`}
-                className={`card batch-summary-card${item.health_status === "error" ? " batch-card-error" : item.health_status === "healthy" ? " batch-card-quiet" : item.health_status === "warning" ? " batch-card-warning" : ""}`}
-              >
-                <div className="card-title">
-                  <strong>{item.summary.name}</strong>
-                  <StatusBadge status={item.health_status} />
-                </div>
-                {item.health_status === "error" ? <p>该名称空间巡检失败</p> : null}
-                <div className="batch-summary-stats">
-                  <p>Pod 总数：{item.summary.pod_count}</p>
-                  <p>异常 Pod：{item.summary.abnormal_pod_count}</p>
-                </div>
-                <div className="batch-category-block">
-                  <span className="inline-note">异常分类</span>
-                  <div className="batch-category-list">
-                    {item.summary.abnormal_categories.length > 0 ? (
-                      item.summary.abnormal_categories.map((category) => (
-                        <span key={`${item.summary.name}-${category}`} className="batch-category-chip">
-                          {abnormalCategoryLabel(category)}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="batch-category-chip batch-category-chip-muted">无异常分类</span>
-                    )}
-                  </div>
-                </div>
-                <button type="button" onClick={() => handleViewEvidence(item)} disabled={item.health_status === "error"}>
-                  查看证据
-                </button>
+          <section className="panel panel-muted batch-summary-overview">
+            <div className="batch-summary-metrics">
+              <article className="hero-metric hero-metric-compact batch-summary-metric">
+                <span>巡检名称空间</span>
+                <strong>{batchResults.length}</strong>
               </article>
+              <article className="hero-metric hero-metric-compact batch-summary-metric batch-summary-metric-warning">
+                <span>告警名称空间</span>
+                <strong>{warningBatchCount}</strong>
+              </article>
+              <article className="hero-metric hero-metric-compact batch-summary-metric batch-summary-metric-error">
+                <span>失败名称空间</span>
+                <strong>{errorBatchCount}</strong>
+              </article>
+              <article className="hero-metric hero-metric-compact batch-summary-metric batch-summary-metric-healthy">
+                <span>正常名称空间</span>
+                <strong>{healthyBatchCount}</strong>
+              </article>
+            </div>
+            <article className="quick-action-card batch-guidance-card">
+              <strong>下一步建议</strong>
+              <span>{batchGuidance}</span>
+            </article>
+          </section>
+          <div className="batch-group-stack">
+            {groupedBatchResults.map((group) => (
+              <section key={group.status} className="batch-group-section">
+                <div className="section-header">
+                  <div>
+                    <h4>{batchSectionTitle(group.status)}</h4>
+                    <p className="inline-note">共 {group.items.length} 个名称空间</p>
+                  </div>
+                  <StatusBadge status={group.status} />
+                </div>
+                <div className="card-grid">
+                  {group.items.map((item) => (
+                    <article
+                      key={item.summary.name}
+                      aria-label={`批量结果 ${item.summary.name}`}
+                      className={`card batch-summary-card${item.health_status === "error" ? " batch-card-error" : item.health_status === "healthy" ? " batch-card-quiet" : item.health_status === "warning" ? " batch-card-warning" : ""}`}
+                    >
+                      <div className="card-title">
+                        <div>
+                          <strong>{item.summary.name}</strong>
+                          <p className="inline-note">
+                            Pod {item.summary.pod_count} / 异常 Pod {item.summary.abnormal_pod_count}
+                          </p>
+                        </div>
+                        <StatusBadge status={item.health_status} />
+                      </div>
+                      {item.health_status === "error" ? <p>该名称空间巡检失败</p> : null}
+                      <div className="batch-summary-stats">
+                        <p>Pod 总数：{item.summary.pod_count}</p>
+                        <p>异常 Pod：{item.summary.abnormal_pod_count}</p>
+                      </div>
+                      <div className="batch-category-block">
+                        <span className="inline-note">异常分类</span>
+                        <div className="batch-category-list">
+                          {item.summary.abnormal_categories.length > 0 ? (
+                            item.summary.abnormal_categories.map((category) => (
+                              <span key={`${item.summary.name}-${category}`} className="batch-category-chip">
+                                {abnormalCategoryLabel(category)}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="batch-category-chip batch-category-chip-muted">无异常分类</span>
+                          )}
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => handleViewEvidence(item)} disabled={item.health_status === "error"}>
+                        查看证据
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         </section>

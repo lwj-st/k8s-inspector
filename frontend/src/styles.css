@@ -148,6 +148,17 @@ a {
   gap: 18px;
 }
 
+.workbench-command-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.workbench-command-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .hero-summary {
   margin: 0;
   max-width: 720px;
@@ -199,6 +210,13 @@ a {
 
 .quick-action-card strong {
   font-size: 18px;
+}
+
+.quick-action-card-primary {
+  background:
+    linear-gradient(180deg, rgba(255, 248, 233, 0.98), rgba(255, 255, 255, 0.9)),
+    var(--paper-strong);
+  border-color: rgba(240, 163, 35, 0.32);
 }
 
 .quick-action-card span {
@@ -509,6 +527,36 @@ a {
   gap: 12px;
 }
 
+.batch-summary-overview {
+  gap: 16px;
+}
+
+.batch-group-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.batch-group-section {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-guidance-card {
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.batch-summary-metric-warning {
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.98), rgba(255, 255, 255, 0.9));
+}
+
+.batch-summary-metric-error {
+  background: linear-gradient(180deg, rgba(255, 239, 239, 0.98), rgba(255, 255, 255, 0.9));
+}
+
+.batch-summary-metric-healthy {
+  background: linear-gradient(180deg, rgba(238, 251, 243, 0.98), rgba(255, 255, 255, 0.9));
+}
+
 .evidence-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -539,6 +587,15 @@ a {
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(157, 182, 202, 0.24);
+}
+
+.evidence-nested-panel {
+  box-shadow: none;
+  border-color: rgba(157, 182, 202, 0.18);
+}
+
+.evidence-action-card {
+  border-style: dashed;
 }
 
 .evidence-pod-list {
@@ -730,7 +787,8 @@ a {
   }
 
   .workbench-hero,
-  .quick-action-grid {
+  .quick-action-grid,
+  .workbench-command-grid {
     grid-template-columns: 1fr;
   }
 
