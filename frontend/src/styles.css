@@ -312,6 +312,47 @@ a {
   align-items: center;
 }
 
+.template-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.template-step-chip {
+  min-height: auto;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(157, 182, 202, 0.28);
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.template-step-chip span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 8px;
+  border-radius: 999px;
+  background: rgba(13, 27, 42, 0.08);
+  font-size: 12px;
+}
+
+.template-step-chip-active {
+  border-color: rgba(15, 118, 110, 0.4);
+  background: rgba(239, 252, 248, 0.96);
+  color: var(--teal);
+}
+
+.template-step-chip-active span {
+  background: rgba(15, 118, 110, 0.16);
+}
+
 .saved-target-panel {
   display: grid;
   gap: 12px;
@@ -787,6 +828,36 @@ a {
 
 .condition-item {
   background: rgba(241, 246, 250, 0.92);
+}
+
+.template-details-card {
+  border: 1px solid rgba(157, 182, 202, 0.24);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 14px 16px;
+}
+
+.template-details-card summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.template-details-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.template-hint-panel {
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.template-warning-panel {
+  border-color: rgba(221, 138, 18, 0.3);
+  background: rgba(255, 250, 239, 0.94);
 }
 
 .diagnosis-card {

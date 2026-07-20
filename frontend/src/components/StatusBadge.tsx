@@ -2,6 +2,29 @@ type StatusBadgeProps = {
   status: string;
 };
 
+const statusLabels: Record<string, string> = {
+  enabled: "启用",
+  disabled: "停用",
+  loading: "加载中",
+  info: "信息",
+  unknown: "未知",
+  healthy: "健康",
+  running: "运行中",
+  ready: "就绪",
+  succeeded: "已完成",
+  completed: "已完成",
+  warning: "告警",
+  error: "异常",
+  failed: "失败",
+  degraded: "降级",
+  critical: "严重",
+};
+
+function formatStatusLabel(status: string) {
+  const normalized = status.toLowerCase();
+  return statusLabels[normalized] ?? status;
+}
+
 export function StatusBadge({ status }: StatusBadgeProps) {
   const normalized = status.toLowerCase();
   const isBad =
@@ -20,5 +43,5 @@ export function StatusBadge({ status }: StatusBadgeProps) {
           ? "status-badge status-neutral"
           : "status-badge status-bad";
 
-  return <span className={tone}>{status}</span>;
+  return <span className={tone}>{formatStatusLabel(status)}</span>;
 }
