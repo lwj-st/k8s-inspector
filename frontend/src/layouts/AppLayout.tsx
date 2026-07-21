@@ -1,12 +1,11 @@
 import { NavLink, Outlet } from "react-router-dom";
 
 const navItems = [
-  { to: "/", label: "自动巡检" },
-  { to: "/inspections/namespace", label: "名称空间巡检" },
-  { to: "/inspections/pod", label: "单 Pod 巡检" },
+  { to: "/", label: "状态巡检" },
+  { to: "/inspections/namespace", label: "日志巡检" },
   { to: "/diagnosis", label: "模板检查" },
   { to: "/templates", label: "故障模板" },
-  { to: "/whitelists", label: "白名单" },
+  { to: "/whitelists", label: "关键字库" },
   { to: "/settings", label: "系统配置" },
 ];
 
@@ -16,7 +15,7 @@ export function AppLayout() {
       <aside className="app-sidebar">
         <div className="brand-block">
           <h1>K8s 巡检台</h1>
-          <p>自动巡检、Pod 排查、模板故障检查</p>
+          <p>状态、日志与故障模板检查</p>
         </div>
         <nav>
           <ul className="nav-list">

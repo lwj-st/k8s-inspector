@@ -7,6 +7,7 @@ import type {
   DiagnosisResponse,
   FaultTemplate,
   KeywordRule,
+  NamespaceLabelDiscoveryResponse,
   NamespaceDiscoveryResponse,
   NamespaceInspectionResponse,
   OverviewResponse,
@@ -62,6 +63,10 @@ export function runClusterInspection(): Promise<ClusterInspectionResponse> {
 
 export function discoverNamespaces(): Promise<NamespaceDiscoveryResponse> {
   return request("/discovery/namespaces");
+}
+
+export function discoverNamespaceLabels(namespace: string): Promise<NamespaceLabelDiscoveryResponse> {
+  return request(`/discovery/namespaces/${encodeURIComponent(namespace)}/labels`);
 }
 
 export function runNamespaceInspection(namespace: string, labelSelector: string | null): Promise<NamespaceInspectionResponse> {

@@ -110,6 +110,9 @@
 - `severity`
 - `source`
 - `matched_text`
+- `context_before`
+- `context_after`
+- `context_text`
 - `container_name`
 - `whitelisted`
 - `whitelist_rule_id`
@@ -118,6 +121,10 @@
 
 - 模板中的 `log_keyword` 条件必须使用 `KeywordHit`
 - 默认只使用 `whitelisted=false` 的命中
+- `matched_text` 仍表示命中行本身，不因上下文展示而改变语义。
+- `context_before` / `context_after` / `context_text` 为兼容旧接口的可选补充字段；缺省时前端必须允许仅展示 `matched_text`。
+- 日志上下文只来自本次采集到的容器日志 tail，不代表完整日志，也不要求服务端返回完整日志。
+- 日志上下文字段只用于证据展示，不进入模板条件匹配语义。
 
 ### 3.2E WhitelistIgnoreCreate / WhitelistRead
 
@@ -179,6 +186,28 @@
 
 - 对应自动发现名称空间接口。
 - 返回轻量摘要，不内联 Pod 详情。
+
+### 3.2F NamespaceLabelDiscoveryResponse
+
+主字段：
+
+- `namespace`
+- `executed_at`
+- `labels`
+
+候选项主字段：
+
+- `key`
+- `values`
+- `selector`
+- `pod_count`
+
+说明：
+
+- 对应 `GET /api/v1/discovery/namespaces/{namespace}/labels`。
+- `labels` 只返回可用于巡检的 Label Selector 候选摘要，不返回原始 Pod 列表。
+- `selector` 是可直接透传给名称空间范围巡检的候选值。
+- 该契约表达的是“自动发现候选项”，不是强制巡检范围，也不等于保存对象。
 
 ### 3.2C NamespaceBatchInspectionRequest
 

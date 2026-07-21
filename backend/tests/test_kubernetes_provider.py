@@ -516,3 +516,44 @@ def test_mock_provider_list_namespaces_returns_multiple_statuses() -> None:
     }
     assert any(namespace["status"] == "warning" for namespace in namespaces)
     assert any(namespace["status"] == "healthy" for namespace in namespaces)
+
+
+def test_mock_provider_lists_stable_namespace_label_candidates() -> None:
+    provider = MockInspectionProvider()
+
+    result = provider.list_namespace_labels("prod-core")
+
+    assert result["namespace"] == "prod-core"
+    assert result["labels"] == [
+        {
+            "key": "team",
+            "values": ["platform"],
+            "selector": "team=platform",
+            "pod_count": 4,
+        },
+        {
+            "key": "environment",
+            "values": ["production"],
+            "selector": "environment=production",
+            "pod_count": 4,
+        },
+    ]
+
+
+def test_kubernetes_provider_lists_namespace_label_candidates() -> None:
+    provider = _make_provider()
+    provider.core.list_namespaced_pod = lambda namespace, _request_timeout: SimpleNamespace(
+        items=[
+            SimpleNamespace(metadata=SimpleNamespace(labels={"app": "api", "team": "platform"})),
+            SimpleNamespace(metadata=SimpleNamespace(labels={"app": "api"})),
+            SimpleNamespace(metadata=SimpleNamespace(labels=None)),
+        ]
+    )
+
+    result = provider.list_namespace_labels("demo")
+
+    assert result["namespace"] == "demo"
+    assert result["labels"] == [
+        {"key": "app", "values": ["api"], "selector": "app=api", "pod_count": 2},
+        {"key": "team", "values": ["platform"], "selector": "team=platform", "pod_count": 1},
+    ]

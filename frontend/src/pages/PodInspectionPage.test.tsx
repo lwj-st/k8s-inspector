@@ -73,6 +73,19 @@ describe("PodInspectionPage", () => {
         );
       }
 
+      if (url.endsWith("/discovery/namespaces/demo/labels")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              namespace: "demo",
+              executed_at: "2026-07-19T10:00:00Z",
+              labels: [{ key: "app", values: ["demo-api"], selector: "app=demo-api", pod_count: 1 }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       if (url.endsWith("/inspection-targets") && init?.method === "POST") {
         const payload = JSON.parse(String(init.body));
         const created = {
@@ -284,8 +297,8 @@ describe("PodInspectionPage", () => {
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "all" } });
-    fireEvent.click(screen.getByRole("button", { name: "巡检 Pod 范围" }));
+    fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "all" } });
+    fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
 
     expect(await screen.findByText("最近一次巡检摘要")).toBeInTheDocument();
 
@@ -304,11 +317,12 @@ describe("PodInspectionPage", () => {
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "label" } });
+    fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "label" } });
+    await screen.findByRole("option", { name: "app=demo-api（1 个 Pod）" });
     fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
-    fireEvent.click(screen.getByRole("button", { name: "巡检 Pod 范围" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
 
-    expect(await screen.findByText("范围巡检结果不会伪装成单 Pod")).toBeInTheDocument();
+    expect(await screen.findByText("范围内 Pod 列表")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /demo-api-1/ })).toBeInTheDocument();
 
     const request = fetchMock.mock.calls
@@ -326,7 +340,7 @@ describe("PodInspectionPage", () => {
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "single" } });
+    fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "single" } });
 
     expect(await screen.findByRole("option", { name: "demo-api-1" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
@@ -345,19 +359,121 @@ describe("PodInspectionPage", () => {
     });
   });
 
+  it("prefers context_text when rendering log hit details", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/discovery/namespaces")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              executed_at: "2026-07-21T10:00:00Z",
+              namespaces: [
+                {
+                  name: "demo",
+                  status: "warning",
+                  pod_count: 1,
+                  abnormal_pod_count: 1,
+                  last_inspected_at: null,
+                  labels: {},
+                  abnormal_categories: ["log_keyword"],
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/inspection-targets") && (!init || init.method === undefined)) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/discovery/namespaces/demo/labels")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ namespace: "demo", executed_at: "2026-07-21T10:00:00Z", labels: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/inspections/namespace/run") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              inspection_target: { type: "namespace", namespace: "demo", label_selector: null, saved_target_id: null, resource_scope: ["pods"] },
+              namespace: "demo",
+              health_status: "warning",
+              executed_at: "2026-07-21T10:10:00Z",
+              evidence_bundles: [],
+              pods: [
+                {
+                  name: "demo-api-1",
+                  status: "CrashLoopBackOff",
+                  restarts: 6,
+                  node_name: "node-a",
+                  containers: [],
+                  events: [],
+                  describe_summary: "startup failed",
+                  log_summary: "database connection refused",
+                  previous_log_summary: null,
+                  log_hits: [
+                    {
+                      keyword: "connection refused",
+                      category: "database",
+                      severity: "error",
+                      source: "current_log",
+                      matched_text: "database connection refused",
+                      context_before: ["booting app", "dial tcp db:5432"],
+                      context_after: ["retry in 3s", "panic: dependency unavailable"],
+                      context_text: "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s\npanic: dependency unavailable",
+                      container_name: "demo-api",
+                      whitelisted: false,
+                      whitelist_rule_id: null,
+                    },
+                  ],
+                  resource_usage: { cpu: "220m", memory: "180Mi" },
+                  related_resources: [],
+                },
+              ],
+              services: [],
+              ingresses: [],
+              tls_secrets: [],
+              daemonsets: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
+
+    expect(await screen.findByText("命中上下文（不是完整日志）")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s\npanic: dependency unavailable")).toBeInTheDocument();
+  });
+
   it("saves current pod range through modal", async () => {
     render(<PodInspectionPage />);
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "label" } });
+    fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "label" } });
+    await screen.findByRole("option", { name: "app=demo-api（1 个 Pod）" });
     fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
     fireEvent.click(screen.getAllByRole("button", { name: "保存当前范围" })[0]);
     const saveDialog = await screen.findByRole("dialog", { name: "保存当前范围" });
     fireEvent.change(screen.getByLabelText("常用范围名称"), { target: { value: "demo API 标签巡检" } });
     fireEvent.click(saveDialog.querySelectorAll("button")[1] as HTMLButtonElement);
 
-    expect(await screen.findByRole("button", { name: /使用 demo API 标签巡检/ })).toBeInTheDocument();
+    expect(await screen.findByText("demo API 标签巡检")).toBeInTheDocument();
   });
 
   it("preserves whitelist ignore entry in pod inspection", async () => {
@@ -365,7 +481,7 @@ describe("PodInspectionPage", () => {
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.change(screen.getByLabelText("巡检范围"), { target: { value: "single" } });
+    fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "single" } });
     fireEvent.change(await screen.findByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
     fireEvent.click(await screen.findByRole("button", { name: "忽略此报错" }));
@@ -402,8 +518,8 @@ describe("PodInspectionPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "导入巡检对象" }));
 
-    expect(await screen.findByRole("button", { name: /使用 imported pod target/ })).toBeInTheDocument();
+    expect(await screen.findByText("imported pod target")).toBeInTheDocument();
     expect(await screen.findByText("已导入 1 个 Pod 巡检对象")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /使用 ignored namespace target/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("ignored namespace target")).not.toBeInTheDocument();
   });
 });

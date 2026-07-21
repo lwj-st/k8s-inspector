@@ -28,7 +28,7 @@ type ConditionDraft = {
 };
 
 type StepKey = "basic" | "targets" | "conditions" | "advice" | "preview";
-type ModalType = "import" | "export" | null;
+type ModalType = "import" | "export" | "editor" | null;
 
 type StepDefinition = {
   key: StepKey;
@@ -358,6 +358,7 @@ export function TemplatesPage() {
     setCommand("");
     setRiskNote("");
     setTemplateEnabled(true);
+    setModalType(null);
   }
 
   function buildPayload() {
@@ -425,9 +426,27 @@ export function TemplatesPage() {
     resetForm();
   }
 
+  function startCreate() {
+    setEditingId(null);
+    setActiveStep("basic");
+    setModalType("editor");
+    setName("");
+    setScenario("targeted_diagnosis");
+    setJointOperator("AND");
+    setTargets([createDefaultTarget()]);
+    setConditions([createDefaultCondition()]);
+    setReason("");
+    setSuggestion("");
+    setCommand("");
+    setRiskNote("");
+    setTemplateEnabled(true);
+    setMessage(null);
+  }
+
   function startEdit(template: FaultTemplate) {
     setEditingId(template.id);
     setActiveStep("basic");
+    setModalType("editor");
     setName(template.name);
     setScenario(template.scenario);
     setJointOperator((template.joint_rule?.operator as "AND" | "OR" | undefined) ?? "AND");
@@ -564,35 +583,18 @@ export function TemplatesPage() {
       <section className="workbench-hero">
         <div className="workbench-copy">
           <div>
-            <p className="eyebrow">当前步骤</p>
-            <h3>{activeStepDefinition.title}</h3>
-            <p className="hero-summary">{activeStepDefinition.description}</p>
-          </div>
-          <div className="template-stepper" aria-label="模板录入步骤">
-            {stepDefinitions.map((step, index) => (
-              <button
-                key={step.key}
-                type="button"
-                className={`template-step-chip ${step.key === activeStep ? "template-step-chip-active" : ""}`}
-                onClick={() => setActiveStep(step.key)}
-              >
-                <span>{index + 1}</span>
-                {step.title}
-              </button>
-            ))}
+            <p className="eyebrow">录入方式</p>
+            <h3>紧凑编辑</h3>
+            <p className="hero-summary">主页面只保留模板摘要和操作入口。新增或编辑时，再进入步骤化录入抽屉。</p>
           </div>
           <div className="secondary-action-row">
+            <button type="button" onClick={startCreate}>新增模板</button>
             <button type="button" className="text-button" onClick={() => setModalType("import")}>
               导入模板
             </button>
             <button type="button" className="text-button" onClick={() => void handleOpenExport()}>
               导出模板
             </button>
-            {editingId !== null ? (
-              <button type="button" className="text-button" disabled={saving} onClick={resetForm}>
-                取消编辑
-              </button>
-            ) : null}
           </div>
         </div>
         <div className="hero-metric-stack">
@@ -611,29 +613,125 @@ export function TemplatesPage() {
         </div>
       </section>
 
-      <div className="card-grid card-grid-wide">
-        <section className="panel panel-muted">
-          <div className="section-header">
-            <div>
-              <h3>模板录入器</h3>
-              <p className="inline-note">多个 Pod 命中同一对象组时，只要有一个满足条件即可视为对象组命中。</p>
-            </div>
-            <StatusBadge status={saving ? "warning" : editingId !== null ? "enabled" : "info"} />
-          </div>
-          {error ? <p>操作失败：{error}</p> : null}
-          {message ? <p className="inline-note">{message}</p> : null}
-          {validationEntries.length > 0 && activeStep === "preview" ? (
-            <section className="panel template-warning-panel">
-              <h4>保存前还缺内容</h4>
-              <ul className="plain-list">
-                {validationEntries.map((item) => (
-                  <li key={`${item.step.key}-${item.issue}`}>{item.step.title}：{item.issue}</li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+      {error ? <p>操作失败：{error}</p> : null}
+      {message ? <p className="inline-note">{message}</p> : null}
 
-          {activeStep === "basic" ? (
+      <section className="panel">
+        <div className="section-header">
+          <div>
+            <h3>模板列表</h3>
+            <p className="inline-note">列表默认只看摘要，详情按需展开；编辑时再进入步骤化录入面板。</p>
+          </div>
+          <StatusBadge status="info" />
+        </div>
+        <div className="table-scroll-shell">
+          <table className="compact-table">
+            <thead>
+              <tr>
+                <th>模板</th>
+                <th>状态</th>
+                <th>摘要</th>
+                <th>对象组 / 条件</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((item) => {
+                const targetGroups = getTargetGroups(item);
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      <div className="stack-list">
+                        <strong>{item.name}</strong>
+                        <span className="inline-note">{String(item.joint_rule?.operator ?? "AND")}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <StatusBadge status={item.enabled ? "enabled" : "disabled"} />
+                    </td>
+                    <td>
+                      <span className="ellipsis-cell" title={item.reason}>{item.reason}</span>
+                    </td>
+                    <td>{targetGroups.length} / {item.match_conditions.length}</td>
+                    <td>
+                      <div className="button-row">
+                        <button type="button" className="mini-button" disabled={saving} onClick={() => startEdit(item)}>编辑</button>
+                        <button type="button" className="mini-button" disabled={saving} onClick={() => void setEnabled(item.id, !item.enabled)}>{item.enabled ? "停用" : "启用"}</button>
+                        <button type="button" className="mini-button" disabled={saving} onClick={() => void remove(item.id)}>删除</button>
+                      </div>
+                      <details className="template-details-card template-inline-details">
+                        <summary>查看详情</summary>
+                        <div className="template-details-body">
+                          <div className="stack-list">
+                            {targetGroups.map((group, index) => (
+                              <div key={`${item.id}-group-${index}`} className="stack-item">
+                                <strong>对象组：{group.ref}</strong>
+                                <p>{group.namespace}{group.label_selector ? ` / ${group.label_selector}` : ""}</p>
+                                {group.name ? <p className="inline-note">Pod 名称模式：{group.name}</p> : null}
+                                {group.resource_scope?.length ? <p className="inline-note">资源范围：{group.resource_scope.join(", ")}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="condition-list">
+                            {item.match_conditions.map((condition, index) => (
+                              <div key={`${item.id}-condition-${index}`} className="condition-item">
+                                {describeCondition(condition as { target_ref?: string; condition_type?: string; operator?: string; expected_value?: unknown })}
+                              </div>
+                            ))}
+                          </div>
+                          <p className="inline-note">建议：{item.suggestion}</p>
+                          {item.command ? <pre className="log-block code-block-scroll">{item.command}</pre> : null}
+                          {item.risk_note ? <p className="inline-note">风险说明：{item.risk_note}</p> : null}
+                        </div>
+                      </details>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {modalType === "editor" ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-card modal-card-polished modal-card-wide" role="dialog" aria-modal="true" aria-label="模板录入器">
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">当前步骤</p>
+                <h3>{activeStepDefinition.title}</h3>
+                <p className="inline-note">{activeStepDefinition.description}</p>
+              </div>
+              <div className="secondary-action-row">
+                <StatusBadge status={saving ? "warning" : editingId !== null ? "enabled" : "info"} />
+                <button type="button" className="mini-button" onClick={resetForm}>关闭</button>
+              </div>
+            </div>
+            <div className="template-stepper" aria-label="模板录入步骤">
+              {stepDefinitions.map((step, index) => (
+                <button
+                  key={step.key}
+                  type="button"
+                  className={`template-step-chip ${step.key === activeStep ? "template-step-chip-active" : ""}`}
+                  onClick={() => setActiveStep(step.key)}
+                >
+                  <span>{index + 1}</span>
+                  {step.title}
+                </button>
+              ))}
+            </div>
+            {validationEntries.length > 0 && activeStep === "preview" ? (
+              <section className="panel template-warning-panel">
+                <h4>保存前还缺内容</h4>
+                <ul className="plain-list">
+                  {validationEntries.map((item) => (
+                    <li key={`${item.step.key}-${item.issue}`}>{item.step.title}：{item.issue}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {activeStep === "basic" ? (
             <div className="page-section">
               <label>
                 模板名称
@@ -888,69 +986,13 @@ export function TemplatesPage() {
               {saving ? "处理中..." : editingId !== null ? "保存模板" : "新增模板"}
             </button>
           </div>
-        </section>
-
-        <section className="panel">
-          <div className="section-header">
-            <div>
-              <h3>模板列表</h3>
-              <p className="inline-note">先看摘要，需要时再展开对象组、条件和建议详情。</p>
-            </div>
-            <StatusBadge status="info" />
-          </div>
-          <div className="stack-list">
-            {data.map((item) => {
-              const targetGroups = getTargetGroups(item);
-              return (
-                <article key={item.id} className="card">
-                  <div className="card-title">
-                    <strong>{item.name}</strong>
-                    <StatusBadge status={item.enabled ? "enabled" : "disabled"} />
-                  </div>
-                  <p>{item.reason}</p>
-                  <p className="inline-note">
-                    {targetGroups.length} 个对象组 / {item.match_conditions.length} 条条件 / {String(item.joint_rule?.operator ?? "AND")}
-                  </p>
-                  <div className="button-row">
-                    <button type="button" disabled={saving} onClick={() => startEdit(item)}>编辑</button>
-                    <button type="button" disabled={saving} onClick={() => void setEnabled(item.id, !item.enabled)}>{item.enabled ? "停用" : "启用"}</button>
-                    <button type="button" disabled={saving} onClick={() => void remove(item.id)}>删除</button>
-                  </div>
-                  <details className="template-details-card">
-                    <summary>查看详情</summary>
-                    <div className="template-details-body">
-                      <div className="stack-list">
-                        {targetGroups.map((group, index) => (
-                          <div key={`${item.id}-group-${index}`} className="stack-item">
-                            <strong>对象组：{group.ref}</strong>
-                            <p>{group.namespace}{group.label_selector ? ` / ${group.label_selector}` : ""}</p>
-                            {group.name ? <p className="inline-note">Pod 名称模式：{group.name}</p> : null}
-                            {group.resource_scope?.length ? <p className="inline-note">资源范围：{group.resource_scope.join(", ")}</p> : null}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="condition-list">
-                        {item.match_conditions.map((condition, index) => (
-                          <div key={`${item.id}-condition-${index}`} className="condition-item">
-                            {describeCondition(condition as { target_ref?: string; condition_type?: string; operator?: string; expected_value?: unknown })}
-                          </div>
-                        ))}
-                      </div>
-                      <p className="inline-note">建议：{item.suggestion}</p>
-                      {item.command ? <p className="inline-note">建议命令：{item.command}</p> : null}
-                      {item.risk_note ? <p className="inline-note">风险说明：{item.risk_note}</p> : null}
-                    </div>
-                  </details>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
+      ) : null}
 
       {modalType === "import" ? (
         <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label="导入模板">
+          <section className="modal-card modal-card-polished" role="dialog" aria-modal="true" aria-label="导入模板">
             <div className="section-header">
               <div>
                 <h3>导入模板</h3>
@@ -960,7 +1002,7 @@ export function TemplatesPage() {
             </div>
             <label>
               导入模板 JSON
-              <textarea aria-label="导入模板 JSON" value={importText} onChange={(event) => setImportText(event.target.value)} rows={12} placeholder='[{"name":"..."}]' />
+              <textarea className="modal-code-input code-block-scroll" aria-label="导入模板 JSON" value={importText} onChange={(event) => setImportText(event.target.value)} rows={12} placeholder='[{"name":"..."}]' />
             </label>
             <div className="button-row">
               <button type="button" disabled={saving || importText.trim().length === 0} onClick={() => void handleImport()}>导入模板</button>
@@ -972,7 +1014,7 @@ export function TemplatesPage() {
 
       {modalType === "export" ? (
         <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label="导出模板">
+          <section className="modal-card modal-card-polished" role="dialog" aria-modal="true" aria-label="导出模板">
             <div className="section-header">
               <div>
                 <h3>导出模板</h3>
@@ -982,7 +1024,7 @@ export function TemplatesPage() {
             </div>
             <label>
               已导出 JSON
-              <textarea aria-label="已导出 JSON" value={exportText} readOnly rows={14} />
+              <textarea className="modal-code-input code-block-scroll" aria-label="已导出 JSON" value={exportText} readOnly rows={14} />
             </label>
             <div className="button-row">
               <button type="button" onClick={() => setModalType(null)}>关闭</button>

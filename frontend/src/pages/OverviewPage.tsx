@@ -64,15 +64,15 @@ export function OverviewPage() {
           <p className="hero-summary">{data.recent_summary}</p>
           <div className="quick-action-grid">
             <Link to="/inspections/namespace" className="quick-action-card">
-              <strong>巡检名称空间</strong>
-              <span>从整个名称空间快速筛出异常 Pod 和关联对象。</span>
+              <strong>状态巡检</strong>
+              <span>从名称空间维度快速筛出异常范围，再决定是否下钻。</span>
             </Link>
-            <Link to="/inspections/pod" className="quick-action-card">
-              <strong>巡检单个 Pod</strong>
-              <span>聚焦某个 Pod 的状态、事件、describe 和日志命中。</span>
+            <Link to="/inspections/namespace" className="quick-action-card">
+              <strong>日志巡检</strong>
+              <span>进入统一日志工作台，检查全部 Pod、标签范围或单个 Pod。</span>
             </Link>
             <Link to="/diagnosis" className="quick-action-card">
-              <strong>故障模板检查</strong>
+              <strong>模板检查</strong>
               <span>按预录入模板核对常见故障，不再重复输入检查范围。</span>
             </Link>
           </div>

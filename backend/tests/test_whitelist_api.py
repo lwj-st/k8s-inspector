@@ -1,3 +1,8 @@
+import pytest
+
+from app.services.keyword_service import match_log_text
+
+
 def test_create_and_list_whitelist(client) -> None:
     payload = {
         "namespace": "demo",
@@ -277,3 +282,17 @@ def test_namespace_inspection_disabled_whitelist_restores_non_whitelisted_hit(cl
     assert second_response.status_code == 200
     assert second_hit["whitelisted"] is False
     assert second_hit["whitelist_rule_id"] is None
+@pytest.mark.parametrize("match_index", [0, 6, 12])
+def test_keyword_hit_contains_up_to_five_lines_of_log_context(client, match_index: int) -> None:
+    session = client.app.state.session_factory()
+    try:
+        lines = [f"line-{index}" for index in range(13)]
+        lines[match_index] = "database connection refused"
+        hits = match_log_text(session, "demo", None, "demo-api", "demo-api", "\n".join(lines))
+    finally:
+        session.close()
+
+    assert hits[0].matched_text == "database connection refused"
+    assert hits[0].context_before == [f"line-{index}" for index in range(max(0, match_index - 5), match_index)]
+    assert hits[0].context_after == [f"line-{index}" for index in range(match_index + 1, min(13, match_index + 6))]
+    assert hits[0].context_text == "\n".join([*hits[0].context_before, hits[0].matched_text, *hits[0].context_after])

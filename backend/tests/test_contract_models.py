@@ -6,6 +6,8 @@ from app.schemas.inspection import (
     NamespaceBatchInspectionRequest,
     NamespaceBatchInspectionResponse,
     NamespaceDiscoveryResponse,
+    NamespaceLabelDiscoveryResponse,
+    NamespaceLabelSummary,
     NamespaceSummary,
 )
 from app.schemas.template import FaultTemplateCreate
@@ -161,8 +163,30 @@ def test_common_contract_models_validate_expected_fields() -> None:
 
     assert target.template_id == 7
     assert evidence.log_hits[0].keyword == "connection refused"
+    assert evidence.log_hits[0].context_before == []
+    assert evidence.log_hits[0].context_after == []
+    assert evidence.log_hits[0].context_text is None
     assert condition.expected_value == "connection refused"
     assert template_target.label_selector == "app=demo"
+
+
+def test_keyword_hit_contract_accepts_optional_log_context_fields() -> None:
+    hit = KeywordHit(
+        keyword="connection refused",
+        category="dependency",
+        severity="warning",
+        source="current_log",
+        matched_text="database connection refused",
+        context_before=["starting app", "dial tcp db:5432"],
+        context_after=["retrying in 3s"],
+        context_text="starting app\ndial tcp db:5432\ndatabase connection refused\nretrying in 3s",
+        container_name="api",
+        whitelisted=False,
+    )
+
+    assert hit.context_before == ["starting app", "dial tcp db:5432"]
+    assert hit.context_after == ["retrying in 3s"]
+    assert hit.context_text == "starting app\ndial tcp db:5432\ndatabase connection refused\nretrying in 3s"
 
 
 def test_common_contract_models_accept_legacy_aliases() -> None:
@@ -239,6 +263,25 @@ def test_namespace_discovery_contract_exposes_summary_fields() -> None:
         AbnormalCategory.pod_status,
         AbnormalCategory.log_keyword,
     ]
+
+
+def test_namespace_label_discovery_contract_exposes_selector_candidates() -> None:
+    response = NamespaceLabelDiscoveryResponse(
+        namespace="platform",
+        executed_at="2026-07-21T10:00:00Z",
+        labels=[
+            NamespaceLabelSummary(
+                key="app.kubernetes.io/instance",
+                values=["lazy-rag-file-process-worker"],
+                selector="app.kubernetes.io/instance=lazy-rag-file-process-worker",
+                pod_count=3,
+            )
+        ],
+    )
+
+    assert response.namespace == "platform"
+    assert response.labels[0].selector == "app.kubernetes.io/instance=lazy-rag-file-process-worker"
+    assert response.labels[0].pod_count == 3
 
 
 def test_namespace_batch_request_requires_namespaces_or_all_namespaces() -> None:

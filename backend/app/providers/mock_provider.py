@@ -98,6 +98,35 @@ class MockInspectionProvider:
             ],
         }
 
+    def list_namespace_labels(self, namespace: str) -> dict:
+        labels_by_namespace = {
+            "demo": [
+                {"key": "team", "value": "platform", "pod_count": 1},
+                {"key": "app", "value": "demo-api", "pod_count": 1},
+            ],
+            "prod-core": [
+                {"key": "team", "value": "platform", "pod_count": 4},
+                {"key": "environment", "value": "production", "pod_count": 4},
+            ],
+            "kube-system": [
+                {"key": "team", "value": "infrastructure", "pod_count": 6},
+            ],
+        }
+        labels = labels_by_namespace.get(namespace, [])
+        return {
+            "namespace": namespace,
+            "executed_at": now_iso(),
+            "labels": [
+                {
+                    "key": item["key"],
+                    "values": [item["value"]],
+                    "selector": f'{item["key"]}={item["value"]}',
+                    "pod_count": item["pod_count"],
+                }
+                for item in labels
+            ],
+        }
+
     def get_overview(self) -> dict:
         return {
             "health_status": "warning",

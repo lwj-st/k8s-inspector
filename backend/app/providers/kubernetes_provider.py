@@ -103,6 +103,36 @@ class KubernetesInspectionProvider:
             "namespaces": results,
         }
 
+    def list_namespace_labels(self, namespace: str) -> dict:
+        try:
+            pods = self.core.list_namespaced_pod(
+                namespace=namespace,
+                _request_timeout=self.settings.k8s_request_timeout,
+            ).items
+        except ApiException as exc:
+            reason = exc.reason or str(exc)
+            raise RuntimeError(f"无法读取名称空间 {namespace} 的 Pod 标签：{reason}") from exc
+
+        label_counts: dict[tuple[str, str], int] = {}
+        for pod in pods:
+            for key, value in (pod.metadata.labels or {}).items():
+                label_counts[(key, value)] = label_counts.get((key, value), 0) + 1
+
+        labels = [
+            {
+                "key": key,
+                "values": [value],
+                "selector": f"{key}={value}",
+                "pod_count": pod_count,
+            }
+            for (key, value), pod_count in sorted(label_counts.items())
+        ]
+        return {
+            "namespace": namespace,
+            "executed_at": now_iso(),
+            "labels": labels,
+        }
+
     def _pod_issue_summary(self, pod: client.V1Pod, include_logs: bool = True) -> tuple[str, str | None]:
         phase = pod.status.phase or "Unknown"
         container_statuses = pod.status.container_statuses or []

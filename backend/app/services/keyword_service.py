@@ -266,6 +266,8 @@ def match_log_text(
         if lowered_keyword not in lowered_text:
             continue
 
+        matched_text, context_before, context_after, context_text = _extract_log_context(log_text, rule.keyword)
+
         whitelist_rule = find_matching_whitelist(
             session=session,
             namespace=namespace,
@@ -280,7 +282,10 @@ def match_log_text(
                 category=rule.category,
                 severity=rule.severity,
                 source="log_summary",
-                matched_text=_extract_matched_text(log_text, rule.keyword),
+                matched_text=matched_text,
+                context_before=context_before,
+                context_after=context_after,
+                context_text=context_text,
                 container_name=container_name,
                 whitelisted=whitelist_rule is not None,
                 whitelist_rule_id=whitelist_rule.id if whitelist_rule else None,
@@ -313,6 +318,8 @@ def match_explicit_log_keywords(
         if lowered_keyword not in lowered_text:
             continue
 
+        matched_text, context_before, context_after, context_text = _extract_log_context(log_text, normalized_keyword)
+
         whitelist_rule = find_matching_whitelist(
             session=session,
             namespace=namespace,
@@ -327,7 +334,10 @@ def match_explicit_log_keywords(
                 category="fault_template",
                 severity="error",
                 source="template_log_condition",
-                matched_text=_extract_matched_text(log_text, normalized_keyword),
+                matched_text=matched_text,
+                context_before=context_before,
+                context_after=context_after,
+                context_text=context_text,
                 container_name=container_name,
                 whitelisted=whitelist_rule is not None,
                 whitelist_rule_id=whitelist_rule.id if whitelist_rule else None,
@@ -342,3 +352,15 @@ def _extract_matched_text(log_text: str, keyword: str) -> str:
         if lowered_keyword in line.lower():
             return line
     return log_text
+
+
+def _extract_log_context(log_text: str, keyword: str, radius: int = 5) -> tuple[str, list[str], list[str], str | None]:
+    lines = log_text.splitlines()
+    lowered_keyword = keyword.lower()
+    for index, line in enumerate(lines):
+        if lowered_keyword not in line.lower():
+            continue
+        before = lines[max(0, index - radius):index]
+        after = lines[index + 1:index + radius + 1]
+        return line, before, after, "\n".join([*before, line, *after])
+    return log_text, [], [], None

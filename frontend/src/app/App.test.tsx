@@ -44,6 +44,16 @@ describe("App", () => {
         );
       }
 
+      if (url.endsWith("/api/v1/inspection-targets")) {
+        return new Response(
+          JSON.stringify([]),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          },
+        );
+      }
+
       if (url.endsWith("/api/v1/inspections/cluster/run")) {
         return new Response(
           JSON.stringify({
@@ -170,7 +180,7 @@ describe("App", () => {
     fetchMock.mockReset();
   });
 
-  it("renders auto inspection home with namespace list", async () => {
+  it("renders status inspection home with namespace list", async () => {
     const router = createMemoryRouter(appRoutes, {
       initialEntries: ["/"],
       basename: getRouterBasename("")
@@ -179,10 +189,32 @@ describe("App", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "自动巡检" })).toBeInTheDocument();
-    expect(await screen.findByText("名称空间列表")).toBeInTheDocument();
-    expect(await screen.findByText("default")).toBeInTheDocument();
-    expect(await screen.findByText("prod-core")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "自动巡检" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "状态巡检" })).toBeInTheDocument();
+    expect(await screen.findByText("名称空间巡检入口")).toBeInTheDocument();
+    expect(screen.getByLabelText("搜索名称空间")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择名称空间")).toBeInTheDocument();
+    expect(screen.queryByText("名称空间列表")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "状态巡检" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "日志巡检" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "模板检查" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "故障模板" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "关键字库" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "系统配置" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "自动巡检" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "名称空间巡检" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "单 Pod 巡检" })).not.toBeInTheDocument();
+  });
+
+  it("redirects old pod route to the merged namespace log inspection page", async () => {
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/inspections/pod"],
+      basename: getRouterBasename("")
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "日志巡检" })).toBeInTheDocument();
+    expect(screen.getByLabelText("范围类型")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("全部 Pod")).toBeInTheDocument();
   });
 });

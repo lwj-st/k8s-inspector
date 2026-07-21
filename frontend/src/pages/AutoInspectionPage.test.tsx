@@ -5,6 +5,10 @@ import { AutoInspectionPage } from "./AutoInspectionPage";
 
 const fetchMock = vi.fn();
 
+async function chooseNamespace(name: string) {
+  fireEvent.change(await screen.findByLabelText("选择名称空间"), { target: { value: name } });
+}
+
 describe("AutoInspectionPage", () => {
   afterEach(() => {
     cleanup();
@@ -16,7 +20,7 @@ describe("AutoInspectionPage", () => {
     vi.stubGlobal("fetch", fetchMock);
   });
 
-  it("loads namespaces and supports search plus multi select", async () => {
+  it("loads namespaces and supports search plus single namespace selection", async () => {
     fetchMock.mockImplementation(async (input: string | URL | Request) => {
       const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
       if (url.endsWith("/api/v1/discovery/namespaces")) {
@@ -62,28 +66,22 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    expect(await screen.findByText("名称空间列表")).toBeInTheDocument();
-    expect(screen.getByText("default")).toBeInTheDocument();
-    expect(screen.getByText("prod-core")).toBeInTheDocument();
-    expect(screen.getByText("kube-system")).toBeInTheDocument();
+    expect(await screen.findByLabelText("选择名称空间")).toBeInTheDocument();
+    expect(screen.queryByText("名称空间列表")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "全选当前结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消当前结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "选择 prod-core" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("搜索名称空间"), { target: { value: "prod" } });
-    expect(screen.getByText("prod-core")).toBeInTheDocument();
-    expect(screen.queryByText("default")).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "prod-core" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "default" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "全选当前结果" }));
-    expect(screen.getByRole("checkbox", { name: "选择 prod-core" })).toBeChecked();
+    fireEvent.change(screen.getByLabelText("选择名称空间"), { target: { value: "prod-core" } });
+    expect(screen.getByDisplayValue("prod-core")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("搜索名称空间"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择 default" }));
-    expect(screen.getByRole("checkbox", { name: "选择 prod-core" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "选择 default" })).toBeChecked();
-
-    fireEvent.click(screen.getByRole("button", { name: "取消当前结果" }));
-    await waitFor(() => {
-      expect(screen.getByRole("checkbox", { name: "选择 prod-core" })).not.toBeChecked();
-      expect(screen.getByRole("checkbox", { name: "选择 default" })).not.toBeChecked();
-    });
+    expect(screen.getByRole("option", { name: "default" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("prod-core")).toBeInTheDocument();
   });
 
   it("shows empty state when no namespaces are returned", async () => {
@@ -237,11 +235,11 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
 
     expect(await screen.findByText("批量巡检摘要")).toBeInTheDocument();
-    expect(await screen.findByText("本次执行：巡检选中 1 个名称空间")).toBeInTheDocument();
+    expect(await screen.findByText("本次执行：巡检名称空间 prod-core")).toBeInTheDocument();
     expect(await screen.findByText("Pod 状态")).toBeInTheDocument();
     expect(await screen.findByText("事件")).toBeInTheDocument();
   });
@@ -288,7 +286,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    const runAllButton = await screen.findByRole("button", { name: "巡检全部" });
+    const runAllButton = await screen.findByRole("button", { name: "巡检全部名称空间" });
     fireEvent.click(runAllButton);
 
     const loadingButtons = screen.getAllByRole("button", { name: "巡检中..." });
@@ -404,7 +402,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "巡检全部" }));
+    fireEvent.click(await screen.findByRole("button", { name: "巡检全部名称空间" }));
 
     expect(await screen.findByText("该名称空间巡检失败")).toBeInTheDocument();
     expect(screen.queryByText(/批量巡检请求失败/)).not.toBeInTheDocument();
@@ -510,7 +508,7 @@ describe("AutoInspectionPage", () => {
 
     const { container } = render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "巡检全部" }));
+    fireEvent.click(await screen.findByRole("button", { name: "巡检全部名称空间" }));
     expect(await screen.findByText("批量巡检摘要")).toBeInTheDocument();
 
     const inspectedMetric = screen.getByText("巡检名称空间").closest("article");
@@ -571,7 +569,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "巡检全部" }));
+    fireEvent.click(await screen.findByRole("button", { name: "巡检全部名称空间" }));
 
     expect(await screen.findByText("批量巡检请求失败：Request failed: 500")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试批量巡检" })).toBeInTheDocument();
@@ -626,7 +624,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "巡检全部" }));
+    fireEvent.click(await screen.findByRole("button", { name: "巡检全部名称空间" }));
     expect(await screen.findByText("批量巡检请求失败：Request failed: 500")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试批量巡检" }));
@@ -684,7 +682,7 @@ describe("AutoInspectionPage", () => {
           JSON.stringify({
             executed_at: "2026-07-13T10:11:00Z",
             all_namespaces: false,
-            requested_namespaces: ["prod-core", "kube-system"],
+            requested_namespaces: ["prod-core"],
             results: [],
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -696,17 +694,16 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "选择 kube-system" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     expect(await screen.findByText("批量巡检请求失败：Request failed: 500")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试批量巡检" }));
-    await screen.findByText("本次执行：巡检选中 2 个名称空间");
+    await screen.findByText("本次执行：巡检名称空间 prod-core");
 
     expect(batchPayloads).toEqual([
-      { namespaces: ["prod-core", "kube-system"], all_namespaces: false },
-      { namespaces: ["prod-core", "kube-system"], all_namespaces: false },
+      { namespaces: ["prod-core"], all_namespaces: false },
+      { namespaces: ["prod-core"], all_namespaces: false },
     ]);
   });
 
@@ -796,8 +793,8 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
 
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
@@ -807,7 +804,7 @@ describe("AutoInspectionPage", () => {
     expect(within(drawer).getByText("已命中模板")).toBeInTheDocument();
     expect(within(drawer).getByRole("heading", { name: "无法判断" })).toBeInTheDocument();
     expect(within(drawer).getByText("未命中模板（1）")).toBeInTheDocument();
-    expect(within(drawer).getByText("CrashLoop 模板")).toBeInTheDocument();
+    expect(within(drawer).getAllByText("CrashLoop 模板").length).toBeGreaterThan(0);
     expect(within(drawer).getByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();
     expect(within(drawer).getByText("采集失败模板")).toBeInTheDocument();
 
@@ -815,7 +812,7 @@ describe("AutoInspectionPage", () => {
     expect(unmatchedDetails).not.toHaveAttribute("open");
     fireEvent.click(within(unmatchedDetails as HTMLDetailsElement).getByText("未命中模板（1）"));
     expect(unmatchedDetails).toHaveAttribute("open");
-    expect(within(unmatchedDetails as HTMLDetailsElement).getByText("Redis 连接失败模板")).toBeInTheDocument();
+    expect(within(unmatchedDetails as HTMLDetailsElement).getAllByText("Redis 连接失败模板").length).toBeGreaterThan(0);
     expect(within(unmatchedDetails as HTMLDetailsElement).getByText(/对象组 redis 在日志中包含 redis timeout/)).toBeInTheDocument();
   });
 
@@ -856,8 +853,8 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
@@ -915,8 +912,8 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
@@ -968,8 +965,8 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
@@ -1030,8 +1027,8 @@ describe("AutoInspectionPage", () => {
     });
 
     render(<AutoInspectionPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     expect(await screen.findByText("批量巡检摘要")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1040,7 +1037,9 @@ describe("AutoInspectionPage", () => {
     expect(within(drawer).getByText("事件")).toBeInTheDocument();
     expect(within(drawer).getByText("broken-api")).toBeInTheDocument();
     expect(within(drawer).getByText("Back-off restarting failed container")).toBeInTheDocument();
-    expect(within(drawer).getByText("connection refused：database connection refused")).toBeInTheDocument();
+    expect(within(drawer).getByText("connection refused")).toBeInTheDocument();
+    expect(within(drawer).getByText("命中上下文（不是完整日志）")).toBeInTheDocument();
+    expect(within(drawer).getByText("database connection refused")).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "忽略此命中" })).toBeInTheDocument();
     expect(within(drawer).getByText("healthy-api").closest("details")).not.toHaveAttribute("open");
     expect(within(drawer).getByText("Service（全部正常 1）")).toBeInTheDocument();
@@ -1110,8 +1109,8 @@ describe("AutoInspectionPage", () => {
     });
 
     render(<AutoInspectionPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1174,8 +1173,8 @@ describe("AutoInspectionPage", () => {
     });
 
     render(<AutoInspectionPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1229,8 +1228,8 @@ describe("AutoInspectionPage", () => {
     });
 
     render(<AutoInspectionPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1266,8 +1265,8 @@ describe("AutoInspectionPage", () => {
     });
 
     render(<AutoInspectionPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
     expect(await screen.findByText("Request failed: 503")).toBeInTheDocument();
@@ -1317,8 +1316,8 @@ describe("AutoInspectionPage", () => {
     });
 
     render(<AutoInspectionPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 edge-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("edge-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1364,8 +1363,8 @@ describe("AutoInspectionPage", () => {
     });
 
     render(<AutoInspectionPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "选择 prod-core" }));
-    fireEvent.click(screen.getByRole("button", { name: "巡检选中" }));
+    await chooseNamespace("prod-core");
+    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 

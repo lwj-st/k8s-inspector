@@ -35,9 +35,9 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     normalized.includes("backoff");
   const tone = isBad
     ? "status-badge status-bad"
-    : normalized.includes("healthy") || normalized.includes("ready") || normalized.includes("running") || normalized.includes("succeeded") || normalized.includes("completed")
+    : normalized.includes("healthy") || normalized.includes("ready") || normalized.includes("running") || normalized.includes("succeeded") || normalized.includes("completed") || normalized === "enabled"
       ? "status-badge status-good"
-      : normalized.includes("warning") || normalized.includes("degraded") || normalized.includes("enabled")
+        : normalized.includes("warning") || normalized.includes("degraded")
         ? "status-badge status-warn"
         : normalized.includes("info") || normalized.includes("unknown")
           ? "status-badge status-neutral"

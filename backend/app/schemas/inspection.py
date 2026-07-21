@@ -113,6 +113,19 @@ class NamespaceDiscoveryResponse(BaseModel):
     namespaces: list[NamespaceSummary] = Field(default_factory=list)
 
 
+class NamespaceLabelSummary(BaseModel):
+    key: str
+    values: list[str] = Field(default_factory=list)
+    selector: str
+    pod_count: int = 0
+
+
+class NamespaceLabelDiscoveryResponse(BaseModel):
+    namespace: str
+    executed_at: str
+    labels: list[NamespaceLabelSummary] = Field(default_factory=list)
+
+
 class NamespaceInspectionResponse(BaseModel):
     inspection_target: InspectionTarget
     namespace: str

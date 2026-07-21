@@ -56,7 +56,7 @@ describe("StatusBadge", () => {
     );
 
     const badges = container.querySelectorAll(".status-badge");
-    expect(badges[0]).toHaveClass("status-warn");
+    expect(badges[0]).toHaveClass("status-good");
     expect(badges[1]).toHaveClass("status-good");
     expect(badges[2]).toHaveClass("status-warn");
     expect(badges[3]).toHaveClass("status-neutral");

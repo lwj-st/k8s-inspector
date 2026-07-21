@@ -71,6 +71,9 @@ class KeywordHit(BaseModel):
     severity: KeywordHitSeverity = KeywordHitSeverity.warning
     source: str
     matched_text: str
+    context_before: list[str] = Field(default_factory=list)
+    context_after: list[str] = Field(default_factory=list)
+    context_text: str | None = None
     container_name: str | None = None
     whitelisted: bool = False
     whitelist_rule_id: int | None = None

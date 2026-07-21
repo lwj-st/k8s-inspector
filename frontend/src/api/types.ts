@@ -39,6 +39,9 @@ export type KeywordHit = {
   severity: KeywordHitSeverity;
   source: string;
   matched_text: string;
+  context_before?: string[];
+  context_after?: string[];
+  context_text?: string | null;
   container_name?: string | null;
   whitelisted: boolean;
   whitelist_rule_id?: number | null;
@@ -144,6 +147,19 @@ export type NamespaceSummary = {
 export type NamespaceDiscoveryResponse = {
   executed_at: string;
   namespaces: NamespaceSummary[];
+};
+
+export type NamespaceLabelSummary = {
+  key: string;
+  values: string[];
+  selector: string;
+  pod_count: number;
+};
+
+export type NamespaceLabelDiscoveryResponse = {
+  namespace: string;
+  executed_at: string;
+  labels: NamespaceLabelSummary[];
 };
 
 export type InspectedPod = {

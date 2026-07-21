@@ -88,6 +88,26 @@ function summarizeEvidence(item: Record<string, unknown>) {
   return [type, pod ?? pods, matchedText ?? value].filter(Boolean).join(" / ");
 }
 
+function summarizePods(item: Record<string, unknown>) {
+  const pod = item.pod ? [String(item.pod)] : [];
+  const pods = Array.isArray(item.pods) ? item.pods.map((value) => String(value)) : [];
+  const values = [...pod, ...pods];
+  return values.length > 0 ? values.join(", ") : "未标记 Pod";
+}
+
+function summarizeContainer(item: Record<string, unknown>) {
+  return item.container_name ? String(item.container_name) : "未标记容器";
+}
+
+function evidenceContext(item: Record<string, unknown>) {
+  if (item.type !== "log_keyword") {
+    return null;
+  }
+  const contextText = item.context_text ? String(item.context_text).trim() : "";
+  const matchedText = item.matched_text ? String(item.matched_text) : "";
+  return contextText || matchedText || null;
+}
+
 function getResultKind(item: NormalizedMatchResult): MatchResultKind {
   if (item.matched) {
     return "matched";
@@ -113,57 +133,92 @@ function getResultKind(item: NormalizedMatchResult): MatchResultKind {
 function MatchResultCard({ item, kind }: { item: NormalizedMatchResult; kind: MatchResultKind }) {
   const badgeStatus = kind === "matched" ? "matched" : kind === "undetermined" ? "warning" : "info";
   const heading = kind === "matched" ? "已命中故障" : kind === "undetermined" ? "无法判断" : "未命中";
+  const evidencePods = Array.from(new Set(item.evidence_refs.map((evidence) => summarizePods(evidence))));
+  const evidenceContainers = Array.from(
+    new Set(item.evidence_refs.map((evidence) => summarizeContainer(evidence)).filter((value) => value !== "未标记容器")),
+  );
 
   return (
-    <article className={`card diagnosis-card diagnosis-card-${kind}`}>
-      <div className="section-header">
+    <details className={`card diagnosis-card diagnosis-card-${kind}`} open={kind === "matched"}>
+      <summary className="diagnosis-summary-row">
         <div>
           <strong>{item.template_name}</strong>
           <p className="inline-note">{heading}</p>
         </div>
-        <StatusBadge status={badgeStatus} />
-      </div>
-      {item.summary ? <p className="diagnosis-summary">{item.summary}</p> : null}
-      <div className="diagnosis-meta">
-        <p><strong>判断原因：</strong>{item.reason}</p>
-        <p><strong>建议动作：</strong>{item.suggestion}</p>
-        {item.risk_note ? <p><strong>风险说明：</strong>{item.risk_note}</p> : null}
-      </div>
-      {item.matched_conditions.length > 0 ? (
-        <>
-          <p className="inline-note">命中条件 {item.matched_conditions.length}</p>
-          <div className="condition-list">
-            {item.matched_conditions.map((condition, index: number) => (
-              <div key={`${item.template_id}-matched-${index}`} className="condition-item">
-                {describeCondition(condition)}
-              </div>
-            ))}
+        <div className="diagnosis-summary-actions">
+          <span className="inline-note">命中 {item.matched_conditions.length} / 未命中 {item.unmatched_conditions.length}</span>
+          <StatusBadge status={badgeStatus} />
+        </div>
+      </summary>
+      <div className="diagnosis-card-body">
+        {item.summary ? <p className="diagnosis-summary">{item.summary}</p> : null}
+        <div className="diagnosis-meta">
+          <p><strong>判断原因：</strong>{item.reason}</p>
+          <p><strong>建议动作：</strong>{item.suggestion}</p>
+          {item.risk_note ? <p><strong>风险说明：</strong>{item.risk_note}</p> : null}
+        </div>
+        {kind === "matched" ? (
+          <div className="diagnosis-inline-metrics">
+            <span>命中 Pod：{evidencePods.join(" / ") || "未标记"}</span>
+            <span>命中容器：{evidenceContainers.join(" / ") || "未标记"}</span>
           </div>
-        </>
-      ) : null}
-      {item.unmatched_conditions.length > 0 ? (
-        <>
-          <p className="inline-note">未命中条件 {item.unmatched_conditions.length}</p>
-          <div className="condition-list">
-            {item.unmatched_conditions.map((condition, index: number) => (
-              <div key={`${item.template_id}-unmatched-${index}`} className="condition-item condition-item-muted">
-                {describeCondition(condition)}
-              </div>
-            ))}
-          </div>
-        </>
-      ) : null}
-      {item.evidence_refs.length > 0 ? (
-        <>
-          <p className="inline-note">关键证据</p>
-          <ul className="plain-list">
-            {item.evidence_refs.map((evidence, index) => (
-              <li key={`${item.template_id}-evidence-${index}`}>{summarizeEvidence(evidence)}</li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </article>
+        ) : null}
+        {item.matched_conditions.length > 0 ? (
+          <>
+            <p className="inline-note">命中条件 {item.matched_conditions.length}</p>
+            <div className="condition-list">
+              {item.matched_conditions.map((condition, index: number) => (
+                <div key={`${item.template_id}-matched-${index}`} className="condition-item">
+                  {describeCondition(condition)}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+        {item.unmatched_conditions.length > 0 ? (
+          <>
+            <p className="inline-note">未命中条件 {item.unmatched_conditions.length}</p>
+            <div className="condition-list">
+              {item.unmatched_conditions.map((condition, index: number) => (
+                <div key={`${item.template_id}-unmatched-${index}`} className="condition-item condition-item-muted">
+                  {describeCondition(condition)}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+        {item.evidence_refs.length > 0 ? (
+          <details className="diagnosis-evidence-details">
+            <summary>查看证据（{item.evidence_refs.length}）</summary>
+            <div className="page-section diagnosis-evidence-body">
+              <section className="compact-subpanel">
+                <strong>证据摘要</strong>
+                <ul className="plain-list">
+                  {item.evidence_refs.map((evidence, index) => (
+                    <li key={`${item.template_id}-evidence-summary-${index}`}>{summarizeEvidence(evidence)}</li>
+                  ))}
+                </ul>
+              </section>
+              {item.evidence_refs.map((evidence, index) => (
+                <section key={`${item.template_id}-evidence-json-${index}`} className="compact-subpanel">
+                  <div className="section-header">
+                    <strong>证据 {index + 1}</strong>
+                    <span className="section-tip">{summarizeEvidence(evidence)}</span>
+                  </div>
+                  {evidenceContext(evidence) ? (
+                    <>
+                      <span className="inline-note">命中上下文（不是完整日志）</span>
+                      <pre className="log-block code-block-scroll">{evidenceContext(evidence)}</pre>
+                    </>
+                  ) : null}
+                  <pre className="log-block code-block-scroll">{JSON.stringify(evidence, null, 2)}</pre>
+                </section>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -254,14 +309,45 @@ export function DiagnosisResultPanel({
         {data.evidence_summary.length > 0 ? (
           <>
             <p className="inline-note">全局证据摘要</p>
-            <ul className="plain-list">
-              {data.evidence_summary.map((item, index) => (
-                <li key={`summary-${index}`}>{summarizeEvidence(item)}</li>
-              ))}
-            </ul>
+            <pre className="log-block code-block-scroll">
+              {data.evidence_summary.map((item) => summarizeEvidence(item)).join("\n")}
+            </pre>
           </>
         ) : null}
       </section>
+      {matchedResults.length > 0 ? (
+        <section className="panel panel-muted diagnosis-highlight-panel">
+          <div className="section-header">
+            <div>
+              <h3>优先关注命中模板</h3>
+              <p className="inline-note">先看已命中的已知故障，再展开查看证据和未命中原因。</p>
+            </div>
+            <StatusBadge status="matched" />
+          </div>
+          <div className="table-scroll-shell">
+            <table className="compact-table">
+              <thead>
+                <tr>
+                  <th>模板</th>
+                  <th>结论</th>
+                  <th>命中条件</th>
+                  <th>建议动作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matchedResults.map((item) => (
+                  <tr key={`matched-summary-${item.template_id}`}>
+                    <td>{item.template_name}</td>
+                    <td className="ellipsis-cell" title={item.reason}>{item.reason}</td>
+                    <td>{item.matched_conditions.length}</td>
+                    <td className="ellipsis-cell" title={item.suggestion}>{item.suggestion}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
       {results.length === 0 ? (
         <section className="panel">
           <p>本次未命中任何故障模板。</p>

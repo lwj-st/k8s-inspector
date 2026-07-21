@@ -169,6 +169,9 @@ def _match_log_keyword(condition: dict[str, Any], target: dict[str, Any]) -> tup
                         "pod": pod["name"],
                         "value": expected,
                         "matched_text": hit.get("matched_text") or "",
+                        "context_before": hit.get("context_before") or [],
+                        "context_after": hit.get("context_after") or [],
+                        "context_text": hit.get("context_text"),
                         "container_name": hit.get("container_name"),
                     }
                 )

@@ -229,19 +229,33 @@ describe("WhitelistsPage", () => {
     fetchMock.mockReset();
   });
 
-  it("renders summarized keyword and whitelist sections without default json textareas", async () => {
+  it("renders compact keyword tab by default without inline import export json", async () => {
     render(<WhitelistsPage />);
 
-    expect(await screen.findByRole("heading", { name: "关键字库与白名单" })).toBeInTheDocument();
-    expect(screen.getByText("database / downstream not ready")).toBeInTheDocument();
-    expect(screen.getByText("严重程度：高 / 系统内置")).toBeInTheDocument();
-    expect(screen.getByText("demo / app=demo / Pod demo-api-* / 容器 demo-api")).toBeInTheDocument();
-    expect(screen.getByText("来源说明：warmup noise")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "关键字库" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /关键字/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("table", { name: "关键字规则表" })).toBeInTheDocument();
+    expect(screen.getByText("connection refused")).toBeInTheDocument();
+    expect(screen.getByText("database")).toBeInTheDocument();
+    expect(screen.getByText("高")).toBeInTheDocument();
+    expect(screen.getByText("内置")).toBeInTheDocument();
+    expect(screen.getByText("downstream not ready")).toBeInTheDocument();
     expect(screen.queryByLabelText("导入关键字 JSON")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("导入白名单 JSON")).not.toBeInTheDocument();
   });
 
-  it("allows creating and editing keyword and whitelist in modals", async () => {
+  it("switches to whitelist tab and shows compact scope plus note", async () => {
+    render(<WhitelistsPage />);
+
+    await screen.findByRole("table", { name: "关键字规则表" });
+    fireEvent.click(screen.getByRole("tab", { name: /白名单/ }));
+
+    expect(screen.getByRole("table", { name: "白名单规则表" })).toBeInTheDocument();
+    expect(screen.getByText("demo / app=demo / Pod demo-api-* / 容器 demo-api")).toBeInTheDocument();
+    expect(screen.getByText("warmup noise")).toBeInTheDocument();
+  });
+
+  it("allows creating and editing keyword and whitelist in polished modals", async () => {
     render(<WhitelistsPage />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "新增关键字" }))[0]);
@@ -257,19 +271,21 @@ describe("WhitelistsPage", () => {
       expect(screen.getByText("timeout")).toBeInTheDocument();
     });
 
-    const timeoutCard = screen.getByText("timeout").closest(".card");
-    expect(timeoutCard).not.toBeNull();
-    fireEvent.click(within(timeoutCard as HTMLElement).getByRole("button", { name: "编辑" }));
+    const keywordRow = screen.getByText("timeout").closest("tr");
+    expect(keywordRow).not.toBeNull();
+    fireEvent.click(within(keywordRow as HTMLElement).getByRole("button", { name: "编辑" }));
     const editKeywordDialog = await screen.findByRole("dialog", { name: "编辑关键字" });
     fireEvent.change(within(editKeywordDialog).getByLabelText("严重级别"), { target: { value: "critical" } });
     fireEvent.change(within(editKeywordDialog).getByLabelText("说明"), { target: { value: "request timeout updated" } });
     fireEvent.click(within(editKeywordDialog).getByRole("button", { name: "保存关键字" }));
 
     await waitFor(() => {
-      expect(screen.getByText("network / request timeout updated")).toBeInTheDocument();
+      expect(screen.getByText("request timeout updated")).toBeInTheDocument();
+      expect(screen.getByText("严重")).toBeInTheDocument();
     });
 
-    fireEvent.click((screen.getAllByRole("button", { name: "新增白名单" }))[0]);
+    fireEvent.click(screen.getByRole("tab", { name: /白名单/ }));
+    fireEvent.click(screen.getByRole("button", { name: "新增白名单" }));
     const whitelistDialog = await screen.findByRole("dialog", { name: "新增白名单" });
     fireEvent.change(within(whitelistDialog).getByLabelText("名称空间"), { target: { value: "prod" } });
     fireEvent.change(within(whitelistDialog).getByLabelText("Label Selector"), { target: { value: "app=worker" } });
@@ -280,27 +296,28 @@ describe("WhitelistsPage", () => {
     fireEvent.click(within(whitelistDialog).getByRole("button", { name: "新增白名单" }));
 
     await waitFor(() => {
-      expect(screen.getByText("来源说明：known worker retry")).toBeInTheDocument();
+      expect(screen.getByText("known worker retry")).toBeInTheDocument();
     });
 
-    const whitelistCard = screen.getByText("来源说明：known worker retry").closest(".card");
-    expect(whitelistCard).not.toBeNull();
-    fireEvent.click(within(whitelistCard as HTMLElement).getByRole("button", { name: "编辑" }));
+    const whitelistRow = screen.getByText("known worker retry").closest("tr");
+    expect(whitelistRow).not.toBeNull();
+    fireEvent.click(within(whitelistRow as HTMLElement).getByRole("button", { name: "编辑" }));
     const editWhitelistDialog = await screen.findByRole("dialog", { name: "编辑白名单" });
     fireEvent.change(within(editWhitelistDialog).getByLabelText("备注"), { target: { value: "known worker retry updated" } });
     fireEvent.click(within(editWhitelistDialog).getByRole("button", { name: "保存白名单" }));
 
     await waitFor(() => {
-      expect(screen.getByText("来源说明：known worker retry updated")).toBeInTheDocument();
+      expect(screen.getByText("known worker retry updated")).toBeInTheDocument();
     });
   });
 
-  it("opens import export modals and keeps toggle plus delete actions working", async () => {
+  it("keeps import export in modals and preserves toggle plus delete actions", async () => {
     render(<WhitelistsPage />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "导出 JSON" }))[0]);
     const keywordExportDialog = await screen.findByRole("dialog", { name: "导出关键字" });
     expect((within(keywordExportDialog).getByLabelText("已导出 JSON") as HTMLTextAreaElement).value).toContain("connection refused");
+    expect(within(keywordExportDialog).getByLabelText("已导出 JSON")).toHaveClass("code-block-scroll");
     fireEvent.click(within(keywordExportDialog).getAllByRole("button", { name: "关闭" })[0]);
 
     fireEvent.click(screen.getByRole("button", { name: "导入关键字" }));
@@ -314,15 +331,16 @@ describe("WhitelistsPage", () => {
       expect(screen.getByText("oom")).toBeInTheDocument();
     });
 
-    const importedKeywordCard = screen.getByText("oom").closest(".card");
-    expect(importedKeywordCard).not.toBeNull();
-    fireEvent.click(within(importedKeywordCard as HTMLElement).getByRole("button", { name: "停用" }));
+    const importedKeywordRow = screen.getByText("oom").closest("tr");
+    expect(importedKeywordRow).not.toBeNull();
+    fireEvent.click(within(importedKeywordRow as HTMLElement).getByRole("button", { name: "停用" }));
 
     await waitFor(() => {
-      expect(within(importedKeywordCard as HTMLElement).getAllByText("停用")[0]).toBeInTheDocument();
+      expect(within(importedKeywordRow as HTMLElement).getByRole("button", { name: "启用" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "导出 JSON" })[1]);
+    fireEvent.click(screen.getByRole("tab", { name: /白名单/ }));
+    fireEvent.click(screen.getByRole("button", { name: "导出 JSON" }));
     const whitelistExportDialog = await screen.findByRole("dialog", { name: "导出白名单" });
     expect((within(whitelistExportDialog).getByLabelText("已导出 JSON") as HTMLTextAreaElement).value).toContain("warmup noise");
     fireEvent.click(within(whitelistExportDialog).getAllByRole("button", { name: "关闭" })[0]);
@@ -335,15 +353,15 @@ describe("WhitelistsPage", () => {
     fireEvent.click(within(whitelistImportDialog).getByRole("button", { name: "导入白名单" }));
 
     await waitFor(() => {
-      expect(screen.getByText("来源说明：batch retry")).toBeInTheDocument();
+      expect(screen.getByText("batch retry")).toBeInTheDocument();
     });
 
-    const importedWhitelistCard = screen.getByText("来源说明：batch retry").closest(".card");
-    expect(importedWhitelistCard).not.toBeNull();
-    fireEvent.click(within(importedWhitelistCard as HTMLElement).getByRole("button", { name: "删除" }));
+    const importedWhitelistRow = screen.getByText("batch retry").closest("tr");
+    expect(importedWhitelistRow).not.toBeNull();
+    fireEvent.click(within(importedWhitelistRow as HTMLElement).getByRole("button", { name: "删除" }));
 
     await waitFor(() => {
-      expect(screen.queryByText("来源说明：batch retry")).not.toBeInTheDocument();
+      expect(screen.queryByText("batch retry")).not.toBeInTheDocument();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ignoreWhitelistLogHit, runNamespaceBatchInspection } from "../api/client";
 import type {
@@ -56,6 +56,10 @@ function isHealthyObject(item: InspectedObject) {
 
 function buildLogHitKey(podName: string, hit: KeywordHit) {
   return `${podName}:${hit.container_name ?? "-"}:${hit.keyword}:${hit.matched_text}`;
+}
+
+function logHitContext(hit: KeywordHit) {
+  return hit.context_text?.trim() || hit.matched_text;
 }
 
 function NamespaceObjectSection({
@@ -142,11 +146,11 @@ function EvidencePodCard({
         </div>
         <div>
           <span className="evidence-label">事件摘要</span>
-          {pod.events.length > 0 ? <ul className="plain-list">{pod.events.map((event) => <li key={event}>{event}</li>)}</ul> : <p className="inline-note">暂无事件</p>}
+          {pod.events.length > 0 ? <pre className="log-block code-block-scroll">{pod.events.join("\n")}</pre> : <p className="inline-note">暂无事件</p>}
         </div>
         <div>
           <span className="evidence-label">Describe 摘要</span>
-          <p>{pod.describe_summary || "暂无 Describe 摘要"}</p>
+          <pre className="log-block code-block-scroll">{pod.describe_summary || "暂无 Describe 摘要"}</pre>
         </div>
         <div>
           <span className="evidence-label">日志关键字命中</span>
@@ -159,7 +163,9 @@ function EvidencePodCard({
 
                 return (
                   <li key={hitKey}>
-                    <div>{hit.keyword}：{hit.matched_text}</div>
+                    <div>{hit.keyword}</div>
+                    <span className="inline-note">命中上下文（不是完整日志）</span>
+                    <pre className="log-block code-block-scroll">{logHitContext(hit)}</pre>
                     <div className="button-row">
                       <button
                         type="button"
@@ -385,7 +391,7 @@ function NamespaceEvidenceDrawer({
 
 export function AutoInspectionPage() {
   const [search, setSearch] = useState("");
-  const [selectedNamespaces, setSelectedNamespaces] = useState<string[]>([]);
+  const [selectedNamespace, setSelectedNamespace] = useState("");
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchResult, setBatchResult] = useState<NamespaceBatchInspectionResponse | null>(null);
@@ -402,28 +408,14 @@ export function AutoInspectionPage() {
 
   const namespaces = data?.namespaces ?? [];
   const filteredNamespaces = namespaces.filter((item) => item.name.toLowerCase().includes(search.trim().toLowerCase()));
-  const selectedFilteredCount = filteredNamespaces.filter((item) => selectedNamespaces.includes(item.name)).length;
-  const hasSelectedNamespaces = selectedNamespaces.length > 0;
+  const hasSelectedNamespace = selectedNamespace.length > 0;
   const hasNamespaces = namespaces.length > 0;
 
-  function toggleNamespace(name: string) {
-    setSelectedNamespaces((current) =>
-      current.includes(name) ? current.filter((item) => item !== name) : [...current, name],
-    );
-  }
-
-  function selectFiltered() {
-    setSelectedNamespaces((current) => {
-      const merged = new Set(current);
-      filteredNamespaces.forEach((item) => merged.add(item.name));
-      return Array.from(merged);
-    });
-  }
-
-  function clearFiltered() {
-    const filteredNames = new Set(filteredNamespaces.map((item) => item.name));
-    setSelectedNamespaces((current) => current.filter((item) => !filteredNames.has(item)));
-  }
+  useEffect(() => {
+    if (selectedNamespace && !namespaces.some((item) => item.name === selectedNamespace)) {
+      setSelectedNamespace("");
+    }
+  }, [namespaces, selectedNamespace]);
 
   function handleRetry() {
     void refresh().catch(() => undefined);
@@ -447,8 +439,11 @@ export function AutoInspectionPage() {
   }
 
   function handleRunSelected() {
+    if (!selectedNamespace) {
+      return;
+    }
     void executeBatchInspection({
-      namespaces: selectedNamespaces,
+      namespaces: [selectedNamespace],
       all_namespaces: false,
     }).catch(() => undefined);
   }
@@ -557,16 +552,16 @@ export function AutoInspectionPage() {
       ? "先处理巡检失败的名称空间，再进入告警名称空间查看证据。"
       : warningBatchCount > 0
         ? "先打开告警名称空间证据，确认是 Pod、事件还是日志关键字导致告警。"
-        : batchResults.length > 0
-          ? "本轮没有发现异常名称空间；如需判断是否属于已知故障，可继续运行模板匹配。"
-          : "先选择名称空间，再触发巡检。";
+          : batchResults.length > 0
+            ? "本轮没有发现异常名称空间；如需判断是否属于已知故障，可继续运行模板匹配。"
+          : "可直接巡检全部名称空间，或先搜索并选择一个名称空间后再执行。";
 
   return (
     <section className="page-section">
       <header className="section-header">
         <div>
-          <p className="eyebrow">自动巡检</p>
-          <h2>自动巡检</h2>
+            <p className="eyebrow">状态工作台</p>
+            <h2>状态巡检</h2>
         </div>
         <StatusBadge status="info" />
       </header>
@@ -575,8 +570,8 @@ export function AutoInspectionPage() {
         <div className="workbench-copy">
           <div className="section-header">
             <div>
-              <h3>名称空间选择</h3>
-              <p className="inline-note">先筛选范围，再决定巡检选中或巡检全部；证据和模板匹配都从这里继续。</p>
+              <h3>名称空间巡检入口</h3>
+              <p className="inline-note">支持直接巡检全部名称空间，也支持先搜索再选择一个名称空间单独巡检。</p>
             </div>
           </div>
           <div className="workbench-command-panel">
@@ -589,28 +584,32 @@ export function AutoInspectionPage() {
                 placeholder="例如：prod、kube-system"
               />
             </label>
+            <label className="inline-search">
+              选择名称空间
+              <select
+                aria-label="选择名称空间"
+                value={selectedNamespace}
+                onChange={(event) => setSelectedNamespace(event.target.value)}
+                disabled={filteredNamespaces.length === 0}
+              >
+                <option value="">{filteredNamespaces.length === 0 ? "没有可选名称空间" : "请选择一个名称空间"}</option>
+                {filteredNamespaces.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="workbench-command-grid">
               <div className="quick-action-card quick-action-card-primary">
                 <strong>主操作</strong>
-                <span>先选定名称空间，再触发巡检；“巡检全部”用于完整复查。</span>
+                <span>单名称空间用于快速复查，全部巡检用于完整体检。</span>
                 <div className="toolbar-row">
-                  <button type="button" onClick={handleRunSelected} disabled={!hasSelectedNamespaces || batchLoading}>
-                    {batchLoading ? "巡检中..." : "巡检选中"}
+                  <button type="button" onClick={handleRunSelected} disabled={!hasSelectedNamespace || batchLoading}>
+                    {batchLoading ? "巡检中..." : "巡检该名称空间"}
                   </button>
                   <button type="button" onClick={handleRunAll} disabled={!hasNamespaces || batchLoading}>
-                    {batchLoading ? "巡检中..." : "巡检全部"}
-                  </button>
-                </div>
-              </div>
-              <div className="quick-action-card">
-                <strong>范围操作</strong>
-                <span>多选后的结果会保留，便于先筛选再执行。</span>
-                <div className="toolbar-row">
-                  <button type="button" onClick={selectFiltered} disabled={filteredNamespaces.length === 0}>
-                    全选当前结果
-                  </button>
-                  <button type="button" onClick={clearFiltered} disabled={selectedFilteredCount === 0}>
-                    取消当前结果
+                    {batchLoading ? "巡检中..." : "巡检全部名称空间"}
                   </button>
                 </div>
               </div>
@@ -623,8 +622,8 @@ export function AutoInspectionPage() {
             <strong>{namespaces.length}</strong>
           </div>
           <div className="hero-metric hero-metric-compact">
-            <span>已选名称空间</span>
-            <strong>{selectedNamespaces.length}</strong>
+            <span>当前选择</span>
+            <strong>{selectedNamespace || "--"}</strong>
           </div>
         </div>
       </section>
@@ -646,51 +645,46 @@ export function AutoInspectionPage() {
         <>
           <KeyValueList
             items={[
-              { label: "当前筛选结果", value: String(filteredNamespaces.length) },
-              { label: "已选数量", value: String(selectedNamespaces.length) },
+              { label: "当前可选数量", value: String(filteredNamespaces.length) },
+              { label: "当前选择", value: selectedNamespace || "未选择" },
               { label: "最近发现时间", value: data?.executed_at ?? "--" },
             ]}
           />
 
-          {filteredNamespaces.length === 0 ? (
+          {namespaces.length === 0 ? (
             <section className="panel">
-              <p>{namespaces.length === 0 ? "当前集群没有可用名称空间。" : "没有匹配的名称空间，请调整搜索条件。"}</p>
+              <p>当前集群没有可用名称空间。</p>
             </section>
-          ) : (
+          ) : filteredNamespaces.length === 0 ? (
+            <section className="panel">
+              <p>没有匹配的名称空间，请调整搜索条件。</p>
+            </section>
+          ) : selectedNamespace ? (
             <section className="panel">
               <div className="section-header">
-                <h3>名称空间列表</h3>
-                <span className="section-tip">支持多选，后续直接用于批量巡检。</span>
+                <h3>当前选择</h3>
+                <span className="section-tip">单名称空间巡检会直接使用这里的选择。</span>
               </div>
-              <div className="namespace-list">
-                {filteredNamespaces.map((item) => {
-                  const checked = selectedNamespaces.includes(item.name);
-                  return (
-                    <label key={item.name} className={`namespace-row${checked ? " namespace-row-selected" : ""}`}>
-                      <div className="namespace-check">
-                        <input
-                          type="checkbox"
-                          aria-label={`选择 ${item.name}`}
-                          checked={checked}
-                          onChange={() => toggleNamespace(item.name)}
-                        />
-                        <div>
-                          <strong>{item.name}</strong>
-                          <p className="inline-note">
-                            Pod {item.pod_count} / 异常 Pod {item.abnormal_pod_count}
-                          </p>
-                        </div>
+              {filteredNamespaces
+                .filter((item) => item.name === selectedNamespace)
+                .map((item) => (
+                  <article key={item.name} className="namespace-row namespace-row-selected">
+                    <div className="namespace-check">
+                      <div>
+                        <strong>{item.name}</strong>
+                        <p className="inline-note">
+                          Pod {item.pod_count} / 异常 Pod {item.abnormal_pod_count}
+                        </p>
                       </div>
-                      <div className="namespace-meta">
-                        <StatusBadge status={namespaceStatus(item)} />
-                        <span>最近巡检：{item.last_inspected_at ?? "暂无"}</span>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
+                    </div>
+                    <div className="namespace-meta">
+                      <StatusBadge status={namespaceStatus(item)} />
+                      <span>最近巡检：{item.last_inspected_at ?? "暂无"}</span>
+                    </div>
+                  </article>
+                ))}
             </section>
-          )}
+          ) : null}
         </>
       ) : null}
 
@@ -716,7 +710,9 @@ export function AutoInspectionPage() {
             <div>
               <h3>批量巡检摘要</h3>
               <p className="inline-note">
-                {batchResult.all_namespaces ? "本次执行：巡检全部名称空间" : `本次执行：巡检选中 ${batchResult.requested_namespaces.length} 个名称空间`}
+                {batchResult.all_namespaces
+                  ? "本次执行：巡检全部名称空间"
+                  : `本次执行：巡检名称空间 ${batchResult.requested_namespaces.join("、") || "--"}`}
               </p>
             </div>
             <div className="button-row">
@@ -760,7 +756,7 @@ export function AutoInspectionPage() {
                   </div>
                   <StatusBadge status={group.status} />
                 </div>
-                <div className="card-grid">
+                <div className="card-grid batch-group-scroll">
                   {group.items.map((item) => (
                     <article
                       key={item.summary.name}

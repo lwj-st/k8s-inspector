@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import type { KeywordHitSeverity, KeywordRule, Whitelist } from "../api/types";
 import { StatusBadge } from "../components/StatusBadge";
@@ -7,6 +8,7 @@ import { useWhitelists } from "../features/whitelists/useWhitelists";
 
 type KeywordModalType = "create" | "edit" | "import" | "export" | null;
 type WhitelistModalType = "create" | "edit" | "import" | "export" | null;
+type ActiveTab = "keywords" | "whitelists";
 
 function formatJson(value: unknown) {
   return JSON.stringify(value, null, 2);
@@ -25,6 +27,10 @@ function severityLabel(severity: KeywordHitSeverity) {
   return "提示";
 }
 
+function builtinLabel(item: KeywordRule) {
+  return item.builtin ? "内置" : "自定义";
+}
+
 function describeWhitelistScope(item: Whitelist) {
   const parts = [item.namespace];
   if (item.label_selector) {
@@ -37,6 +43,37 @@ function describeWhitelistScope(item: Whitelist) {
     parts.push(`容器 ${item.container_name}`);
   }
   return parts.join(" / ");
+}
+
+function ToggleBadge({ enabled }: { enabled: boolean }) {
+  return <span className={`status-badge ${enabled ? "status-toggle-enabled" : "status-neutral"}`}>{enabled ? "启用" : "停用"}</span>;
+}
+
+function ModalShell({
+  title,
+  note,
+  children,
+  onClose,
+}: {
+  title: string;
+  note: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-card modal-card-polished" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="section-header">
+          <div>
+            <h3>{title}</h3>
+            <p className="inline-note">{note}</p>
+          </div>
+          <button type="button" className="mini-button" onClick={onClose}>关闭</button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
 }
 
 export function WhitelistsPage() {
@@ -65,6 +102,7 @@ export function WhitelistsPage() {
     importAll: importWhitelists,
   } = useWhitelists();
 
+  const [activeTab, setActiveTab] = useState<ActiveTab>("keywords");
   const [keywordEditingId, setKeywordEditingId] = useState<number | null>(null);
   const [keywordModalType, setKeywordModalType] = useState<KeywordModalType>(null);
   const [keyword, setKeyword] = useState("");
@@ -248,20 +286,24 @@ export function WhitelistsPage() {
       <header className="section-header">
         <div>
           <p className="eyebrow">规则中心</p>
-          <h2>关键字库与白名单</h2>
+          <h2>关键字库</h2>
         </div>
-        <span className="section-tip">让运维能看清楚哪些规则会判异常，哪些报错会被忽略。</span>
+        <span className="section-tip">关键字与白名单合并管理，默认只显示紧凑摘要。</span>
       </header>
 
       <section className="workbench-hero">
         <div className="workbench-copy">
           <div>
             <p className="eyebrow">配置说明</p>
-            <p className="hero-summary">关键字库负责定义哪些日志算异常，白名单负责记录哪些命中应忽略。导入导出只用于跨环境迁移，默认不占主页面。</p>
+            <p className="hero-summary">关键字决定哪些日志算异常，白名单决定哪些命中应忽略。导入导出只在弹窗里处理，不占用主工作区。</p>
           </div>
-          <div className="secondary-action-row">
-            <button type="button" className="text-button" onClick={openKeywordCreate}>新增关键字</button>
-            <button type="button" className="text-button" onClick={openWhitelistCreate}>新增白名单</button>
+          <div className="template-stepper" role="tablist" aria-label="关键字库标签">
+            <button type="button" role="tab" aria-selected={activeTab === "keywords"} className={`template-step-chip${activeTab === "keywords" ? " template-step-chip-active" : ""}`} onClick={() => setActiveTab("keywords")}>
+              <span>1</span>关键字
+            </button>
+            <button type="button" role="tab" aria-selected={activeTab === "whitelists"} className={`template-step-chip${activeTab === "whitelists" ? " template-step-chip-active" : ""}`} onClick={() => setActiveTab("whitelists")}>
+              <span>2</span>白名单
+            </button>
           </div>
         </div>
         <div className="hero-metric-stack">
@@ -280,90 +322,113 @@ export function WhitelistsPage() {
         </div>
       </section>
 
-      <div className="card-grid card-grid-wide">
+      {activeTab === "keywords" ? (
         <section className="panel">
           <div className="section-header">
             <div>
-              <h3>关键字库</h3>
-              <p className="inline-note">突出启用状态、严重程度、匹配关键字和用途说明。</p>
+              <h3>关键字规则</h3>
+              <p className="inline-note">只展示巡检判断必需字段，描述默认省略。</p>
             </div>
             <StatusBadge status={keywordsLoading ? "loading" : "enabled"} />
           </div>
           {keywordError ? <p>操作失败：{keywordError}</p> : null}
           {keywordMessage ? <p className="inline-note">{keywordMessage}</p> : null}
           <div className="secondary-action-row">
-            <button type="button" className="text-button" disabled={keywordSaving} onClick={openKeywordCreate}>新增关键字</button>
-            <button type="button" className="text-button" disabled={keywordSaving} onClick={() => setKeywordModalType("import")}>导入关键字</button>
-            <button type="button" className="text-button" disabled={keywordSaving} onClick={() => void handleExportKeywords()}>导出 JSON</button>
+            <button type="button" className="mini-button" disabled={keywordSaving} onClick={openKeywordCreate}>新增关键字</button>
+            <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => setKeywordModalType("import")}>导入关键字</button>
+            <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => void handleExportKeywords()}>导出 JSON</button>
           </div>
-          <div className="stack-list">
-            {keywords.map((item) => (
-              <article key={item.id} className="card">
-                <div className="card-title">
-                  <strong>{item.keyword}</strong>
-                  <StatusBadge status={item.enabled ? item.severity : "disabled"} />
-                </div>
-                <p>{item.category} / {item.description ?? "未填写说明"}</p>
-                <p className="inline-note">严重程度：{severityLabel(item.severity)}{item.builtin ? " / 系统内置" : " / 自定义规则"}</p>
-                <div className="button-row">
-                  <button type="button" disabled={keywordSaving} onClick={() => startEditKeyword(item)}>编辑</button>
-                  <button type="button" disabled={keywordSaving || item.builtin} onClick={() => void removeKeyword(item.id)}>删除</button>
-                  <button type="button" disabled={keywordSaving} onClick={() => void setKeywordEnabled(item.id, !item.enabled)}>
-                    {item.enabled ? "停用" : "启用"}
-                  </button>
-                </div>
-              </article>
-            ))}
+          <div className="table-scroll-shell">
+            <table className="compact-table" aria-label="关键字规则表">
+              <thead>
+                <tr>
+                  <th>关键字</th>
+                  <th>类别</th>
+                  <th>严重级别</th>
+                  <th>启用状态</th>
+                  <th>是否内置</th>
+                  <th>说明</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {keywords.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.keyword}</td>
+                    <td>{item.category}</td>
+                    <td>{severityLabel(item.severity)}</td>
+                    <td><ToggleBadge enabled={item.enabled} /></td>
+                    <td>{builtinLabel(item)}</td>
+                    <td className="ellipsis-cell" title={item.description ?? "未填写说明"}>{item.description ?? "未填写说明"}</td>
+                    <td>
+                      <div className="button-row">
+                        <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => startEditKeyword(item)}>编辑</button>
+                        <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => void setKeywordEnabled(item.id, !item.enabled)}>
+                          {item.enabled ? "停用" : "启用"}
+                        </button>
+                        <button type="button" className="mini-button" disabled={keywordSaving || item.builtin} onClick={() => void removeKeyword(item.id)}>删除</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
-
+      ) : (
         <section className="panel">
           <div className="section-header">
             <div>
               <h3>白名单规则</h3>
-              <p className="inline-note">突出忽略范围、忽略关键字和来源说明，方便核对巡检结果为何被忽略。</p>
+              <p className="inline-note">范围与来源说明默认省略，悬停可看全量内容。</p>
             </div>
             <StatusBadge status={whitelistsLoading ? "loading" : "enabled"} />
           </div>
           {whitelistError ? <p>操作失败：{whitelistError}</p> : null}
           {whitelistMessage ? <p className="inline-note">{whitelistMessage}</p> : null}
           <div className="secondary-action-row">
-            <button type="button" className="text-button" disabled={whitelistSaving} onClick={openWhitelistCreate}>新增白名单</button>
-            <button type="button" className="text-button" disabled={whitelistSaving} onClick={() => setWhitelistModalType("import")}>导入白名单</button>
-            <button type="button" className="text-button" disabled={whitelistSaving} onClick={() => void handleExportWhitelists()}>导出 JSON</button>
+            <button type="button" className="mini-button" disabled={whitelistSaving} onClick={openWhitelistCreate}>新增白名单</button>
+            <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => setWhitelistModalType("import")}>导入白名单</button>
+            <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => void handleExportWhitelists()}>导出 JSON</button>
           </div>
-          <div className="stack-list">
-            {whitelists.map((item) => (
-              <article key={item.id} className="card">
-                <div className="card-title">
-                  <strong>{item.keyword}</strong>
-                  <StatusBadge status={item.enabled ? "enabled" : "disabled"} />
-                </div>
-                <p>{describeWhitelistScope(item)}</p>
-                <p className="inline-note">来源说明：{item.note ?? "未填写来源说明"}</p>
-                <div className="button-row">
-                  <button type="button" disabled={whitelistSaving} onClick={() => startEditWhitelist(item)}>编辑</button>
-                  <button type="button" disabled={whitelistSaving} onClick={() => void removeWhitelist(item.id)}>删除</button>
-                  <button type="button" disabled={whitelistSaving} onClick={() => void setWhitelistEnabled(item.id, !item.enabled)}>
-                    {item.enabled ? "停用" : "启用"}
-                  </button>
-                </div>
-              </article>
-            ))}
+          <div className="table-scroll-shell">
+            <table className="compact-table" aria-label="白名单规则表">
+              <thead>
+                <tr>
+                  <th>关键字</th>
+                  <th>范围</th>
+                  <th>启用状态</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {whitelists.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.keyword}</td>
+                    <td className="ellipsis-cell" title={describeWhitelistScope(item)}>{describeWhitelistScope(item)}</td>
+                    <td><ToggleBadge enabled={item.enabled} /></td>
+                    <td className="ellipsis-cell" title={item.note ?? "未填写来源说明"}>{item.note ?? "未填写来源说明"}</td>
+                    <td>
+                      <div className="button-row">
+                        <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => startEditWhitelist(item)}>编辑</button>
+                        <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => void setWhitelistEnabled(item.id, !item.enabled)}>
+                          {item.enabled ? "停用" : "启用"}
+                        </button>
+                        <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => void removeWhitelist(item.id)}>删除</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
-      </div>
+      )}
 
       {keywordModalType === "create" || keywordModalType === "edit" ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label={keywordModalType === "edit" ? "编辑关键字" : "新增关键字"}>
-            <div className="section-header">
-              <div>
-                <h3>{keywordModalType === "edit" ? "编辑关键字" : "新增关键字"}</h3>
-                <p className="inline-note">关键字会直接影响日志命中结果，请明确类别、严重程度和用途说明。</p>
-              </div>
-              <button type="button" onClick={closeKeywordModal}>关闭</button>
-            </div>
+        <ModalShell title={keywordModalType === "edit" ? "编辑关键字" : "新增关键字"} note="关键字会直接影响日志命中结果，请明确类别、严重程度和用途说明。" onClose={closeKeywordModal}>
+          <div className="entry-form-grid">
             <label>
               关键字
               <input aria-label="关键字" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
@@ -381,73 +446,48 @@ export function WhitelistsPage() {
                 <option value="critical">critical</option>
               </select>
             </label>
-            <label>
+            <label style={{ gridColumn: "1 / -1" }}>
               说明
               <input aria-label="说明" value={description} onChange={(event) => setDescription(event.target.value)} />
             </label>
-            <div className="button-row">
-              <button type="button" disabled={keywordSaving || keyword.trim().length === 0} onClick={() => void handleSubmitKeyword()}>
-                {keywordSaving ? "处理中..." : keywordEditingId !== null ? "保存关键字" : "新增关键字"}
-              </button>
-              <button type="button" onClick={closeKeywordModal}>取消</button>
-            </div>
-          </section>
-        </div>
+          </div>
+          <div className="button-row">
+            <button type="button" className="mini-button" disabled={keywordSaving || keyword.trim().length === 0} onClick={() => void handleSubmitKeyword()}>
+              {keywordSaving ? "处理中..." : keywordEditingId !== null ? "保存关键字" : "新增关键字"}
+            </button>
+            <button type="button" className="mini-button" onClick={closeKeywordModal}>取消</button>
+          </div>
+        </ModalShell>
       ) : null}
 
       {keywordModalType === "import" ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label="导入关键字">
-            <div className="section-header">
-              <div>
-                <h3>导入关键字</h3>
-                <p className="inline-note">只在迁移配置时使用，默认不在主页面展示 JSON。</p>
-              </div>
-              <button type="button" onClick={() => setKeywordModalType(null)}>关闭</button>
-            </div>
-            <label>
-              导入关键字 JSON
-              <textarea aria-label="导入关键字 JSON" value={keywordImportText} onChange={(event) => setKeywordImportText(event.target.value)} rows={10} />
-            </label>
-            <div className="button-row">
-              <button type="button" disabled={keywordSaving || keywordImportText.trim().length === 0} onClick={() => void handleImportKeywords()}>导入关键字</button>
-              <button type="button" onClick={() => setKeywordModalType(null)}>取消</button>
-            </div>
-          </section>
-        </div>
+        <ModalShell title="导入关键字" note="只在迁移配置时使用，JSON 不在主页面长期占位。" onClose={() => setKeywordModalType(null)}>
+          <label>
+            导入关键字 JSON
+            <textarea aria-label="导入关键字 JSON" className="log-block code-block-scroll modal-code-input" value={keywordImportText} onChange={(event) => setKeywordImportText(event.target.value)} rows={10} />
+          </label>
+          <div className="button-row">
+            <button type="button" className="mini-button" disabled={keywordSaving || keywordImportText.trim().length === 0} onClick={() => void handleImportKeywords()}>导入关键字</button>
+            <button type="button" className="mini-button" onClick={() => setKeywordModalType(null)}>取消</button>
+          </div>
+        </ModalShell>
       ) : null}
 
       {keywordModalType === "export" ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label="导出关键字">
-            <div className="section-header">
-              <div>
-                <h3>导出关键字</h3>
-                <p className="inline-note">导出结果只用于跨环境迁移。</p>
-              </div>
-              <button type="button" onClick={() => setKeywordModalType(null)}>关闭</button>
-            </div>
-            <label>
-              已导出 JSON
-              <textarea aria-label="已导出 JSON" value={keywordExportText} readOnly rows={12} />
-            </label>
-            <div className="button-row">
-              <button type="button" onClick={() => setKeywordModalType(null)}>关闭</button>
-            </div>
-          </section>
-        </div>
+        <ModalShell title="导出关键字" note="导出结果只用于跨环境迁移。" onClose={() => setKeywordModalType(null)}>
+          <label>
+            已导出 JSON
+            <textarea aria-label="已导出 JSON" className="log-block code-block-scroll modal-code-input" value={keywordExportText} readOnly rows={12} />
+          </label>
+          <div className="button-row">
+            <button type="button" className="mini-button" onClick={() => setKeywordModalType(null)}>关闭</button>
+          </div>
+        </ModalShell>
       ) : null}
 
       {whitelistModalType === "create" || whitelistModalType === "edit" ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label={whitelistModalType === "edit" ? "编辑白名单" : "新增白名单"}>
-            <div className="section-header">
-              <div>
-                <h3>{whitelistModalType === "edit" ? "编辑白名单" : "新增白名单"}</h3>
-                <p className="inline-note">请明确忽略会作用在哪个名称空间、标签、Pod、容器和关键字上。</p>
-              </div>
-              <button type="button" onClick={closeWhitelistModal}>关闭</button>
-            </div>
+        <ModalShell title={whitelistModalType === "edit" ? "编辑白名单" : "新增白名单"} note="请明确忽略会作用在哪个名称空间、标签、Pod、容器和关键字上。" onClose={closeWhitelistModal}>
+          <div className="entry-form-grid">
             <label>
               名称空间
               <input aria-label="名称空间" value={namespace} onChange={(event) => setNamespace(event.target.value)} />
@@ -468,61 +508,43 @@ export function WhitelistsPage() {
               白名单关键字
               <input aria-label="白名单关键字" value={whitelistKeyword} onChange={(event) => setWhitelistKeyword(event.target.value)} />
             </label>
-            <label>
+            <label style={{ gridColumn: "1 / -1" }}>
               备注
               <input aria-label="备注" value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：来自巡检误报，启动预热阶段忽略" />
             </label>
-            <div className="button-row">
-              <button type="button" disabled={whitelistSaving || namespace.trim().length === 0 || whitelistKeyword.trim().length === 0} onClick={() => void handleSubmitWhitelist()}>
-                {whitelistSaving ? "处理中..." : whitelistEditingId !== null ? "保存白名单" : "新增白名单"}
-              </button>
-              <button type="button" onClick={closeWhitelistModal}>取消</button>
-            </div>
-          </section>
-        </div>
+          </div>
+          <div className="button-row">
+            <button type="button" className="mini-button" disabled={whitelistSaving || namespace.trim().length === 0 || whitelistKeyword.trim().length === 0} onClick={() => void handleSubmitWhitelist()}>
+              {whitelistSaving ? "处理中..." : whitelistEditingId !== null ? "保存白名单" : "新增白名单"}
+            </button>
+            <button type="button" className="mini-button" onClick={closeWhitelistModal}>取消</button>
+          </div>
+        </ModalShell>
       ) : null}
 
       {whitelistModalType === "import" ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label="导入白名单">
-            <div className="section-header">
-              <div>
-                <h3>导入白名单</h3>
-                <p className="inline-note">只在迁移配置时使用，默认不在主页面展示 JSON。</p>
-              </div>
-              <button type="button" onClick={() => setWhitelistModalType(null)}>关闭</button>
-            </div>
-            <label>
-              导入白名单 JSON
-              <textarea aria-label="导入白名单 JSON" value={whitelistImportText} onChange={(event) => setWhitelistImportText(event.target.value)} rows={10} />
-            </label>
-            <div className="button-row">
-              <button type="button" disabled={whitelistSaving || whitelistImportText.trim().length === 0} onClick={() => void handleImportWhitelists()}>导入白名单</button>
-              <button type="button" onClick={() => setWhitelistModalType(null)}>取消</button>
-            </div>
-          </section>
-        </div>
+        <ModalShell title="导入白名单" note="只在迁移配置时使用，JSON 不在主页面长期占位。" onClose={() => setWhitelistModalType(null)}>
+          <label>
+            导入白名单 JSON
+            <textarea aria-label="导入白名单 JSON" className="log-block code-block-scroll modal-code-input" value={whitelistImportText} onChange={(event) => setWhitelistImportText(event.target.value)} rows={10} />
+          </label>
+          <div className="button-row">
+            <button type="button" className="mini-button" disabled={whitelistSaving || whitelistImportText.trim().length === 0} onClick={() => void handleImportWhitelists()}>导入白名单</button>
+            <button type="button" className="mini-button" onClick={() => setWhitelistModalType(null)}>取消</button>
+          </div>
+        </ModalShell>
       ) : null}
 
       {whitelistModalType === "export" ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal-card" role="dialog" aria-modal="true" aria-label="导出白名单">
-            <div className="section-header">
-              <div>
-                <h3>导出白名单</h3>
-                <p className="inline-note">导出结果只用于跨环境迁移。</p>
-              </div>
-              <button type="button" onClick={() => setWhitelistModalType(null)}>关闭</button>
-            </div>
-            <label>
-              已导出 JSON
-              <textarea aria-label="已导出 JSON" value={whitelistExportText} readOnly rows={12} />
-            </label>
-            <div className="button-row">
-              <button type="button" onClick={() => setWhitelistModalType(null)}>关闭</button>
-            </div>
-          </section>
-        </div>
+        <ModalShell title="导出白名单" note="导出结果只用于跨环境迁移。" onClose={() => setWhitelistModalType(null)}>
+          <label>
+            已导出 JSON
+            <textarea aria-label="已导出 JSON" className="log-block code-block-scroll modal-code-input" value={whitelistExportText} readOnly rows={12} />
+          </label>
+          <div className="button-row">
+            <button type="button" className="mini-button" onClick={() => setWhitelistModalType(null)}>关闭</button>
+          </div>
+        </ModalShell>
       ) : null}
     </section>
   );

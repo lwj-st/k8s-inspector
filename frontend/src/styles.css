@@ -442,11 +442,24 @@ a {
   display: grid;
   grid-template-columns: minmax(280px, 360px) 1fr;
   gap: 16px;
+  align-items: start;
 }
 
 .pod-list {
   display: grid;
   gap: 12px;
+}
+
+.pod-list-scroll,
+.namespace-list-scroll,
+.batch-group-scroll,
+.table-scroll-shell {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.batch-group-scroll {
+  align-items: start;
 }
 
 .pod-list-item {
@@ -479,6 +492,81 @@ a {
   color: #f4f8fb;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.code-block-scroll {
+  max-height: 220px;
+  overflow: auto;
+  font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
+}
+
+.compact-card {
+  padding: 12px 14px;
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.05);
+}
+
+.compact-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(157, 182, 202, 0.24);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ellipsis-cell {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-button {
+  min-height: 30px !important;
+  padding: 5px 10px !important;
+  border-radius: 9px !important;
+  font-size: 12px !important;
+  box-shadow: none !important;
+}
+
+.status-toggle-enabled {
+  color: #1b5e20;
+  background: #d8f3dc;
+}
+
+.modal-card-polished {
+  width: min(680px, 100%);
+  border-radius: 18px;
+  padding: 20px;
+}
+
+.modal-card-wide {
+  width: min(980px, 100%);
+}
+
+.modal-code-input {
+  width: 100%;
+  border: none;
+  resize: vertical;
+}
+
+.entry-form-grid-compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.compact-subpanel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(157, 182, 202, 0.24);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .quick-target-grid,
@@ -624,6 +712,11 @@ a {
   border: 1px solid rgba(157, 182, 202, 0.24);
 }
 
+.saved-target-panel {
+  display: grid;
+  gap: 12px;
+}
+
 .batch-summary-overview {
   gap: 16px;
 }
@@ -636,6 +729,16 @@ a {
 .batch-group-section {
   display: grid;
   gap: 12px;
+}
+
+.table-scroll-shell {
+  border: 1px solid rgba(157, 182, 202, 0.24);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.table-scroll-shell table {
+  min-width: 100%;
 }
 
 .batch-guidance-card {
@@ -860,8 +963,44 @@ a {
   background: rgba(255, 250, 239, 0.94);
 }
 
+.template-inline-details {
+  margin-top: 8px;
+  padding: 10px 12px;
+  box-shadow: none;
+}
+
 .diagnosis-card {
   gap: 14px;
+}
+
+.diagnosis-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.diagnosis-summary-row::-webkit-details-marker {
+  display: none;
+}
+
+.diagnosis-summary-row p,
+.diagnosis-summary-row strong {
+  margin: 0;
+}
+
+.diagnosis-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.diagnosis-card-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
 }
 
 .diagnosis-card-matched {
@@ -890,6 +1029,28 @@ a {
   line-height: 1.6;
 }
 
+.diagnosis-inline-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.diagnosis-inline-metrics span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(13, 27, 42, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.diagnosis-highlight-panel {
+  gap: 14px;
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
 .diagnosis-collapsible {
   padding: 16px 18px;
   border-radius: 18px;
@@ -905,6 +1066,21 @@ a {
 
 .diagnosis-collapsible-body {
   margin-top: 16px;
+}
+
+.diagnosis-evidence-details {
+  display: grid;
+  gap: 12px;
+}
+
+.diagnosis-evidence-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+.diagnosis-evidence-body {
+  margin-top: 6px;
 }
 
 .log-hit-card {

@@ -155,7 +155,8 @@ describe("TemplatesPage", () => {
   it("shows step-based authoring flow and keeps import/export hidden by default", async () => {
     render(<TemplatesPage />);
 
-    expect(await screen.findByRole("heading", { name: "基本信息" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "新增模板" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "模板录入器" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("导入模板 JSON")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("已导出 JSON")).not.toBeInTheDocument();
     expect(await screen.findByText("网关 502 模板")).toBeInTheDocument();
@@ -165,42 +166,47 @@ describe("TemplatesPage", () => {
     const user = userEvent.setup();
     render(<TemplatesPage />);
 
-    await user.click(await screen.findByRole("button", { name: "下一步" }));
-    expect(screen.getByRole("heading", { name: "对象组" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "新增模板" }));
+    const editor = await screen.findByRole("dialog", { name: "模板录入器" });
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    expect(within(editor).getByRole("heading", { name: "对象组" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "新增对象组" }));
-    await user.clear(screen.getByLabelText("名称空间 2"));
-    await user.type(screen.getByLabelText("名称空间 2"), "demo");
-    await user.type(screen.getByLabelText("Label Selector 2"), "app=api");
+    await user.click(within(editor).getByRole("button", { name: "新增对象组" }));
+    await user.clear(within(editor).getByLabelText("名称空间 2"));
+    await user.type(within(editor).getByLabelText("名称空间 2"), "demo");
+    await user.type(within(editor).getByLabelText("Label Selector 2"), "app=api");
 
-    expect(screen.getByLabelText("名称空间 2")).toHaveValue("demo");
-    expect(screen.getByLabelText("Label Selector 2")).toHaveValue("app=api");
+    expect(within(editor).getByLabelText("名称空间 2")).toHaveValue("demo");
+    expect(within(editor).getByLabelText("Label Selector 2")).toHaveValue("app=api");
   });
 
   it("uses chinese labels in condition step but keeps payload enums unchanged on create", async () => {
     const user = userEvent.setup();
     render(<TemplatesPage />);
 
-    await user.type(await screen.findByLabelText("模板名称"), "新模板");
-    await user.clear(screen.getByLabelText("场景标识"));
-    await user.type(screen.getByLabelText("场景标识"), "targeted_diagnosis");
-    await user.click(screen.getByRole("button", { name: "下一步" }));
-    await user.clear(screen.getByLabelText("名称空间"));
-    await user.type(screen.getByLabelText("名称空间"), "demo");
-    await user.click(screen.getByRole("button", { name: "下一步" }));
+    await user.click(await screen.findByRole("button", { name: "新增模板" }));
+    const editor = await screen.findByRole("dialog", { name: "模板录入器" });
 
-    expect(screen.getByRole("option", { name: "日志包含关键字" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "包含" })).toBeInTheDocument();
+    await user.type(within(editor).getByLabelText("模板名称"), "新模板");
+    await user.clear(within(editor).getByLabelText("场景标识"));
+    await user.type(within(editor).getByLabelText("场景标识"), "targeted_diagnosis");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    await user.clear(within(editor).getByLabelText("名称空间"));
+    await user.type(within(editor).getByLabelText("名称空间"), "demo");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
 
-    await user.selectOptions(screen.getByLabelText("条件类型"), "pod_status");
-    await user.selectOptions(screen.getByLabelText("匹配方式"), "in");
-    await user.clear(screen.getByLabelText("目标值"));
-    await user.type(screen.getByLabelText("目标值"), "CrashLoopBackOff, ImagePullBackOff");
-    await user.click(screen.getByRole("button", { name: "下一步" }));
-    await user.type(screen.getByLabelText("诊断原因"), "Pod 状态异常");
-    await user.type(screen.getByLabelText("处理建议"), "检查镜像和依赖");
-    await user.click(screen.getByRole("button", { name: "下一步" }));
-    await user.click(screen.getByRole("button", { name: "新增模板" }));
+    expect(within(editor).getByRole("option", { name: "日志包含关键字" })).toBeInTheDocument();
+    expect(within(editor).getByRole("option", { name: "包含" })).toBeInTheDocument();
+
+    await user.selectOptions(within(editor).getByLabelText("条件类型"), "pod_status");
+    await user.selectOptions(within(editor).getByLabelText("匹配方式"), "in");
+    await user.clear(within(editor).getByLabelText("目标值"));
+    await user.type(within(editor).getByLabelText("目标值"), "CrashLoopBackOff, ImagePullBackOff");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    await user.type(within(editor).getByLabelText("诊断原因"), "Pod 状态异常");
+    await user.type(within(editor).getByLabelText("处理建议"), "检查镜像和依赖");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    await user.click(within(editor).getByRole("button", { name: "新增模板" }));
 
     await waitFor(() => {
       const request = fetchMock.mock.calls.find(
@@ -243,9 +249,10 @@ describe("TemplatesPage", () => {
     const user = userEvent.setup();
     render(<TemplatesPage />);
 
-    await screen.findByRole("heading", { name: "基本信息" });
-    await user.click(screen.getByRole("button", { name: "5 预览与保存" }));
-    await user.click(screen.getByRole("button", { name: "新增模板" }));
+    await user.click(await screen.findByRole("button", { name: "新增模板" }));
+    const editor = await screen.findByRole("dialog", { name: "模板录入器" });
+    await user.click(within(editor).getByRole("button", { name: "5 预览与保存" }));
+    await user.click(within(editor).getByRole("button", { name: "新增模板" }));
 
     expect(await screen.findByText(/还缺这些内容：/)).toBeInTheDocument();
     expect(screen.getByText(/基本信息 - 请填写模板名称/)).toBeInTheDocument();
@@ -293,25 +300,31 @@ describe("TemplatesPage", () => {
     const user = userEvent.setup();
     render(<TemplatesPage />);
 
-    const gatewayCard = (await screen.findByText("网关 502 模板")).closest("article");
-    expect(gatewayCard).not.toBeNull();
+    const gatewayRow = (await screen.findByText("网关 502 模板")).closest("tr");
+    expect(gatewayRow).not.toBeNull();
 
-    await user.click(within(gatewayCard as HTMLElement).getByRole("button", { name: "编辑" }));
+    await user.click(within(gatewayRow as HTMLElement).getByRole("button", { name: "编辑" }));
+    const editor = await screen.findByRole("dialog", { name: "模板录入器" });
     expect(await screen.findByText("正在编辑模板：网关 502 模板")).toBeInTheDocument();
-    expect(screen.getByLabelText("模板名称")).toHaveValue("网关 502 模板");
+    expect(within(editor).getByLabelText("模板名称")).toHaveValue("网关 502 模板");
 
-    await user.click(screen.getByRole("button", { name: "2 目标范围" }));
-    expect(screen.getByLabelText("名称空间")).toHaveValue("gateway-system");
-    await user.click(screen.getByRole("button", { name: "3 匹配条件" }));
-    expect(screen.getByLabelText("条件类型")).toHaveValue("log_keyword");
-    await user.click(screen.getByRole("button", { name: "4 原因与建议" }));
-    expect(screen.getByLabelText("诊断原因")).toHaveValue("网关进程反复失败");
+    await user.click(within(editor).getByRole("button", { name: "2 目标范围" }));
+    expect(within(editor).getByLabelText("名称空间")).toHaveValue("gateway-system");
+    await user.click(within(editor).getByRole("button", { name: "3 匹配条件" }));
+    expect(within(editor).getByLabelText("条件类型")).toHaveValue("log_keyword");
+    await user.click(within(editor).getByRole("button", { name: "4 原因与建议" }));
+    expect(within(editor).getByLabelText("诊断原因")).toHaveValue("网关进程反复失败");
 
-    const updatedGatewayCard = screen.getByText("网关 502 模板").closest("article");
-    expect(updatedGatewayCard).not.toBeNull();
-    await user.click(within(updatedGatewayCard as HTMLElement).getByRole("button", { name: "停用" }));
+    await user.click(within(editor).getByRole("button", { name: "关闭" }));
     await waitFor(() => {
-      expect(within(updatedGatewayCard as HTMLElement).getAllByText("停用")[0]).toBeInTheDocument();
+      expect(screen.queryByRole("dialog", { name: "模板录入器" })).not.toBeInTheDocument();
+    });
+    const updatedGatewayRow = screen.getByText("网关 502 模板").closest("tr");
+    expect(updatedGatewayRow).not.toBeNull();
+    await user.click(within(updatedGatewayRow as HTMLElement).getByRole("button", { name: "停用" }));
+    await waitFor(() => {
+      expect(within(updatedGatewayRow as HTMLElement).getAllByText("停用")[0]).toBeInTheDocument();
+      expect(within(updatedGatewayRow as HTMLElement).getByRole("button", { name: "启用" })).toBeInTheDocument();
     });
   });
 
@@ -319,16 +332,17 @@ describe("TemplatesPage", () => {
     const user = userEvent.setup();
     render(<TemplatesPage />);
 
-    const legacyCard = (await screen.findByText("兼容旧模板")).closest("article");
-    expect(legacyCard).not.toBeNull();
+    const legacyRow = (await screen.findByText("兼容旧模板")).closest("tr");
+    expect(legacyRow).not.toBeNull();
 
-    await user.click(within(legacyCard as HTMLElement).getByRole("button", { name: "编辑" }));
-    await user.click(screen.getByRole("button", { name: "2 目标范围" }));
+    await user.click(within(legacyRow as HTMLElement).getByRole("button", { name: "编辑" }));
+    const editor = await screen.findByRole("dialog", { name: "模板录入器" });
+    await user.click(within(editor).getByRole("button", { name: "2 目标范围" }));
 
-    expect(screen.getByLabelText("对象组标识 1")).toHaveValue("legacy");
-    expect(screen.getByLabelText("名称空间")).toHaveValue("legacy-system");
-    expect(screen.getByLabelText("Label Selector 1")).toHaveValue("app=legacy");
-    expect(screen.getByLabelText("Pod 名称模式 1")).toHaveValue("legacy-*");
-    expect(screen.getByLabelText("Deployment")).toBeChecked();
+    expect(within(editor).getByLabelText("对象组标识 1")).toHaveValue("legacy");
+    expect(within(editor).getByLabelText("名称空间")).toHaveValue("legacy-system");
+    expect(within(editor).getByLabelText("Label Selector 1")).toHaveValue("app=legacy");
+    expect(within(editor).getByLabelText("Pod 名称模式 1")).toHaveValue("legacy-*");
+    expect(within(editor).getByLabelText("Deployment")).toBeChecked();
   });
 });
