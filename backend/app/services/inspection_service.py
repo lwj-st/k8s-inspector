@@ -201,16 +201,31 @@ def _attach_log_hits(
     label_selector: str | None,
     pod: dict,
 ) -> dict:
-    containers = pod.get("containers") or []
-    container_name = containers[0]["name"] if containers else None
-    hits = match_log_text(
-        session=session,
-        namespace=namespace,
-        label_selector=label_selector,
-        pod_name=pod["name"],
-        container_name=container_name,
-        log_text=pod.get("log_summary"),
-    )
+    hits = []
+    container_logs = pod.get("container_log_summaries") or {}
+    if container_logs:
+        for container_name, log_text in container_logs.items():
+            hits.extend(
+                match_log_text(
+                    session=session,
+                    namespace=namespace,
+                    label_selector=label_selector,
+                    pod_name=pod["name"],
+                    container_name=container_name,
+                    log_text=log_text,
+                )
+            )
+    else:
+        containers = pod.get("containers") or []
+        container_name = containers[0]["name"] if containers else None
+        hits = match_log_text(
+            session=session,
+            namespace=namespace,
+            label_selector=label_selector,
+            pod_name=pod["name"],
+            container_name=container_name,
+            log_text=pod.get("log_summary"),
+        )
     pod["log_hits"] = [hit.model_dump() for hit in hits]
     return pod
 

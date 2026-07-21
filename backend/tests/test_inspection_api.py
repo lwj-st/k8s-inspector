@@ -58,6 +58,7 @@ def _inspected_pod(
     containers: list[dict] | None = None,
     events: list[str] | None = None,
     log_summary: str | None = None,
+    container_log_summaries: dict[str, str] | None = None,
     log_hits: list[dict] | None = None,
     related_resources: list[dict] | None = None,
 ) -> dict:
@@ -70,6 +71,7 @@ def _inspected_pod(
         "events": events or [],
         "describe_summary": "demo summary",
         "log_summary": log_summary,
+        "container_log_summaries": container_log_summaries or {},
         "previous_log_summary": None,
         "log_hits": log_hits or [],
         "resource_usage": {},
@@ -589,6 +591,51 @@ def test_run_namespace_inspection_keeps_whitelisted_log_hits_in_detail_response(
     assert len(log_hits) == 1
     assert log_hits[0]["whitelisted"] is True
     assert log_hits[0]["keyword"] == "connection refused"
+
+
+def test_run_namespace_inspection_matches_keywords_for_every_container(client) -> None:
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+        health_status="healthy",
+        pods=[
+            _inspected_pod(
+                containers=[
+                    {"name": "demo-api", "restart_count": 0, "state": "running", "reason": None},
+                    {"name": "sidecar", "restart_count": 0, "state": "running", "reason": None},
+                ],
+                log_summary="[demo-api]\nconnection refused\n[sidecar]\ntimeout",
+                container_log_summaries={
+                    "demo-api": "connection refused",
+                    "sidecar": "timeout",
+                },
+            )
+        ],
+    )
+
+    def match_by_container(**kwargs):
+        return [
+            KeywordHit(
+                keyword=kwargs["log_text"],
+                category="runtime",
+                severity="warning",
+                source="log_summary",
+                matched_text=kwargs["log_text"],
+                container_name=kwargs["container_name"],
+                whitelisted=False,
+                whitelist_rule_id=None,
+            )
+        ]
+
+    with patch("app.services.inspection_service.match_log_text", side_effect=match_by_container) as matcher:
+        response = client.post(
+            "/api/v1/inspections/namespace/run",
+            json={"namespace": "demo", "label_selector": None},
+        )
+
+    assert response.status_code == 200
+    assert [call.kwargs["container_name"] for call in matcher.mock_calls] == ["demo-api", "sidecar"]
+    log_hits = response.json()["pods"][0]["log_hits"]
+    assert [hit["container_name"] for hit in log_hits] == ["demo-api", "sidecar"]
+    assert [hit["matched_text"] for hit in log_hits] == ["connection refused", "timeout"]
 
 
 def test_run_namespace_batch_inspection_isolates_single_namespace_failure(client) -> None:

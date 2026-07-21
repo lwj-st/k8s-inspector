@@ -23,9 +23,22 @@ def _normalize_condition_result(condition: dict, matched: bool, evidence: list[d
 
 def _attach_log_hits(session: Session, namespace: str, label_selector: str | None, pod: dict) -> dict:
     pod_copy = dict(pod)
-    pod_copy["log_hits"] = [
-        hit.model_dump()
-        for hit in keyword_service.match_log_text(
+    hits = []
+    container_logs = pod.get("container_log_summaries") or {}
+    if container_logs:
+        for container_name, log_text in container_logs.items():
+            hits.extend(
+                keyword_service.match_log_text(
+                    session=session,
+                    namespace=namespace,
+                    label_selector=label_selector,
+                    pod_name=pod.get("name", ""),
+                    container_name=container_name,
+                    log_text=log_text,
+                )
+            )
+    else:
+        hits = keyword_service.match_log_text(
             session=session,
             namespace=namespace,
             label_selector=label_selector,
@@ -33,7 +46,7 @@ def _attach_log_hits(session: Session, namespace: str, label_selector: str | Non
             container_name=(pod.get("containers") or [{}])[0].get("name") if pod.get("containers") else None,
             log_text=pod.get("log_summary"),
         )
-    ]
+    pod_copy["log_hits"] = [hit.model_dump() for hit in hits]
     return pod_copy
 
 

@@ -99,7 +99,7 @@ class KubernetesInspectionProvider:
             "namespaces": results,
         }
 
-    def _pod_issue_summary(self, pod: client.V1Pod) -> tuple[str, str | None]:
+    def _pod_issue_summary(self, pod: client.V1Pod, include_logs: bool = True) -> tuple[str, str | None]:
         phase = pod.status.phase or "Unknown"
         container_statuses = pod.status.container_statuses or []
         waiting_reason = None
@@ -109,7 +109,6 @@ class KubernetesInspectionProvider:
                 waiting_reason = status.state.waiting.reason
                 break
 
-        effective_status = waiting_reason or phase
         describe_summary = f"Pod phase={phase}; node={pod.spec.node_name or 'unknown'}"
         log_summary = None
 
@@ -120,22 +119,37 @@ class KubernetesInspectionProvider:
         if waiting_reason:
             describe_summary += f"; waiting_reason={waiting_reason}"
 
-        if effective_status in {"CrashLoopBackOff", "Error", "OOMKilled"} or phase != "Running":
-            container_name = pod.spec.containers[0].name if pod.spec and pod.spec.containers else None
-            if container_name:
-                try:
-                    log_summary = self.core.read_namespaced_pod_log(
-                        name=pod.metadata.name,
-                        namespace=pod.metadata.namespace,
-                        container=container_name,
-                        tail_lines=20,
-                        _request_timeout=self.settings.k8s_request_timeout,
-                    )
-                    log_summary = "\n".join(log_summary.splitlines()[:5])
-                except ApiException:
-                    log_summary = None
+        if include_logs:
+            container_logs = self._pod_container_log_summaries(pod)
+            log_summary = self._combine_container_log_summaries(container_logs)
 
         return describe_summary, log_summary
+
+    def _pod_container_log_summaries(self, pod: client.V1Pod) -> dict[str, str]:
+        container_logs: dict[str, str] = {}
+        for container in pod.spec.containers if pod.spec and pod.spec.containers else []:
+            container_name = container.name
+            try:
+                log_summary = self.core.read_namespaced_pod_log(
+                    name=pod.metadata.name,
+                    namespace=pod.metadata.namespace,
+                    container=container_name,
+                    tail_lines=20,
+                    _request_timeout=self.settings.k8s_request_timeout,
+                )
+            except ApiException:
+                continue
+            if log_summary:
+                container_logs[container_name] = "\n".join(log_summary.splitlines()[:5])
+        return container_logs
+
+    def _combine_container_log_summaries(self, container_logs: dict[str, str]) -> str | None:
+        if not container_logs:
+            return None
+        return "\n".join(
+            f"[{container_name}]\n{log_summary}"
+            for container_name, log_summary in container_logs.items()
+        )
 
     def _pod_previous_log_summary(self, pod: client.V1Pod) -> str | None:
         container_statuses = pod.status.container_statuses or []
@@ -198,7 +212,9 @@ class KubernetesInspectionProvider:
         return related
 
     def _build_pod_result(self, namespace: str, pod: client.V1Pod, services: list[client.V1Service]) -> dict:
-        describe_summary, log_summary = self._pod_issue_summary(pod)
+        describe_summary, _ = self._pod_issue_summary(pod, include_logs=False)
+        container_log_summaries = self._pod_container_log_summaries(pod)
+        log_summary = self._combine_container_log_summaries(container_log_summaries)
         statuses = pod.status.container_statuses or []
         restarts = sum(item.restart_count or 0 for item in statuses)
         waiting_reason = next(
@@ -218,27 +234,29 @@ class KubernetesInspectionProvider:
             "events": self._pod_events(namespace, pod.metadata.name),
             "describe_summary": describe_summary,
             "log_summary": log_summary,
+            "container_log_summaries": container_log_summaries,
             "previous_log_summary": self._pod_previous_log_summary(pod),
             "resource_usage": {"cpu": "n/a", "memory": "n/a"},
             "related_resources": self._related_services(pod, services),
         }
 
     def _log_hits_from_pod(self, pod_result: dict) -> list[dict]:
-        log_summary = str(pod_result.get("log_summary") or "")
-        if not log_summary:
+        container_logs = pod_result.get("container_log_summaries") or {}
+        if not container_logs:
             return []
-        return [
-            {
+        hits: list[dict] = []
+        for container_name, log_summary in container_logs.items():
+            hits.append({
                 "keyword": "log_excerpt",
                 "category": "runtime",
                 "severity": "warning",
                 "source": "current_log",
                 "matched_text": log_summary,
-                "container_name": (pod_result.get("containers") or [{}])[0].get("name"),
+                "container_name": container_name,
                 "whitelisted": False,
                 "whitelist_rule_id": None,
-            }
-        ]
+            })
+        return hits
 
     def _evidence_bundle_from_pod(self, namespace: str, pod_result: dict) -> dict:
         return {
@@ -325,7 +343,7 @@ class KubernetesInspectionProvider:
         for namespace in self._target_namespaces_for_cluster():
             pods = self.core.list_namespaced_pod(namespace, _request_timeout=self.settings.k8s_request_timeout).items
             for pod in pods:
-                describe_summary, _ = self._pod_issue_summary(pod)
+                describe_summary, _ = self._pod_issue_summary(pod, include_logs=False)
                 if self._is_abnormal_pod(pod):
                     phase = pod.status.phase or "Unknown"
                     issues.append(

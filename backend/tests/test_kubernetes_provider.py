@@ -94,6 +94,85 @@ def test_run_pod_inspection_reads_single_pod_directly() -> None:
     assert result["inspection_target"]["type"] == "pod"
 
 
+def test_run_pod_inspection_reads_logs_for_every_container_even_when_pod_is_running() -> None:
+    provider = _make_provider()
+    provider.run_namespace_inspection = lambda namespace, label_selector: (_ for _ in ()).throw(
+        AssertionError("run_namespace_inspection should not be used for single pod inspection")
+    )
+    provider.core.read_namespaced_pod = lambda name, namespace, _request_timeout: SimpleNamespace(
+        metadata=SimpleNamespace(name=name, namespace=namespace, labels={"app": "demo-api"}),
+        spec=SimpleNamespace(
+            node_name="node-a",
+            containers=[SimpleNamespace(name="demo-api"), SimpleNamespace(name="sidecar")],
+        ),
+        status=SimpleNamespace(
+            phase="Running",
+            container_statuses=[
+                SimpleNamespace(
+                    name="demo-api",
+                    restart_count=0,
+                    state=SimpleNamespace(waiting=None, running=SimpleNamespace(), terminated=None),
+                ),
+                SimpleNamespace(
+                    name="sidecar",
+                    restart_count=0,
+                    state=SimpleNamespace(waiting=None, running=SimpleNamespace(), terminated=None),
+                ),
+            ],
+        ),
+    )
+    provider.core.list_namespaced_service = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.networking.list_namespaced_ingress = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.apps.list_namespaced_daemon_set = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.core.list_namespaced_secret = lambda namespace, _request_timeout: SimpleNamespace(items=[])
+    provider.core.list_namespaced_event = lambda namespace, field_selector, _request_timeout: SimpleNamespace(items=[])
+    log_calls: list[dict] = []
+
+    def read_log(**kwargs):
+        log_calls.append(kwargs)
+        return f"{kwargs['container']}-line1\n{kwargs['container']}-line2\n{kwargs['container']}-line3\n{kwargs['container']}-line4\n{kwargs['container']}-line5\n{kwargs['container']}-line6"
+
+    provider.core.read_namespaced_pod_log = read_log
+
+    result = provider.run_pod_inspection("demo", "demo-api-abc")
+
+    assert log_calls == [
+        {
+            "name": "demo-api-abc",
+            "namespace": "demo",
+            "container": "demo-api",
+            "tail_lines": 20,
+            "_request_timeout": 5,
+        },
+        {
+            "name": "demo-api-abc",
+            "namespace": "demo",
+            "container": "sidecar",
+            "tail_lines": 20,
+            "_request_timeout": 5,
+        },
+    ]
+    assert result["pod"]["status"] == "Running"
+    assert result["pod"]["container_log_summaries"] == {
+        "demo-api": "demo-api-line1\ndemo-api-line2\ndemo-api-line3\ndemo-api-line4\ndemo-api-line5",
+        "sidecar": "sidecar-line1\nsidecar-line2\nsidecar-line3\nsidecar-line4\nsidecar-line5",
+    }
+    assert result["pod"]["log_summary"] == (
+        "[demo-api]\n"
+        "demo-api-line1\n"
+        "demo-api-line2\n"
+        "demo-api-line3\n"
+        "demo-api-line4\n"
+        "demo-api-line5\n"
+        "[sidecar]\n"
+        "sidecar-line1\n"
+        "sidecar-line2\n"
+        "sidecar-line3\n"
+        "sidecar-line4\n"
+        "sidecar-line5"
+    )
+
+
 def _configure_direct_pod_inspection(provider: KubernetesInspectionProvider, pod_status: SimpleNamespace) -> None:
     provider.core.read_namespaced_pod = lambda name, namespace, _request_timeout: SimpleNamespace(
         metadata=SimpleNamespace(name=name, namespace=namespace, labels={}),

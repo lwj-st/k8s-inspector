@@ -113,6 +113,88 @@ def test_run_diagnosis_passes_template_target_namespace_and_label_selector(clien
     assert body["evidence_summary"]
 
 
+def test_run_diagnosis_matches_log_keyword_from_non_first_container(client) -> None:
+    def run_namespace(namespace: str, label_selector: str | None) -> dict:
+        return {
+            "inspection_target": {
+                "type": "namespace",
+                "namespace": namespace,
+                "label_selector": label_selector,
+                "resource_scope": ["pods", "services", "ingresses", "daemonsets", "secrets"],
+            },
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "health_status": "healthy",
+            "executed_at": "2026-07-20T08:00:00Z",
+            "pods": [
+                {
+                    "name": "demo-api-1",
+                    "status": "Running",
+                    "node_name": "node-a",
+                    "restarts": 0,
+                    "containers": [
+                        {"name": "demo-api", "restart_count": 0, "state": "running", "reason": None},
+                        {"name": "sidecar", "restart_count": 0, "state": "running", "reason": None},
+                    ],
+                    "events": [],
+                    "describe_summary": "demo running",
+                    "log_summary": "[demo-api]\nok\n[sidecar]\ntimeout from sidecar",
+                    "container_log_summaries": {
+                        "demo-api": "ok",
+                        "sidecar": "timeout from sidecar",
+                    },
+                    "previous_log_summary": None,
+                    "resource_usage": {},
+                    "related_resources": [],
+                }
+            ],
+            "services": [],
+            "ingresses": [],
+            "tls_secrets": [],
+            "daemonsets": [],
+        }
+
+    client.app.state.provider.run_namespace_inspection = run_namespace
+    create_response = client.post(
+        "/api/v1/templates",
+        json={
+            "name": "Sidecar timeout",
+            "scenario": "targeted_diagnosis",
+            "targets": [
+                {
+                    "target_ref": "api",
+                    "namespace": "demo",
+                    "label_selector": "app=demo",
+                    "resource_scope": ["pods"],
+                }
+            ],
+            "match_conditions": [
+                {
+                    "target_ref": "api",
+                    "condition_type": "log_keyword",
+                    "operator": "contains",
+                    "expected_value": "timeout",
+                    "enabled": True,
+                },
+            ],
+            "joint_rule": {"operator": "AND"},
+            "reason": "Sidecar timeout",
+            "suggestion": "Check sidecar",
+            "enabled": True,
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.post("/api/v1/diagnoses/run", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "matched"
+    evidence = body["template_match_results"][0]["evidence_refs"][0]
+    assert evidence["container_name"] == "sidecar"
+    assert evidence["matched_text"] == "timeout from sidecar"
+
+
 def test_run_diagnosis_isolates_single_template_collection_failure(client) -> None:
     client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: (
         (_ for _ in ()).throw(RuntimeError("provider failed"))

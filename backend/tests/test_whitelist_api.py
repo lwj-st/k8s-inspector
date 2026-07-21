@@ -34,6 +34,26 @@ def test_create_and_list_keywords(client) -> None:
     assert any(item["keyword"] == "timeout" for item in list_response.json())
 
 
+def test_list_keywords_includes_common_builtin_error_keywords(client) -> None:
+    response = client.get("/api/v1/keywords")
+
+    assert response.status_code == 200
+    keywords = {item["keyword"]: item for item in response.json()}
+
+    for keyword in [
+        "Traceback (most recent call last)",
+        "ModuleNotFoundError",
+        "SyntaxError",
+        "UnhandledPromiseRejection",
+        "ChunkLoadError",
+        "Failed to fetch",
+        "Cannot read properties of undefined",
+    ]:
+        assert keyword in keywords
+        assert keywords[keyword]["builtin"] is True
+        assert keywords[keyword]["enabled"] is True
+
+
 def test_create_keyword_rejects_invalid_severity(client) -> None:
     response = client.post(
         "/api/v1/keywords",
