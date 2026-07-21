@@ -302,6 +302,7 @@ describe("PodInspectionPage", () => {
 
     expect(await screen.findByText("范围内 Pod 列表")).toBeInTheDocument();
     expect(screen.queryByText("最近一次巡检摘要")).not.toBeInTheDocument();
+    expect(screen.getByText("命中关键字：connection refused")).toBeInTheDocument();
 
     const request = fetchMock.mock.calls.find(
       ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",

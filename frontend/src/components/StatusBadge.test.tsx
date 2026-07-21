@@ -31,8 +31,7 @@ describe("StatusBadge", () => {
     expect(screen.getByText("加载中")).toBeInTheDocument();
     expect(screen.getByText("信息")).toBeInTheDocument();
     expect(screen.getByText("未知")).toBeInTheDocument();
-    expect(screen.getByText("健康")).toBeInTheDocument();
-    expect(screen.getByText("运行中")).toBeInTheDocument();
+    expect(screen.getAllByText("正常")).toHaveLength(2);
     expect(screen.getByText("就绪")).toBeInTheDocument();
     expect(screen.getAllByText("已完成")).toHaveLength(2);
     expect(screen.getByText("告警")).toBeInTheDocument();

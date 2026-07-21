@@ -150,6 +150,17 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     [targets],
   );
   const defaultInspectionPointName = namespace.trim() && labelSelector.trim() ? `${namespace.trim()} / ${labelSelector.trim()}` : "";
+  const getActiveLogHits = (pod: InspectedPod) =>
+    pod.log_hits.filter((hit) => !hit.whitelisted && !ignoredLogKeys.includes(`${pod.name}:${hit.keyword}:${hit.matched_text}`));
+  const getPodResultStatus = (pod: InspectedPod) => (!isHealthyPod(pod) || getActiveLogHits(pod).length > 0 ? "error" : "healthy");
+  const getPodResultSummary = (pod: InspectedPod) => {
+    const activeHits = getActiveLogHits(pod);
+    if (activeHits.length > 0) {
+      const keywords = Array.from(new Set(activeHits.map((hit) => hit.keyword))).slice(0, 3);
+      return `命中关键字：${keywords.join("、")}`;
+    }
+    return isHealthyPod(pod) ? "正常" : "异常";
+  };
 
   useEffect(() => {
     if (scopeMode !== "single" || !namespace.trim() || podOptionsNamespace === namespace.trim()) {
@@ -419,7 +430,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           <p className="eyebrow">日志工作台</p>
           <h2>日志巡检</h2>
         </div>
-        {currentPod ? <StatusBadge status={currentPod.status} /> : <StatusBadge status="info" />}
+        {currentPod ? <StatusBadge status={getPodResultStatus(currentPod)} /> : <StatusBadge status="info" />}
       </header>
 
       <section className="panel workbench-hero">
@@ -633,7 +644,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               <div className="panel">
                 <div className="section-header">
                   <h3>单 Pod 结果</h3>
-                  <StatusBadge status={currentPod.status} />
+                  <StatusBadge status={getPodResultStatus(currentPod)} />
                 </div>
                 <KeyValueList
                   items={[
@@ -718,10 +729,10 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     >
                       <div className="card-title">
                         <strong title={pod.name}>{pod.name}</strong>
-                        <StatusBadge status={pod.status} />
+                        <StatusBadge status={getPodResultStatus(pod)} />
                       </div>
                       <p>重启次数：{pod.restarts}</p>
-                      <small>{isHealthyPod(pod) ? "状态正常 / 已完成" : "优先处理"}</small>
+                      <small title={getPodResultSummary(pod)}>{getPodResultSummary(pod)}</small>
                     </button>
                   );
                 })}
@@ -730,7 +741,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             <div className="panel">
               <div className="section-header">
                 <h3>证据详情</h3>
-                {currentPod ? <StatusBadge status={currentPod.status} /> : null}
+                {currentPod ? <StatusBadge status={getPodResultStatus(currentPod)} /> : null}
               </div>
               {currentPod ? (
                 <div className="page-section">
