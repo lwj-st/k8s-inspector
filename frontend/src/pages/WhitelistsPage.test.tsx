@@ -232,7 +232,8 @@ describe("WhitelistsPage", () => {
   it("renders compact keyword tab by default without inline import export json", async () => {
     render(<WhitelistsPage />);
 
-    expect(await screen.findByRole("heading", { name: "关键字库" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "关键字规则" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "关键字库" })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /关键字/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("table", { name: "关键字规则表" })).toBeInTheDocument();
     expect(screen.getByText("connection refused")).toBeInTheDocument();

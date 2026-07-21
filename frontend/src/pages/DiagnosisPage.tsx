@@ -1,20 +1,11 @@
 import { DiagnosisResultPanel } from "../features/diagnosis/DiagnosisResultPanel";
 import { useRunDiagnosis } from "../features/diagnosis/useRunDiagnosis";
-import { StatusBadge } from "../components/StatusBadge";
 
 export function DiagnosisPage() {
   const { data, loading, error, submit } = useRunDiagnosis();
 
   return (
     <section className="page-section">
-      <header className="section-header">
-        <div>
-          <p className="eyebrow">模板匹配</p>
-          <h2>模板检查</h2>
-        </div>
-        {data ? <StatusBadge status={data.status} /> : null}
-      </header>
-
       <section className="panel panel-muted">
         <div className="section-header">
           <div>

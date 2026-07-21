@@ -633,6 +633,24 @@ a {
   white-space: nowrap;
 }
 
+.copyable-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.copy-button {
+  min-height: 24px !important;
+  padding: 3px 8px !important;
+  border-radius: 8px !important;
+  background: rgba(15, 118, 110, 0.1) !important;
+  color: var(--teal) !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+}
+
 .mini-button {
   min-height: 30px !important;
   padding: 5px 10px !important;
@@ -849,6 +867,64 @@ a {
 .batch-summary-card {
   display: grid;
   gap: 12px;
+}
+
+.batch-compact-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.batch-compact-summary span {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(157, 182, 202, 0.2);
+}
+
+.batch-result-table-shell {
+  max-height: 54vh;
+  overflow: auto;
+}
+
+.batch-result-table {
+  table-layout: fixed;
+  min-width: 900px;
+}
+
+.batch-result-table th:nth-child(1),
+.batch-result-table td:nth-child(1) {
+  width: 88px;
+}
+
+.batch-result-table th:nth-child(2),
+.batch-result-table td:nth-child(2) {
+  width: 260px;
+}
+
+.batch-result-table th:nth-child(3),
+.batch-result-table td:nth-child(3) {
+  width: 92px;
+}
+
+.batch-result-table th:nth-child(4),
+.batch-result-table td:nth-child(4),
+.batch-result-table th:nth-child(5),
+.batch-result-table td:nth-child(5) {
+  width: 82px;
+}
+
+.batch-result-table th:nth-child(7),
+.batch-result-table td:nth-child(7) {
+  width: 92px;
+}
+
+.batch-category-list-inline {
+  max-height: 30px;
+  overflow: hidden;
 }
 
 .modal-backdrop {
@@ -1120,6 +1196,24 @@ a {
   margin-top: 14px;
 }
 
+.template-detail-list {
+  display: grid;
+  gap: 8px;
+}
+
+.template-detail-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.8fr) minmax(120px, 0.9fr) minmax(180px, 1.4fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(157, 182, 202, 0.2);
+  font-size: 13px;
+}
+
 .template-editor-form {
   gap: 16px;
 }
@@ -1250,6 +1344,14 @@ a {
   margin-top: 12px;
 }
 
+.diagnosis-card-body-compact {
+  padding: 12px 14px 14px;
+  margin-top: 0;
+  border-top: 1px solid rgba(157, 182, 202, 0.2);
+  max-height: min(62vh, 640px);
+  overflow: auto;
+}
+
 .diagnosis-card-matched {
   border-color: rgba(15, 118, 110, 0.28);
   background: linear-gradient(180deg, rgba(239, 252, 248, 0.94), rgba(255, 255, 255, 0.92));
@@ -1296,6 +1398,64 @@ a {
 .diagnosis-highlight-panel {
   gap: 14px;
   border-color: rgba(15, 118, 110, 0.18);
+}
+
+.diagnosis-result-list {
+  display: grid;
+  gap: 8px;
+}
+
+.diagnosis-result-row {
+  border: 1px solid rgba(157, 182, 202, 0.24);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.84);
+  overflow: hidden;
+}
+
+.diagnosis-result-row summary {
+  height: 46px;
+  display: grid;
+  grid-template-columns: minmax(160px, 1.2fr) 120px minmax(160px, 1fr) 58px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.diagnosis-result-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.diagnosis-result-row-matched {
+  border-color: rgba(15, 118, 110, 0.28);
+}
+
+.diagnosis-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.diagnosis-row-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnosis-row-action {
+  justify-self: end;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .diagnosis-collapsible {

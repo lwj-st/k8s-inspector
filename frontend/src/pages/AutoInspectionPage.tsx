@@ -40,9 +40,9 @@ function abnormalCategoryLabel(category: string) {
   return ABNORMAL_CATEGORY_LABELS[category as keyof typeof ABNORMAL_CATEGORY_LABELS] ?? category;
 }
 
-function batchSectionTitle(status: "error" | "warning" | "healthy") {
+function batchRowType(status: NamespaceBatchInspectionResult["health_status"]) {
   if (status === "error") {
-    return "巡检失败";
+    return "需要处理";
   }
   if (status === "warning") {
     return "需要处理";
@@ -538,34 +538,8 @@ export function AutoInspectionPage() {
   const warningBatchCount = batchResults.filter((item) => item.health_status === "warning").length;
   const healthyBatchCount = batchResults.filter((item) => item.health_status === "healthy").length;
   const batchSummaryStatus = errorBatchCount > 0 ? "error" : warningBatchCount > 0 ? "warning" : "healthy";
-  const groupedBatchResultsSource: Array<{
-    status: "error" | "warning" | "healthy";
-    items: NamespaceBatchInspectionResult[];
-  }> = [
-    { status: "error", items: sortedBatchResults.filter((item) => item.health_status === "error") },
-    { status: "warning", items: sortedBatchResults.filter((item) => item.health_status === "warning") },
-    { status: "healthy", items: sortedBatchResults.filter((item) => item.health_status === "healthy") },
-  ];
-  const groupedBatchResults = groupedBatchResultsSource.filter((group) => group.items.length > 0);
-  const batchGuidance =
-    errorBatchCount > 0
-      ? "先处理巡检失败的名称空间，再进入告警名称空间查看证据。"
-      : warningBatchCount > 0
-        ? "先打开告警名称空间证据，确认是 Pod、事件还是日志关键字导致告警。"
-          : batchResults.length > 0
-            ? "本轮没有发现异常名称空间；如需判断是否属于已知故障，可继续运行模板匹配。"
-          : "可直接巡检全部名称空间，或先搜索并选择一个名称空间后再执行。";
-
   return (
     <section className="page-section">
-      <header className="section-header">
-        <div>
-            <p className="eyebrow">状态工作台</p>
-            <h2>状态巡检</h2>
-        </div>
-        <StatusBadge status="info" />
-      </header>
-
       <section className="workbench-hero">
         <div className="workbench-copy">
           <div className="section-header">
@@ -678,83 +652,62 @@ export function AutoInspectionPage() {
               </button>
             </div>
           </div>
-          <section className="panel panel-muted batch-summary-overview">
-            <div className="batch-summary-metrics">
-              <article className="hero-metric hero-metric-compact batch-summary-metric">
-                <span>巡检名称空间</span>
-                <strong>{batchResults.length}</strong>
-              </article>
-              <article className="hero-metric hero-metric-compact batch-summary-metric batch-summary-metric-warning">
-                <span>告警名称空间</span>
-                <strong>{warningBatchCount}</strong>
-              </article>
-              <article className="hero-metric hero-metric-compact batch-summary-metric batch-summary-metric-error">
-                <span>失败名称空间</span>
-                <strong>{errorBatchCount}</strong>
-              </article>
-              <article className="hero-metric hero-metric-compact batch-summary-metric batch-summary-metric-healthy">
-                <span>正常名称空间</span>
-                <strong>{healthyBatchCount}</strong>
-              </article>
-            </div>
-            <article className="quick-action-card batch-guidance-card">
-              <strong>下一步建议</strong>
-              <span>{batchGuidance}</span>
-            </article>
-          </section>
-          <div className="batch-group-stack">
-            {groupedBatchResults.map((group) => (
-              <section key={group.status} className="batch-group-section">
-                <div className="section-header">
-                  <div>
-                    <h4>{batchSectionTitle(group.status)}</h4>
-                    <p className="inline-note">共 {group.items.length} 个名称空间</p>
-                  </div>
-                  <StatusBadge status={group.status} />
-                </div>
-                <div className="card-grid batch-group-scroll">
-                  {group.items.map((item) => (
-                    <article
-                      key={item.summary.name}
-                      aria-label={`批量结果 ${item.summary.name}`}
-                      className={`card batch-summary-card${item.health_status === "error" ? " batch-card-error" : item.health_status === "healthy" ? " batch-card-quiet" : item.health_status === "warning" ? " batch-card-warning" : ""}`}
-                    >
-                      <div className="card-title">
-                        <div>
-                          <strong>{item.summary.name}</strong>
-                          <p className="inline-note">
-                            Pod {item.summary.pod_count} / 异常 Pod {item.summary.abnormal_pod_count}
-                          </p>
-                        </div>
-                        <StatusBadge status={item.health_status} />
+          <div className="batch-compact-summary">
+            <span>总数 {batchResults.length}</span>
+            <span>失败 {errorBatchCount}</span>
+            <span>告警 {warningBatchCount}</span>
+            <span>正常 {healthyBatchCount}</span>
+          </div>
+          <div className="table-scroll-shell batch-result-table-shell">
+            <table className="compact-table batch-result-table">
+              <thead>
+                <tr>
+                  <th>分类</th>
+                  <th>名称空间</th>
+                  <th>状态</th>
+                  <th>Pod</th>
+                  <th>异常 Pod</th>
+                  <th>异常分类</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedBatchResults.map((item) => (
+                  <tr key={item.summary.name} aria-label={`批量结果 ${item.summary.name}`}>
+                    <td>{batchRowType(item.health_status)}</td>
+                    <td>
+                      <div className="copyable-cell">
+                        <span className="ellipsis-cell" title={item.summary.name}>{item.summary.name}</span>
+                        <button type="button" className="copy-button" onClick={() => void navigator.clipboard?.writeText(item.summary.name)}>
+                          复制
+                        </button>
                       </div>
-                      {item.health_status === "error" ? <p>该名称空间巡检失败</p> : null}
-                      <div className="batch-summary-stats">
-                        <p>Pod 总数：{item.summary.pod_count}</p>
-                        <p>异常 Pod：{item.summary.abnormal_pod_count}</p>
+                    </td>
+                    <td><StatusBadge status={item.health_status} /></td>
+                    <td>{item.summary.pod_count}</td>
+                    <td>{item.summary.abnormal_pod_count}</td>
+                    <td>
+                      <div className="batch-category-list batch-category-list-inline">
+                        {item.summary.abnormal_categories.length > 0 ? (
+                          item.summary.abnormal_categories.map((category) => (
+                            <span key={`${item.summary.name}-${category}`} className="batch-category-chip">
+                              {abnormalCategoryLabel(category)}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="batch-category-chip batch-category-chip-muted">无</span>
+                        )}
                       </div>
-                      <div className="batch-category-block">
-                        <span className="inline-note">异常分类</span>
-                        <div className="batch-category-list">
-                          {item.summary.abnormal_categories.length > 0 ? (
-                            item.summary.abnormal_categories.map((category) => (
-                              <span key={`${item.summary.name}-${category}`} className="batch-category-chip">
-                                {abnormalCategoryLabel(category)}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="batch-category-chip batch-category-chip-muted">无异常分类</span>
-                          )}
-                        </div>
-                      </div>
-                      <button type="button" onClick={() => handleViewEvidence(item)} disabled={item.health_status === "error"}>
+                    </td>
+                    <td>
+                      <button type="button" className="mini-button" onClick={() => handleViewEvidence(item)} disabled={item.health_status === "error"}>
                         查看证据
                       </button>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       ) : null}

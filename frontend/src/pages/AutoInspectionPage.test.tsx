@@ -409,7 +409,8 @@ describe("AutoInspectionPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "巡检全部名称空间" }));
 
-    expect(await screen.findByText("该名称空间巡检失败")).toBeInTheDocument();
+    expect(await screen.findByRole("row", { name: /broken-ns/ })).toHaveTextContent("需要处理");
+    expect(screen.getByRole("row", { name: /broken-ns/ })).toHaveTextContent("异常");
     expect(screen.queryByText(/批量巡检请求失败/)).not.toBeInTheDocument();
     expect((await screen.findAllByText("prod-core")).length).toBeGreaterThan(0);
   });
@@ -516,29 +517,23 @@ describe("AutoInspectionPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "巡检全部名称空间" }));
     expect(await screen.findByText("批量巡检摘要")).toBeInTheDocument();
 
-    const inspectedMetric = screen.getByText("巡检名称空间").closest("article");
-    const warningMetric = screen.getByText("告警名称空间").closest("article");
-    const errorMetric = screen.getByText("失败名称空间").closest("article");
-
-    expect(inspectedMetric).not.toBeNull();
-    expect(warningMetric).not.toBeNull();
-    expect(errorMetric).not.toBeNull();
-    expect(within(inspectedMetric as HTMLElement).getByText("3")).toBeInTheDocument();
-    expect(within(warningMetric as HTMLElement).getByText("1")).toBeInTheDocument();
-    expect(within(errorMetric as HTMLElement).getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("总数 3")).toBeInTheDocument();
+    expect(screen.getByText("告警 1")).toBeInTheDocument();
+    expect(screen.getByText("失败 1")).toBeInTheDocument();
+    expect(screen.getByText("正常 1")).toBeInTheDocument();
 
     expect(screen.getByText("Pod 状态")).toBeInTheDocument();
     expect(screen.getByText("容器状态")).toBeInTheDocument();
     expect(screen.getByText("事件")).toBeInTheDocument();
     expect(screen.getByText("日志关键字")).toBeInTheDocument();
     expect(screen.getByText("关联对象")).toBeInTheDocument();
-    expect(screen.getAllByText("无异常分类")).toHaveLength(2);
+    expect(screen.getAllByText("无")).toHaveLength(2);
 
-    const cards = Array.from(container.querySelectorAll(".batch-summary-card"));
-    expect(cards).toHaveLength(3);
-    expect(cards[0]).toHaveAttribute("aria-label", "批量结果 error-ns");
-    expect(cards[1]).toHaveAttribute("aria-label", "批量结果 warning-ns");
-    expect(cards[2]).toHaveAttribute("aria-label", "批量结果 healthy-ns");
+    const rows = Array.from(container.querySelectorAll("tbody tr"));
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveAttribute("aria-label", "批量结果 error-ns");
+    expect(rows[1]).toHaveAttribute("aria-label", "批量结果 warning-ns");
+    expect(rows[2]).toHaveAttribute("aria-label", "批量结果 healthy-ns");
   });
 
   it("shows global error when batch request fails", async () => {
@@ -806,8 +801,8 @@ describe("AutoInspectionPage", () => {
 
     const drawer = await screen.findByRole("complementary", { name: "模板匹配结果" });
     expect(within(drawer).getByText("故障模板手动匹配")).toBeInTheDocument();
-    expect(within(drawer).getByText("已命中模板")).toBeInTheDocument();
-    expect(within(drawer).getByRole("heading", { name: "无法判断" })).toBeInTheDocument();
+    expect(within(drawer).getByText("已命中模板（1）")).toBeInTheDocument();
+    expect(within(drawer).getByRole("heading", { name: "无法判断（1）" })).toBeInTheDocument();
     expect(within(drawer).getByText("未命中模板（1）")).toBeInTheDocument();
     expect(within(drawer).getAllByText("CrashLoop 模板").length).toBeGreaterThan(0);
     expect(within(drawer).getByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();

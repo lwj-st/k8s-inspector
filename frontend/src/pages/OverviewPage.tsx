@@ -54,14 +54,10 @@ export function OverviewPage() {
     <section className="page-section">
       <section className="workbench-hero">
         <div className="workbench-copy">
-          <header className="section-header">
-            <div>
-              <p className="eyebrow">总览</p>
-              <h2>排障工作台</h2>
-            </div>
+          <div className="section-header">
+            <p className="hero-summary">{data.recent_summary}</p>
             <StatusBadge status={data.health_status ?? data.cluster_status ?? "unknown"} />
-          </header>
-          <p className="hero-summary">{data.recent_summary}</p>
+          </div>
           <div className="quick-action-grid">
             <Link to="/inspections/namespace" className="quick-action-card">
               <strong>状态巡检</strong>

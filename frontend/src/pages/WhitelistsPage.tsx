@@ -283,14 +283,6 @@ export function WhitelistsPage() {
 
   return (
     <section className="page-section">
-      <header className="section-header">
-        <div>
-          <p className="eyebrow">规则中心</p>
-          <h2>关键字库</h2>
-        </div>
-        <span className="section-tip">关键字与白名单合并管理，默认只显示紧凑摘要。</span>
-      </header>
-
       <section className="workbench-hero">
         <div className="workbench-copy">
           <div>

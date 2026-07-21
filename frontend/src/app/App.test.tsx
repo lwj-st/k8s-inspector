@@ -189,7 +189,6 @@ describe("App", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "状态巡检" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "名称空间" })).toBeInTheDocument();
     expect(screen.getByLabelText("搜索名称空间")).toBeInTheDocument();
     expect(screen.getByLabelText("选择名称空间")).toBeInTheDocument();
@@ -213,7 +212,7 @@ describe("App", () => {
 
     render(<RouterProvider router={router} />);
 
-    expect(await screen.findByRole("heading", { name: "日志巡检" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "选择范围" })).toBeInTheDocument();
     expect(screen.getByLabelText("范围类型")).toBeInTheDocument();
     expect(screen.getByDisplayValue("全部 Pod")).toBeInTheDocument();
   });

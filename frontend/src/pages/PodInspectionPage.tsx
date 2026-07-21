@@ -425,14 +425,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
   return (
     <section className="page-section">
-      <header className="section-header">
-        <div>
-          <p className="eyebrow">日志工作台</p>
-          <h2>日志巡检</h2>
-        </div>
-        {currentPod ? <StatusBadge status={getPodResultStatus(currentPod)} /> : <StatusBadge status="info" />}
-      </header>
-
       <section className="panel workbench-hero">
         <div className="workbench-copy">
           <div className="section-header">

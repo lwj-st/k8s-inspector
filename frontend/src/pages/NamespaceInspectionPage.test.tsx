@@ -119,7 +119,7 @@ describe("NamespaceInspectionPage", () => {
     render(<NamespaceInspectionPage />);
 
     await screen.findByRole("option", { name: "demo" });
-    expect(screen.getByRole("heading", { name: "日志巡检" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "选择范围" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("全部 Pod")).toBeInTheDocument();
   });
 

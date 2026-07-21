@@ -421,6 +421,56 @@ function TargetScopeEditor({ target, index, totalTargets, namespaceOptions, onUp
   );
 }
 
+function TemplateDetailDrawer({ template, onClose }: { template: FaultTemplate; onClose: () => void }) {
+  const targetGroups = getTargetGroups(template);
+
+  return (
+    <div className="evidence-drawer-backdrop" role="presentation" onMouseDown={onClose}>
+      <aside className="evidence-drawer" aria-label={`${template.name} 模板详情`} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="section-header">
+          <div>
+            <h3>{template.name}</h3>
+            <p className="inline-note">{template.scenario} / {String(template.joint_rule?.operator ?? "AND")}</p>
+          </div>
+          <button type="button" onClick={onClose}>关闭</button>
+        </div>
+        <section className="panel panel-muted">
+          <div className="section-header">
+            <h4>对象组</h4>
+            <StatusBadge status={template.enabled ? "enabled" : "disabled"} />
+          </div>
+          <div className="template-detail-list">
+            {targetGroups.map((group, index) => (
+              <div key={`${template.id}-detail-group-${index}`} className="template-detail-row">
+                <span className="ellipsis-cell" title={group.ref}>{group.ref}</span>
+                <span className="ellipsis-cell" title={group.namespace}>{group.namespace}</span>
+                <span className="ellipsis-cell" title={group.label_selector ?? ""}>{group.label_selector || "无 Label"}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="panel panel-muted">
+          <h4>匹配条件</h4>
+          <div className="condition-list">
+            {template.match_conditions.map((condition, index) => (
+              <div key={`${template.id}-detail-condition-${index}`} className="condition-item">
+                {describeCondition(condition as { target_ref?: string; condition_type?: string; operator?: string; expected_value?: unknown })}
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="panel panel-muted">
+          <h4>原因与建议</h4>
+          <p><strong>判断原因：</strong>{template.reason}</p>
+          <p><strong>处理意见：</strong>{template.suggestion}</p>
+          {template.command ? <pre className="log-block code-block-scroll">{template.command}</pre> : null}
+          {template.risk_note ? <p><strong>风险说明：</strong>{template.risk_note}</p> : null}
+        </section>
+      </aside>
+    </div>
+  );
+}
+
 export function TemplatesPage() {
   const {
     data,
@@ -452,6 +502,7 @@ export function TemplatesPage() {
   const [importText, setImportText] = useState("");
   const [exportText, setExportText] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<FaultTemplate | null>(null);
 
   const validation = useMemo(
     () => getTemplateValidation({ name, scenario, targets, conditions, reason, suggestion }),
@@ -685,47 +736,6 @@ export function TemplatesPage() {
 
   return (
     <section className="page-section">
-      <header className="section-header">
-        <div>
-          <p className="eyebrow">故障录入</p>
-          <h2>故障模板</h2>
-        </div>
-        <span className="section-tip">把一次可复用的故障经验拆成对象组、条件、原因和建议。</span>
-      </header>
-
-      <section className="workbench-hero">
-        <div className="workbench-copy">
-          <div>
-            <p className="eyebrow">录入方式</p>
-            <h3>紧凑编辑</h3>
-            <p className="hero-summary">主页面只保留模板摘要和操作入口。新增或编辑时，再进入步骤化录入抽屉。</p>
-          </div>
-          <div className="secondary-action-row">
-            <button type="button" onClick={startCreate}>新增模板</button>
-            <button type="button" className="text-button" onClick={() => setModalType("import")}>
-              导入模板
-            </button>
-            <button type="button" className="text-button" onClick={() => void handleOpenExport()}>
-              导出模板
-            </button>
-          </div>
-        </div>
-        <div className="hero-metric-stack">
-          <article className="hero-metric hero-metric-compact">
-            <span>已录入模板</span>
-            <strong>{data.length}</strong>
-          </article>
-          <article className="hero-metric hero-metric-compact">
-            <span>当前对象组 / 条件</span>
-            <strong>{targets.length} / {conditions.length}</strong>
-          </article>
-          <article className="hero-metric hero-metric-compact">
-            <span>当前模式</span>
-            <strong>{editingId !== null ? "编辑中" : "新建"}</strong>
-          </article>
-        </div>
-      </section>
-
       {error ? <p>操作失败：{error}</p> : null}
       {message ? <p className="inline-note">{message}</p> : null}
 
@@ -733,9 +743,17 @@ export function TemplatesPage() {
         <div className="section-header">
           <div>
             <h3>模板列表</h3>
-            <p className="inline-note">列表默认只看摘要，详情按需展开；编辑时再进入步骤化录入面板。</p>
+            <p className="inline-note">共 {data.length} 个模板</p>
           </div>
-          <StatusBadge status="info" />
+          <div className="button-row">
+            <button type="button" onClick={startCreate}>新增模板</button>
+            <button type="button" className="mini-button" onClick={() => setModalType("import")}>
+              导入模板
+            </button>
+            <button type="button" className="mini-button" onClick={() => void handleOpenExport()}>
+              导出模板
+            </button>
+          </div>
         </div>
         <div className="table-scroll-shell">
           <table className="compact-table">
@@ -768,33 +786,11 @@ export function TemplatesPage() {
                     <td>{targetGroups.length} / {item.match_conditions.length}</td>
                     <td>
                       <div className="button-row">
+                        <button type="button" className="mini-button" disabled={saving} onClick={() => setSelectedDetail(item)}>详情</button>
                         <button type="button" className="mini-button" disabled={saving} onClick={() => startEdit(item)}>编辑</button>
                         <button type="button" className="mini-button" disabled={saving} onClick={() => void setEnabled(item.id, !item.enabled)}>{item.enabled ? "停用" : "启用"}</button>
                         <button type="button" className="mini-button" disabled={saving} onClick={() => void remove(item.id)}>删除</button>
                       </div>
-                      <details className="template-details-card template-inline-details">
-                        <summary>查看详情</summary>
-                        <div className="template-details-body">
-                          <div className="stack-list">
-                            {targetGroups.map((group, index) => (
-                              <div key={`${item.id}-group-${index}`} className="stack-item">
-                                <strong>对象组：{group.ref}</strong>
-                                <p>{group.namespace}{group.label_selector ? ` / ${group.label_selector}` : ""}</p>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="condition-list">
-                            {item.match_conditions.map((condition, index) => (
-                              <div key={`${item.id}-condition-${index}`} className="condition-item">
-                                {describeCondition(condition as { target_ref?: string; condition_type?: string; operator?: string; expected_value?: unknown })}
-                              </div>
-                            ))}
-                          </div>
-                          <p className="inline-note">建议：{item.suggestion}</p>
-                          {item.command ? <pre className="log-block code-block-scroll">{item.command}</pre> : null}
-                          {item.risk_note ? <p className="inline-note">风险说明：{item.risk_note}</p> : null}
-                        </div>
-                      </details>
                     </td>
                   </tr>
                 );
@@ -803,6 +799,8 @@ export function TemplatesPage() {
           </table>
         </div>
       </section>
+
+      {selectedDetail ? <TemplateDetailDrawer template={selectedDetail} onClose={() => setSelectedDetail(null)} /> : null}
 
       {modalType === "editor" ? (
         <div className="modal-backdrop" role="presentation">

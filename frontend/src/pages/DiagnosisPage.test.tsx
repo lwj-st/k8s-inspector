@@ -171,9 +171,8 @@ describe("DiagnosisPage", () => {
     );
     const panel = await screen.findByLabelText("模板匹配结果");
     expect(within(panel).getAllByText("CrashLoop 模板").length).toBeGreaterThan(0);
-    expect(within(panel).getByText("优先关注命中模板")).toBeInTheDocument();
-    expect(await screen.findByText("已命中模板")).toBeInTheDocument();
-    expect(within(panel).getByRole("heading", { name: "无法判断" })).toBeInTheDocument();
+    expect(await screen.findByText("已命中模板（1）")).toBeInTheDocument();
+    expect(within(panel).getByRole("heading", { name: "无法判断（1）" })).toBeInTheDocument();
     expect(within(panel).getByText("未命中模板（1）")).toBeInTheDocument();
     expect(within(panel).getByText("命中条件 2")).toBeInTheDocument();
     expect(within(panel).getByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();
@@ -191,7 +190,7 @@ describe("DiagnosisPage", () => {
     expect(within(unmatchedDetails as HTMLDetailsElement).getByText("当前没有发现 redis timeout 日志")).toBeInTheDocument();
 
     await user.click(within(panel).getByText("查看证据（2）"));
-    expect(within(panel).getByText("命中上下文（不是完整日志）")).toBeInTheDocument();
+    expect(within(panel).getByText("日志预览")).toBeInTheDocument();
     expect(
       within(panel).getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s"),
     ).toBeInTheDocument();

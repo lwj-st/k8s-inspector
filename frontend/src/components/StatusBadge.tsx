@@ -18,6 +18,8 @@ const statusLabels: Record<string, string> = {
   failed: "失败",
   degraded: "降级",
   critical: "严重",
+  matched: "已命中",
+  unmatched: "未命中",
 };
 
 function formatStatusLabel(status: string) {
@@ -35,11 +37,11 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     normalized.includes("backoff");
   const tone = isBad
     ? "status-badge status-bad"
-    : normalized.includes("healthy") || normalized.includes("ready") || normalized.includes("running") || normalized.includes("succeeded") || normalized.includes("completed") || normalized === "enabled"
+    : normalized.includes("healthy") || normalized.includes("ready") || normalized.includes("running") || normalized.includes("succeeded") || normalized.includes("completed") || normalized === "enabled" || normalized === "matched"
       ? "status-badge status-good"
         : normalized.includes("warning") || normalized.includes("degraded")
         ? "status-badge status-warn"
-        : normalized.includes("info") || normalized.includes("unknown")
+        : normalized.includes("info") || normalized.includes("unknown") || normalized === "unmatched"
           ? "status-badge status-neutral"
           : "status-badge status-bad";
 
