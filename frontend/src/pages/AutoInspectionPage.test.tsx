@@ -68,6 +68,10 @@ describe("AutoInspectionPage", () => {
 
     expect(await screen.findByLabelText("选择名称空间")).toBeInTheDocument();
     expect(screen.queryByText("名称空间列表")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前可选数量")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近发现时间")).not.toBeInTheDocument();
+    expect(screen.queryByText("主操作")).not.toBeInTheDocument();
+    expect(screen.queryByText("单名称空间用于快速复查，全部巡检用于完整体检。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "全选当前结果" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "取消当前结果" })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "选择 prod-core" })).not.toBeInTheDocument();
@@ -78,6 +82,7 @@ describe("AutoInspectionPage", () => {
 
     fireEvent.change(screen.getByLabelText("选择名称空间"), { target: { value: "prod-core" } });
     expect(screen.getByDisplayValue("prod-core")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "当前选择" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("搜索名称空间"), { target: { value: "" } });
     expect(screen.getByRole("option", { name: "default" })).toBeInTheDocument();
@@ -236,7 +241,7 @@ describe("AutoInspectionPage", () => {
     render(<AutoInspectionPage />);
 
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
 
     expect(await screen.findByText("批量巡检摘要")).toBeInTheDocument();
     expect(await screen.findByText("本次执行：巡检名称空间 prod-core")).toBeInTheDocument();
@@ -695,7 +700,7 @@ describe("AutoInspectionPage", () => {
     render(<AutoInspectionPage />);
 
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     expect(await screen.findByText("批量巡检请求失败：Request failed: 500")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试批量巡检" }));
@@ -794,7 +799,7 @@ describe("AutoInspectionPage", () => {
     render(<AutoInspectionPage />);
 
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
 
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
@@ -854,7 +859,7 @@ describe("AutoInspectionPage", () => {
     render(<AutoInspectionPage />);
 
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
@@ -913,7 +918,7 @@ describe("AutoInspectionPage", () => {
     render(<AutoInspectionPage />);
 
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
@@ -966,7 +971,7 @@ describe("AutoInspectionPage", () => {
     render(<AutoInspectionPage />);
 
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
@@ -1028,7 +1033,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     expect(await screen.findByText("批量巡检摘要")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1110,7 +1115,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1174,7 +1179,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1229,7 +1234,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1266,7 +1271,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
     expect(await screen.findByText("Request failed: 503")).toBeInTheDocument();
@@ -1317,7 +1322,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
     await chooseNamespace("edge-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
@@ -1364,7 +1369,7 @@ describe("AutoInspectionPage", () => {
 
     render(<AutoInspectionPage />);
     await chooseNamespace("prod-core");
-    fireEvent.click(screen.getByRole("button", { name: "巡检该名称空间" }));
+    fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     await screen.findByText("批量巡检摘要");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 

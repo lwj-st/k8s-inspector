@@ -153,6 +153,10 @@ a {
   gap: 14px;
 }
 
+.status-command-panel {
+  max-width: 720px;
+}
+
 .workbench-command-grid {
   display: grid;
   gap: 14px;
@@ -378,6 +382,37 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.status-command-panel .inline-search {
+  max-width: 680px;
+}
+
+.status-command-panel select {
+  max-width: 520px;
+}
+
+.status-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.status-action-button {
+  min-height: 40px !important;
+  padding: 9px 18px !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  border: 1px solid rgba(15, 118, 110, 0.24) !important;
+  color: var(--teal) !important;
+  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.06) !important;
+}
+
+.status-action-button-primary {
+  background: linear-gradient(135deg, #0f766e, #24a08f) !important;
+  color: #fff !important;
+  border-color: transparent !important;
 }
 
 .status-badge {

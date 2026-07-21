@@ -190,7 +190,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "状态巡检" })).toBeInTheDocument();
-    expect(await screen.findByText("名称空间巡检入口")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "名称空间" })).toBeInTheDocument();
     expect(screen.getByLabelText("搜索名称空间")).toBeInTheDocument();
     expect(screen.getByLabelText("选择名称空间")).toBeInTheDocument();
     expect(screen.queryByText("名称空间列表")).not.toBeInTheDocument();

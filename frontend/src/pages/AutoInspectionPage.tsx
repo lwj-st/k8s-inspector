@@ -570,11 +570,10 @@ export function AutoInspectionPage() {
         <div className="workbench-copy">
           <div className="section-header">
             <div>
-              <h3>名称空间巡检入口</h3>
-              <p className="inline-note">支持直接巡检全部名称空间，也支持先搜索再选择一个名称空间单独巡检。</p>
+              <h3>名称空间</h3>
             </div>
           </div>
-          <div className="workbench-command-panel">
+          <div className="workbench-command-panel status-command-panel">
             <label className="inline-search">
               搜索名称空间
               <input
@@ -600,19 +599,13 @@ export function AutoInspectionPage() {
                 ))}
               </select>
             </label>
-            <div className="workbench-command-grid">
-              <div className="quick-action-card quick-action-card-primary">
-                <strong>主操作</strong>
-                <span>单名称空间用于快速复查，全部巡检用于完整体检。</span>
-                <div className="toolbar-row">
-                  <button type="button" onClick={handleRunSelected} disabled={!hasSelectedNamespace || batchLoading}>
-                    {batchLoading ? "巡检中..." : "巡检该名称空间"}
-                  </button>
-                  <button type="button" onClick={handleRunAll} disabled={!hasNamespaces || batchLoading}>
-                    {batchLoading ? "巡检中..." : "巡检全部名称空间"}
-                  </button>
-                </div>
-              </div>
+            <div className="status-action-row">
+              <button type="button" className="status-action-button status-action-button-primary" onClick={handleRunSelected} disabled={!hasSelectedNamespace || batchLoading}>
+                {batchLoading ? "巡检中..." : "巡检"}
+              </button>
+              <button type="button" className="status-action-button" onClick={handleRunAll} disabled={!hasNamespaces || batchLoading}>
+                {batchLoading ? "巡检中..." : "巡检全部名称空间"}
+              </button>
             </div>
           </div>
         </div>
@@ -620,10 +613,6 @@ export function AutoInspectionPage() {
           <div className="hero-metric hero-metric-compact">
             <span>名称空间总数</span>
             <strong>{namespaces.length}</strong>
-          </div>
-          <div className="hero-metric hero-metric-compact">
-            <span>当前选择</span>
-            <strong>{selectedNamespace || "--"}</strong>
           </div>
         </div>
       </section>
@@ -643,14 +632,6 @@ export function AutoInspectionPage() {
 
       {!loading && !error ? (
         <>
-          <KeyValueList
-            items={[
-              { label: "当前可选数量", value: String(filteredNamespaces.length) },
-              { label: "当前选择", value: selectedNamespace || "未选择" },
-              { label: "最近发现时间", value: data?.executed_at ?? "--" },
-            ]}
-          />
-
           {namespaces.length === 0 ? (
             <section className="panel">
               <p>当前集群没有可用名称空间。</p>
@@ -658,31 +639,6 @@ export function AutoInspectionPage() {
           ) : filteredNamespaces.length === 0 ? (
             <section className="panel">
               <p>没有匹配的名称空间，请调整搜索条件。</p>
-            </section>
-          ) : selectedNamespace ? (
-            <section className="panel">
-              <div className="section-header">
-                <h3>当前选择</h3>
-                <span className="section-tip">单名称空间巡检会直接使用这里的选择。</span>
-              </div>
-              {filteredNamespaces
-                .filter((item) => item.name === selectedNamespace)
-                .map((item) => (
-                  <article key={item.name} className="namespace-row namespace-row-selected">
-                    <div className="namespace-check">
-                      <div>
-                        <strong>{item.name}</strong>
-                        <p className="inline-note">
-                          Pod {item.pod_count} / 异常 Pod {item.abnormal_pod_count}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="namespace-meta">
-                      <StatusBadge status={namespaceStatus(item)} />
-                      <span>最近巡检：{item.last_inspected_at ?? "暂无"}</span>
-                    </div>
-                  </article>
-                ))}
             </section>
           ) : null}
         </>
