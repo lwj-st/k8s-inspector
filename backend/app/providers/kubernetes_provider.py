@@ -15,6 +15,10 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _setting_int(settings: Settings, name: str, default: int) -> int:
+    return int(getattr(settings, name, default) or default)
+
+
 class KubernetesInspectionProvider:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -134,22 +138,26 @@ class KubernetesInspectionProvider:
                     name=pod.metadata.name,
                     namespace=pod.metadata.namespace,
                     container=container_name,
-                    tail_lines=20,
+                    tail_lines=_setting_int(self.settings, "k8s_log_tail_lines", 200),
                     _request_timeout=self.settings.k8s_request_timeout,
                 )
             except ApiException:
                 continue
             if log_summary:
-                container_logs[container_name] = "\n".join(log_summary.splitlines()[:5])
+                container_logs[container_name] = log_summary
         return container_logs
 
     def _combine_container_log_summaries(self, container_logs: dict[str, str]) -> str | None:
         if not container_logs:
             return None
         return "\n".join(
-            f"[{container_name}]\n{log_summary}"
+            f"[{container_name}]\n{self._summarize_log_text(log_summary)}"
             for container_name, log_summary in container_logs.items()
         )
+
+    def _summarize_log_text(self, log_text: str) -> str:
+        summary_lines = _setting_int(self.settings, "k8s_log_summary_lines", 5)
+        return "\n".join(log_text.splitlines()[:summary_lines])
 
     def _pod_previous_log_summary(self, pod: client.V1Pod) -> str | None:
         container_statuses = pod.status.container_statuses or []
@@ -167,13 +175,13 @@ class KubernetesInspectionProvider:
                 namespace=pod.metadata.namespace,
                 container=container_name,
                 previous=True,
-                tail_lines=20,
+                tail_lines=_setting_int(self.settings, "k8s_log_tail_lines", 200),
                 _request_timeout=self.settings.k8s_request_timeout,
             )
         except ApiException:
             return None
 
-        return "\n".join(previous_log.splitlines()[:5]) if previous_log else None
+        return self._summarize_log_text(previous_log) if previous_log else None
 
     def _pod_containers(self, pod: client.V1Pod) -> list[dict]:
         result: list[dict] = []

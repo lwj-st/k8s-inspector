@@ -6,7 +6,7 @@ from app.providers.mock_provider import MockInspectionProvider
 
 def _make_provider() -> KubernetesInspectionProvider:
     provider = KubernetesInspectionProvider.__new__(KubernetesInspectionProvider)
-    provider.settings = SimpleNamespace(k8s_request_timeout=5)
+    provider.settings = SimpleNamespace(k8s_request_timeout=5, k8s_log_tail_lines=200, k8s_log_summary_lines=5)
     provider.core = SimpleNamespace()
     provider.apps = SimpleNamespace()
     provider.networking = SimpleNamespace()
@@ -141,21 +141,21 @@ def test_run_pod_inspection_reads_logs_for_every_container_even_when_pod_is_runn
             "name": "demo-api-abc",
             "namespace": "demo",
             "container": "demo-api",
-            "tail_lines": 20,
+            "tail_lines": 200,
             "_request_timeout": 5,
         },
         {
             "name": "demo-api-abc",
             "namespace": "demo",
             "container": "sidecar",
-            "tail_lines": 20,
+            "tail_lines": 200,
             "_request_timeout": 5,
         },
     ]
     assert result["pod"]["status"] == "Running"
     assert result["pod"]["container_log_summaries"] == {
-        "demo-api": "demo-api-line1\ndemo-api-line2\ndemo-api-line3\ndemo-api-line4\ndemo-api-line5",
-        "sidecar": "sidecar-line1\nsidecar-line2\nsidecar-line3\nsidecar-line4\nsidecar-line5",
+        "demo-api": "demo-api-line1\ndemo-api-line2\ndemo-api-line3\ndemo-api-line4\ndemo-api-line5\ndemo-api-line6",
+        "sidecar": "sidecar-line1\nsidecar-line2\nsidecar-line3\nsidecar-line4\nsidecar-line5\nsidecar-line6",
     }
     assert result["pod"]["log_summary"] == (
         "[demo-api]\n"

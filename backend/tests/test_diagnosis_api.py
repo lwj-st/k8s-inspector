@@ -195,6 +195,89 @@ def test_run_diagnosis_matches_log_keyword_from_non_first_container(client) -> N
     assert evidence["matched_text"] == "timeout from sidecar"
 
 
+def test_run_diagnosis_matches_template_log_keyword_without_keyword_rule(client) -> None:
+    redis_error = (
+        "[2026-06-01 06:38:01,219: ERROR/MainProcess] consumer: "
+        "Cannot connect to redis://default:**@dragonfly-0.dragonfly.yangzi-middleware.svc.cluster.local:6379/0"
+    )
+
+    def run_namespace(namespace: str, label_selector: str | None) -> dict:
+        return {
+            "inspection_target": {
+                "type": "namespace",
+                "namespace": namespace,
+                "label_selector": label_selector,
+                "resource_scope": ["pods", "services", "ingresses", "daemonsets", "secrets"],
+            },
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "health_status": "healthy",
+            "executed_at": "2026-07-21T08:00:00Z",
+            "pods": [
+                {
+                    "name": "lazy-rag-file-process-worker-1",
+                    "status": "Running",
+                    "node_name": "node-a",
+                    "restarts": 0,
+                    "containers": [{"name": "worker", "restart_count": 0, "state": "running", "reason": None}],
+                    "events": [],
+                    "describe_summary": "worker running",
+                    "log_summary": "[worker]\nrecent info line",
+                    "container_log_summaries": {
+                        "worker": "\n".join(["recent info line"] * 20 + [redis_error]),
+                    },
+                    "previous_log_summary": None,
+                    "resource_usage": {},
+                    "related_resources": [],
+                }
+            ],
+            "services": [],
+            "ingresses": [],
+            "tls_secrets": [],
+            "daemonsets": [],
+        }
+
+    client.app.state.provider.run_namespace_inspection = run_namespace
+    create_response = client.post(
+        "/api/v1/templates",
+        json={
+            "name": "文书审核网络故障",
+            "scenario": "targeted_diagnosis",
+            "targets": [
+                {
+                    "target_ref": "group-1",
+                    "namespace": "platform",
+                    "label_selector": "app.kubernetes.io/instance=lazy-rag-file-process-worker",
+                    "resource_scope": ["pods"],
+                }
+            ],
+            "match_conditions": [
+                {
+                    "target_ref": "group-1",
+                    "condition_type": "log_keyword",
+                    "operator": "contains",
+                    "expected_value": "Cannot connect to redis://default",
+                    "enabled": True,
+                },
+            ],
+            "joint_rule": {"operator": "AND"},
+            "reason": "网络问题",
+            "suggestion": "重启",
+            "enabled": True,
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.post("/api/v1/diagnoses/run", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "matched"
+    evidence = body["template_match_results"][0]["evidence_refs"][0]
+    assert evidence["container_name"] == "worker"
+    assert evidence["matched_text"] == redis_error
+
+
 def test_run_diagnosis_isolates_single_template_collection_failure(client) -> None:
     client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: (
         (_ for _ in ()).throw(RuntimeError("provider failed"))

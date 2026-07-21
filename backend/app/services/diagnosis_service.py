@@ -21,7 +21,33 @@ def _normalize_condition_result(condition: dict, matched: bool, evidence: list[d
     }
 
 
-def _attach_log_hits(session: Session, namespace: str, label_selector: str | None, pod: dict) -> dict:
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _template_log_keywords_by_target(template: FaultTemplate) -> dict[str, list[str]]:
+    keywords_by_target: dict[str, list[str]] = {}
+    for condition in template.match_conditions:
+        condition_type = condition.get("condition_type") or condition.get("type")
+        if condition_type != "log_keyword" or not condition.get("enabled", True):
+            continue
+        target_ref = condition.get("target_ref", "default")
+        values = [str(item) for item in _as_list(condition.get("expected_value", condition.get("value"))) if item]
+        keywords_by_target.setdefault(target_ref, []).extend(values)
+    return keywords_by_target
+
+
+def _attach_log_hits(
+    session: Session,
+    namespace: str,
+    label_selector: str | None,
+    pod: dict,
+    template_keywords: list[str] | None = None,
+) -> dict:
     pod_copy = dict(pod)
     hits = []
     container_logs = pod.get("container_log_summaries") or {}
@@ -37,6 +63,17 @@ def _attach_log_hits(session: Session, namespace: str, label_selector: str | Non
                     log_text=log_text,
                 )
             )
+            hits.extend(
+                keyword_service.match_explicit_log_keywords(
+                    session=session,
+                    namespace=namespace,
+                    label_selector=label_selector,
+                    pod_name=pod.get("name", ""),
+                    container_name=container_name,
+                    log_text=log_text,
+                    keywords=template_keywords or [],
+                )
+            )
     else:
         hits = keyword_service.match_log_text(
             session=session,
@@ -45,6 +82,17 @@ def _attach_log_hits(session: Session, namespace: str, label_selector: str | Non
             pod_name=pod.get("name", ""),
             container_name=(pod.get("containers") or [{}])[0].get("name") if pod.get("containers") else None,
             log_text=pod.get("log_summary"),
+        )
+        hits.extend(
+            keyword_service.match_explicit_log_keywords(
+                session=session,
+                namespace=namespace,
+                label_selector=label_selector,
+                pod_name=pod.get("name", ""),
+                container_name=(pod.get("containers") or [{}])[0].get("name") if pod.get("containers") else None,
+                log_text=pod.get("log_summary"),
+                keywords=template_keywords or [],
+            )
         )
     pod_copy["log_hits"] = [hit.model_dump() for hit in hits]
     return pod_copy
@@ -74,6 +122,7 @@ def _build_result_summary(matched: bool, matched_conditions: list[dict], unmatch
 
 def _build_target_context(session: Session, provider: InspectionProvider, template: FaultTemplate) -> dict:
     targets: dict[str, dict] = {}
+    template_keywords_by_target = _template_log_keywords_by_target(template)
     for target in template.target_groups:
         namespace = target["namespace"]
         label_selector = target.get("label_selector")
@@ -85,7 +134,13 @@ def _build_target_context(session: Session, provider: InspectionProvider, templa
             "namespace": namespace,
             "label_selector": label_selector,
             "pods": [
-                _attach_log_hits(session, namespace, label_selector, pod)
+                _attach_log_hits(
+                    session,
+                    namespace,
+                    label_selector,
+                    pod,
+                    template_keywords_by_target.get(target["target_ref"], []),
+                )
                 for pod in inspection["pods"]
                 if _pod_matches_target(pod, target)
             ],

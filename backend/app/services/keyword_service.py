@@ -289,6 +289,53 @@ def match_log_text(
     return hits
 
 
+def match_explicit_log_keywords(
+    session: Session,
+    namespace: str,
+    label_selector: str | None,
+    pod_name: str,
+    container_name: str | None,
+    log_text: str | None,
+    keywords: list[str],
+) -> list[KeywordHit]:
+    if not log_text:
+        return []
+
+    hits: list[KeywordHit] = []
+    lowered_text = log_text.lower()
+    seen_keywords: set[str] = set()
+    for keyword in keywords:
+        normalized_keyword = str(keyword or "").strip()
+        lowered_keyword = normalized_keyword.lower()
+        if not lowered_keyword or lowered_keyword in seen_keywords:
+            continue
+        seen_keywords.add(lowered_keyword)
+        if lowered_keyword not in lowered_text:
+            continue
+
+        whitelist_rule = find_matching_whitelist(
+            session=session,
+            namespace=namespace,
+            label_selector=label_selector,
+            pod_name=pod_name,
+            container_name=container_name,
+            keyword=normalized_keyword,
+        )
+        hits.append(
+            KeywordHit(
+                keyword=normalized_keyword,
+                category="fault_template",
+                severity="error",
+                source="template_log_condition",
+                matched_text=_extract_matched_text(log_text, normalized_keyword),
+                container_name=container_name,
+                whitelisted=whitelist_rule is not None,
+                whitelist_rule_id=whitelist_rule.id if whitelist_rule else None,
+            )
+        )
+    return hits
+
+
 def _extract_matched_text(log_text: str, keyword: str) -> str:
     lowered_keyword = keyword.lower()
     for line in log_text.splitlines():
