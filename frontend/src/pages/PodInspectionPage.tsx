@@ -717,7 +717,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                       onClick={() => setSelectedRangePodName(pod.name)}
                     >
                       <div className="card-title">
-                        <strong>{pod.name}</strong>
+                        <strong title={pod.name}>{pod.name}</strong>
                         <StatusBadge status={pod.status} />
                       </div>
                       <p>重启次数：{pod.restarts}</p>

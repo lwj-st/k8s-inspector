@@ -506,6 +506,11 @@ a {
   width: 100%;
   height: 76px;
   min-height: 76px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: 22px 18px 18px;
+  align-content: center;
+  gap: 2px;
   text-align: left;
   padding: 10px 12px;
   border: 1px solid rgba(55, 81, 110, 0.16) !important;
@@ -518,37 +523,48 @@ a {
 }
 
 .pod-list-item .card-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
   min-width: 0;
-  gap: 8px;
+  width: 100%;
+  gap: 10px;
   align-items: center;
+  justify-content: normal;
 }
 
 .pod-list-item strong {
   display: block;
   min-width: 0;
-  flex: 1;
+  width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 22px;
 }
 
 .pod-list-item .status-badge {
-  flex: 0 0 auto;
-  max-width: 70px;
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
+  box-sizing: border-box;
   justify-content: center;
-  white-space: normal;
+  justify-self: end;
+  white-space: nowrap;
   line-height: 1.15;
   text-align: center;
+  overflow: hidden;
 }
 
 .pod-list-item p {
-  margin: 4px 0 2px;
+  margin: 0;
+  line-height: 18px;
   font-size: 12px;
 }
 
 .pod-list-item small {
   color: var(--muted);
   display: block;
+  line-height: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
