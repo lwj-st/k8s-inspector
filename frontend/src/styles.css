@@ -508,26 +508,37 @@ a {
   min-height: 76px;
   text-align: left;
   padding: 10px 12px;
-  border: 1px solid rgba(15, 118, 110, 0.18);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(239, 252, 248, 0.96), rgba(255, 255, 255, 0.9));
+  border: 1px solid rgba(55, 81, 110, 0.16) !important;
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, rgba(244, 248, 251, 0.98), rgba(255, 255, 255, 0.94)) !important;
   color: var(--ink);
   cursor: pointer;
   overflow: hidden;
-  box-shadow: none;
+  box-shadow: none !important;
 }
 
 .pod-list-item .card-title {
   min-width: 0;
   gap: 8px;
+  align-items: center;
 }
 
 .pod-list-item strong {
   display: block;
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pod-list-item .status-badge {
+  flex: 0 0 auto;
+  max-width: 70px;
+  justify-content: center;
+  white-space: normal;
+  line-height: 1.15;
+  text-align: center;
 }
 
 .pod-list-item p {
@@ -544,9 +555,9 @@ a {
 }
 
 .pod-list-item-active {
-  border-color: rgba(15, 118, 110, 0.5);
-  background: linear-gradient(135deg, rgba(219, 245, 238, 0.98), rgba(245, 255, 252, 0.96));
-  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+  border-color: rgba(15, 118, 110, 0.48) !important;
+  background: linear-gradient(135deg, rgba(232, 247, 244, 0.98), rgba(255, 255, 255, 0.96)) !important;
+  box-shadow: inset 3px 0 0 rgba(15, 118, 110, 0.72) !important;
 }
 
 .log-block {
@@ -622,6 +633,49 @@ a {
   width: min(680px, 100%);
   border-radius: 18px;
   padding: 20px;
+}
+
+.modal-save-field {
+  gap: 10px;
+}
+
+.modal-save-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 13px 16px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(157, 182, 202, 0.42) !important;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.modal-save-input:focus {
+  outline: none;
+  border-color: rgba(15, 118, 110, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.modal-action-row {
+  gap: 10px;
+}
+
+.modal-primary-button,
+.modal-secondary-button {
+  min-height: 40px !important;
+  padding: 9px 18px !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.modal-primary-button {
+  background: linear-gradient(135deg, #0f766e, #22a08f) !important;
+  color: #fff !important;
+}
+
+.modal-secondary-button {
+  border: 1px solid rgba(157, 182, 202, 0.42) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: var(--ink) !important;
 }
 
 .modal-card-wide {

@@ -602,7 +602,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                         <td>
                           <div className="toolbar-row">
                             <button type="button" className="mini-button" onClick={() => applySavedTarget(target)} disabled={podInspection.loading || namespaceInspection.loading}>
-                              使用
+                              巡检
                             </button>
                             <button type="button" className="mini-button" onClick={() => startEditingTarget(target)} disabled={targetSaving}>
                               编辑
@@ -821,20 +821,21 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             {modalType === "save" ? (
               <>
                 <p className="inline-note">当前将保存：{currentScopeText}</p>
-                <label>
+                <label className="modal-save-field">
                   巡检点名称
                   <input
+                    className="modal-save-input"
                     aria-label="巡检点名称"
                     value={targetName}
                     onChange={(event) => setTargetName(event.target.value)}
                     placeholder={defaultInspectionPointName || "例如：platform / app=kong-service-kong"}
                   />
                 </label>
-                <div className="button-row">
-                  <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || !labelSelector.trim()}>
+                <div className="button-row modal-action-row">
+                  <button className="modal-primary-button" type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || !labelSelector.trim()}>
                     {targetSaving ? (editingTargetId !== null ? "更新中..." : "保存中...") : editingTargetId !== null ? "更新巡检点" : "保存巡检点"}
                   </button>
-                  <button type="button" onClick={() => setModalType(null)}>取消</button>
+                  <button className="modal-secondary-button" type="button" onClick={() => setModalType(null)}>取消</button>
                 </div>
               </>
             ) : null}
