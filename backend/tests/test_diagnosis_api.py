@@ -536,4 +536,4 @@ def test_run_diagnosis_reports_missing_restart_count_and_related_object_status(c
     assert response.status_code == 200
     result = response.json()["template_match_results"][0]
     assert result["matched"] is False
-    assert result["summary"] == "未命中：worker 重启次数未达到 >= 3；worker 缺少 services 状态 = degraded。"
+    assert result["summary"] == "未命中：worker 重启次数未达到 >= 3；worker services 任意对象 状态未匹配 = degraded。"

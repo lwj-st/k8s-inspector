@@ -242,8 +242,7 @@ describe("TemplatesPage", () => {
 
     await user.selectOptions(within(editor).getByLabelText("条件类型"), "pod_status");
     await user.selectOptions(within(editor).getByLabelText("匹配方式"), "in");
-    await user.clear(within(editor).getByLabelText("目标值"));
-    await user.type(within(editor).getByLabelText("目标值"), "CrashLoopBackOff, ImagePullBackOff");
+    await user.selectOptions(within(editor).getByLabelText("目标值"), "CrashLoopBackOff");
     await user.click(within(editor).getByRole("button", { name: "下一步" }));
     await user.type(within(editor).getByLabelText("诊断原因"), "Pod 状态异常");
     await user.type(within(editor).getByLabelText("处理建议"), "检查镜像和依赖");
@@ -272,7 +271,7 @@ describe("TemplatesPage", () => {
             target_ref: "group-1",
             condition_type: "pod_status",
             operator: "in",
-            expected_value: ["CrashLoopBackOff", "ImagePullBackOff"],
+            expected_value: ["CrashLoopBackOff"],
             join_operator: "AND",
             enabled: true,
           },
@@ -283,6 +282,45 @@ describe("TemplatesPage", () => {
         command: null,
         risk_note: null,
         enabled: true,
+      });
+    });
+  });
+
+  it("creates related object status condition with explicit object name", async () => {
+    const user = userEvent.setup();
+    render(<TemplatesPage />);
+
+    await user.click(await screen.findByRole("button", { name: "新增模板" }));
+    const editor = await screen.findByRole("dialog", { name: "模板录入器" });
+
+    await user.type(within(editor).getByLabelText("模板名称"), "Service 故障");
+    await user.clear(within(editor).getByLabelText("场景标识"));
+    await user.type(within(editor).getByLabelText("场景标识"), "service_degraded");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    await user.selectOptions(within(editor).getByLabelText("名称空间"), "demo");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    await user.selectOptions(within(editor).getByLabelText("条件类型"), "related_object_status");
+    await user.selectOptions(within(editor).getByLabelText("关联资源类型"), "services");
+    await user.click(within(editor).getByLabelText("任意对象"));
+    await user.type(within(editor).getByLabelText("对象名称"), "demo-svc");
+    await user.selectOptions(within(editor).getByLabelText("状态值"), "degraded");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    await user.type(within(editor).getByLabelText("诊断原因"), "Service 状态异常");
+    await user.type(within(editor).getByLabelText("处理建议"), "检查 Service selector");
+    await user.click(within(editor).getByRole("button", { name: "下一步" }));
+    await user.click(within(editor).getByRole("button", { name: "新增模板" }));
+
+    await waitFor(() => {
+      const request = fetchMock.mock.calls.find(
+        ([input, init]) => String(input).endsWith("/templates") && init?.method === "POST",
+      );
+      expect(request).toBeDefined();
+      const payload = JSON.parse(String(request?.[1]?.body));
+      expect(payload.match_conditions[0].expected_value).toEqual({
+        resource: "services",
+        match_any: false,
+        object_name: "demo-svc",
+        statuses: ["degraded"],
       });
     });
   });

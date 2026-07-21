@@ -50,12 +50,56 @@ function normalizeCondition(condition: RawCondition): NormalizedCondition {
   };
 }
 
+function formatConditionValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  if (value && typeof value === "object") {
+    const related = value as {
+      resource?: string;
+      object_name?: string | null;
+      object_name_pattern?: string | null;
+      match_any?: boolean;
+      statuses?: string[];
+    };
+    if (related.resource) {
+      const objectText = related.match_any === false && (related.object_name || related.object_name_pattern)
+        ? related.object_name || related.object_name_pattern
+        : "任意对象";
+      return `${related.resource} ${objectText} 状态 ${(related.statuses ?? []).join(", ")}`;
+    }
+  }
+  return String(value ?? "");
+}
+
+function formatOperator(operator: string) {
+  return {
+    equals: "等于",
+    in: "属于",
+    contains: "包含",
+    gte: "大于等于",
+    lte: "小于等于",
+  }[operator] ?? operator;
+}
+
 function describeCondition(input: RawCondition | NormalizedCondition) {
   const condition: NormalizedCondition = "condition_type" in input ? normalizeCondition(input) : input;
   const targetRef = condition.target_ref ?? "对象组";
-  const expectedValue = Array.isArray(condition.value)
-    ? condition.value.join(", ")
-    : String(condition.value ?? "");
+  const expectedValue = formatConditionValue(condition.value);
+
+  if (condition.type === "related_object_status") {
+    const related = condition.value as {
+      resource?: string;
+      object_name?: string | null;
+      object_name_pattern?: string | null;
+      match_any?: boolean;
+      statuses?: string[];
+    } | null;
+    const objectText = related?.match_any === false && (related.object_name || related.object_name_pattern)
+      ? related.object_name || related.object_name_pattern
+      : "任意对象";
+    return `对象组 ${targetRef} 的 ${related?.resource ?? "关联对象"} ${objectText} 状态${formatOperator(condition.operator)} ${(related?.statuses ?? []).join(", ")}`;
+  }
 
   if (condition.type === "log_keyword") {
     return `对象组 ${targetRef} 在日志中包含 ${expectedValue}`;

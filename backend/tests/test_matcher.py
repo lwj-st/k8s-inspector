@@ -224,6 +224,79 @@ def test_match_template_supports_gte_and_related_object_equals() -> None:
     assert len(result["matched_conditions"]) == 2
 
 
+def test_match_template_filters_related_object_by_name() -> None:
+    template = {
+        "target_groups": [{"ref": "api", "namespace": "demo", "label_selector": "app=demo-api"}],
+        "match_conditions": [
+            {
+                "target_ref": "api",
+                "type": "related_object_status",
+                "operator": "equals",
+                "value": {"resource": "services", "object_name": "api-svc", "match_any": False, "statuses": ["degraded"]},
+            },
+        ],
+        "joint_rule": {"operator": "AND"},
+    }
+    context = {
+        "targets": {
+            "api": {
+                "namespace": "demo",
+                "label_selector": "app=demo-api",
+                "pods": [],
+                "related_objects": {
+                    "services": [
+                        {"name": "other-svc", "status": "degraded"},
+                        {"name": "api-svc", "status": "healthy"},
+                    ],
+                    "ingresses": [],
+                    "daemonsets": [],
+                    "tls_secrets": [],
+                },
+            }
+        }
+    }
+
+    result = match_template(template, context)
+
+    assert result["matched"] is False
+    assert result["unmatched_conditions"][0]["value"]["object_name"] == "api-svc"
+
+
+def test_match_template_supports_related_object_name_pattern() -> None:
+    template = {
+        "target_groups": [{"ref": "api", "namespace": "demo", "label_selector": "app=demo-api"}],
+        "match_conditions": [
+            {
+                "target_ref": "api",
+                "type": "related_object_status",
+                "operator": "equals",
+                "value": {"resource": "services", "object_name_pattern": "api-*", "match_any": False, "statuses": ["degraded"]},
+            },
+        ],
+        "joint_rule": {"operator": "AND"},
+    }
+    context = {
+        "targets": {
+            "api": {
+                "namespace": "demo",
+                "label_selector": "app=demo-api",
+                "pods": [],
+                "related_objects": {
+                    "services": [{"name": "api-svc", "status": "degraded"}],
+                    "ingresses": [],
+                    "daemonsets": [],
+                    "tls_secrets": [],
+                },
+            }
+        }
+    }
+
+    result = match_template(template, context)
+
+    assert result["matched"] is True
+    assert result["evidence"][0]["objects"] == ["api-svc"]
+
+
 def test_describe_condition_covers_existing_condition_types() -> None:
     assert (
         describe_condition({"target_ref": "api", "type": "pod_status", "operator": "in", "value": ["CrashLoopBackOff"]}, True)
@@ -251,5 +324,17 @@ def test_describe_condition_covers_existing_condition_types() -> None:
             },
             True,
         )
-        == "gateway services 状态匹配 = degraded"
+        == "gateway services 任意对象 状态匹配 = degraded"
+    )
+    assert (
+        describe_condition(
+            {
+                "target_ref": "gateway",
+                "type": "related_object_status",
+                "operator": "equals",
+                "value": {"resource": "services", "object_name": "gateway-svc", "match_any": False, "statuses": ["degraded"]},
+            },
+            False,
+        )
+        == "gateway services gateway-svc 状态未匹配 = degraded"
     )

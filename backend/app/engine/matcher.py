@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from fnmatch import fnmatch
 from typing import Any
 
 
@@ -24,9 +25,12 @@ def _format_value(value: Any) -> str:
         return ", ".join(str(item) for item in value)
     if isinstance(value, dict):
         resource = value.get("resource")
+        object_name = value.get("object_name") or value.get("object_name_pattern")
+        match_any = value.get("match_any")
         statuses = _format_value(value.get("statuses", []))
         if resource:
-            return f"{resource} 状态 {statuses}".strip()
+            object_text = "任意对象" if match_any or not object_name else str(object_name)
+            return f"{resource} {object_text} 状态 {statuses}".strip()
         return str(value)
     return str(value)
 
@@ -66,13 +70,16 @@ def describe_condition(condition: dict[str, Any], matched: bool) -> str:
         )
     if kind == "related_object_status":
         resource = expected.get("resource") if isinstance(expected, dict) else None
+        object_name = (expected.get("object_name") or expected.get("object_name_pattern")) if isinstance(expected, dict) else None
+        match_any = bool(expected.get("match_any")) if isinstance(expected, dict) else True
         statuses = expected.get("statuses", []) if isinstance(expected, dict) else expected
         resource_text = str(resource or "关联对象")
+        object_text = "任意对象" if match_any or not object_name else str(object_name)
         status_text = _format_value(statuses)
         return (
-            f"{target_ref} {resource_text} 状态匹配 {_operator_text(operator)} {status_text}"
+            f"{target_ref} {resource_text} {object_text} 状态匹配 {_operator_text(operator)} {status_text}"
             if matched
-            else f"{target_ref} 缺少 {resource_text} 状态 {_operator_text(operator)} {status_text}"
+            else f"{target_ref} {resource_text} {object_text} 状态未匹配 {_operator_text(operator)} {status_text}"
         )
 
     return (
@@ -209,7 +216,16 @@ def _match_related_object_status(condition: dict[str, Any], target: dict[str, An
     resource = expected.get("resource")
     operator = _operator(condition)
     statuses = expected.get("statuses", [])
-    objects = target.get("related_objects", {}).get(resource, [])
+    object_name = str(expected.get("object_name") or "").strip()
+    object_name_pattern = str(expected.get("object_name_pattern") or "").strip()
+    match_any = bool(expected.get("match_any", not object_name and not object_name_pattern))
+    objects = [
+        item
+        for item in target.get("related_objects", {}).get(resource, [])
+        if match_any
+        or (object_name and item.get("name") == object_name)
+        or (object_name_pattern and fnmatch(str(item.get("name") or ""), object_name_pattern))
+    ]
     matched = [
         item["name"]
         for item in objects

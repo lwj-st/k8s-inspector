@@ -26,6 +26,8 @@ type ConditionDraft = {
   operator: TemplateConditionOperator;
   value_text: string;
   related_resource: string;
+  related_match_any: boolean;
+  related_object_name: string;
   enabled: boolean;
 };
 
@@ -62,6 +64,22 @@ const operatorLabels: Record<TemplateConditionOperator, string> = {
   lte: "小于等于",
 };
 
+const relatedResourceOptions = [
+  { value: "services", label: "Service" },
+  { value: "ingresses", label: "Ingress" },
+  { value: "daemonsets", label: "DaemonSet" },
+  { value: "tls_secrets", label: "TLS Secret" },
+] as const;
+
+const relatedObjectStatusOptions: Record<string, string[]> = {
+  services: ["healthy", "degraded", "unknown"],
+  ingresses: ["healthy", "degraded", "unknown"],
+  daemonsets: ["healthy", "degraded", "unknown"],
+  tls_secrets: ["healthy", "expiring", "expired", "missing", "unknown"],
+};
+
+const podStatusOptions = ["Running", "Succeeded", "Pending", "Failed", "Unknown", "CrashLoopBackOff", "ImagePullBackOff"];
+
 function formatJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
@@ -83,6 +101,8 @@ function createDefaultCondition(targetRef = "group-1"): ConditionDraft {
     operator: "contains",
     value_text: "",
     related_resource: "services",
+    related_match_any: true,
+    related_object_name: "",
     enabled: true,
   };
 }
@@ -135,9 +155,12 @@ function describeCondition(condition: {
   }
 
   if (type === "related_object_status") {
-    const related = condition.expected_value as { resource?: string; statuses?: string[] } | undefined;
+    const related = condition.expected_value as { resource?: string; object_name?: string | null; object_name_pattern?: string | null; match_any?: boolean; statuses?: string[] } | undefined;
+    const objectName = related?.match_any === false && (related.object_name || related.object_name_pattern)
+      ? ` ${related.object_name || related.object_name_pattern}`
+      : " 任意对象";
     const statuses = related?.statuses?.join(", ") ?? "";
-    return `对象组 ${targetRef} 的 ${related?.resource ?? "关联对象"} 状态${operatorLabels[operator]} ${statuses}`;
+    return `对象组 ${targetRef} 的 ${related?.resource ?? "关联对象"}${objectName} 状态${operatorLabels[operator]} ${statuses}`;
   }
 
   return `对象组 ${targetRef} 满足 ${type} ${operator} ${expectedValue}`;
@@ -217,13 +240,21 @@ function toConditionDrafts(template: FaultTemplate): ConditionDraft[] {
 
   return template.match_conditions.map((condition) => {
     if (condition.condition_type === "related_object_status") {
-      const value = (condition.expected_value ?? {}) as { resource?: string; statuses?: string[] };
+      const value = (condition.expected_value ?? {}) as {
+        resource?: string;
+        object_name?: string | null;
+        object_name_pattern?: string | null;
+        match_any?: boolean;
+        statuses?: string[];
+      };
       return {
         target_ref: condition.target_ref,
         condition_type: condition.condition_type,
         operator: condition.operator,
         value_text: (value.statuses ?? []).join(", "),
         related_resource: value.resource ?? "services",
+        related_match_any: value.match_any !== false,
+        related_object_name: String(value.object_name ?? value.object_name_pattern ?? ""),
         enabled: condition.enabled,
       };
     }
@@ -236,6 +267,8 @@ function toConditionDrafts(template: FaultTemplate): ConditionDraft[] {
         ? condition.expected_value.join(", ")
         : String(condition.expected_value ?? ""),
       related_resource: "services",
+      related_match_any: true,
+      related_object_name: "",
       enabled: condition.enabled,
     };
   });
@@ -276,6 +309,9 @@ function getTemplateValidation(args: {
   args.conditions.forEach((condition, index) => {
     if (condition.target_ref.trim().length === 0) {
       issues.conditions.push(`条件 ${index + 1} 缺少绑定对象组`);
+    }
+    if (condition.condition_type === "related_object_status" && !condition.related_match_any && condition.related_object_name.trim().length === 0) {
+      issues.conditions.push(`条件 ${index + 1} 缺少关联对象名称`);
     }
     if (condition.value_text.trim().length === 0) {
       issues.conditions.push(`条件 ${index + 1} 缺少目标值`);
@@ -465,6 +501,8 @@ export function TemplatesPage() {
       } else if (condition.condition_type === "related_object_status") {
         expectedValue = {
           resource: condition.related_resource,
+          match_any: condition.related_match_any,
+          object_name: condition.related_match_any ? null : condition.related_object_name.trim() || null,
           statuses: condition.value_text.split(",").map((item) => item.trim()).filter(Boolean),
         };
       }
@@ -592,6 +630,8 @@ export function TemplatesPage() {
           next.operator = normalizeOperator(patch.condition_type, next.operator);
           if (patch.condition_type !== "related_object_status") {
             next.related_resource = "services";
+            next.related_match_any = true;
+            next.related_object_name = "";
           }
         }
         return next;
@@ -909,25 +949,69 @@ export function TemplatesPage() {
                       </label>
                       {condition.condition_type === "related_object_status" ? (
                         <>
-                          <label>
+                          <label className="template-field">
                             关联资源类型
-                            <select aria-label={index === 0 ? "关联资源类型" : `关联资源类型 ${index + 1}`} value={condition.related_resource} onChange={(event) => updateCondition(index, { related_resource: event.target.value })}>
-                              <option value="services">Service</option>
-                              <option value="ingresses">Ingress</option>
-                              <option value="daemonsets">DaemonSet</option>
-                              <option value="tls_secrets">TLS Secret</option>
+                            <select
+                              className="template-input"
+                              aria-label={index === 0 ? "关联资源类型" : `关联资源类型 ${index + 1}`}
+                              value={condition.related_resource}
+                              onChange={(event) => updateCondition(index, { related_resource: event.target.value, value_text: "" })}
+                            >
+                              {relatedResourceOptions.map((item) => (
+                                <option key={item.value} value={item.value}>{item.label}</option>
+                              ))}
                             </select>
                           </label>
-                          <label>
-                            状态值
+                          <label className="template-toggle-field template-toggle-field-plain">
                             <input
+                              type="checkbox"
+                              checked={condition.related_match_any}
+                              onChange={(event) => updateCondition(index, { related_match_any: event.target.checked })}
+                            />
+                            任意对象
+                          </label>
+                          {!condition.related_match_any ? (
+                            <label className="template-field">
+                              对象名称
+                              <input
+                                className="template-input"
+                                aria-label={index === 0 ? "对象名称" : `对象名称 ${index + 1}`}
+                                value={condition.related_object_name}
+                                onChange={(event) => updateCondition(index, { related_object_name: event.target.value })}
+                                placeholder="例如：gateway-svc"
+                              />
+                            </label>
+                          ) : null}
+                          <label className="template-field">
+                            状态值
+                            <select
+                              className="template-input"
                               aria-label={index === 0 ? "状态值" : `状态值 ${index + 1}`}
                               value={condition.value_text}
                               onChange={(event) => updateCondition(index, { value_text: event.target.value })}
-                              placeholder={condition.operator === "in" ? "例如：degraded, failed" : "例如：degraded"}
-                            />
+                            >
+                              <option value="">请选择状态</option>
+                              {(relatedObjectStatusOptions[condition.related_resource] ?? relatedObjectStatusOptions.services).map((status) => (
+                                <option key={status} value={status}>{status}</option>
+                              ))}
+                            </select>
                           </label>
                         </>
+                      ) : condition.condition_type === "pod_status" ? (
+                        <label className="template-field">
+                          目标值
+                          <select
+                            className="template-input"
+                            aria-label={index === 0 ? "目标值" : `目标值 ${index + 1}`}
+                            value={condition.value_text}
+                            onChange={(event) => updateCondition(index, { value_text: event.target.value })}
+                          >
+                            <option value="">请选择 Pod 状态</option>
+                            {podStatusOptions.map((status) => (
+                              <option key={status} value={status}>{status}</option>
+                            ))}
+                          </select>
+                        </label>
                       ) : (
                         <label>
                           目标值

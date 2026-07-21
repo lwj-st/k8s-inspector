@@ -1173,6 +1173,11 @@ a {
   color: #1b5e20;
 }
 
+.template-toggle-field-plain {
+  background: rgba(241, 246, 250, 0.92);
+  color: var(--ink);
+}
+
 .template-action-row {
   gap: 10px;
 }
