@@ -142,6 +142,49 @@ describe("TemplatesPage", () => {
         return Promise.resolve(new Response(null, { status: 204 }));
       }
 
+      if (url.endsWith("/discovery/namespaces")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              executed_at: "2026-07-21T10:00:00Z",
+              namespaces: [
+                { name: "demo", status: "healthy", pod_count: 2, abnormal_pod_count: 0, last_inspected_at: null, labels: {}, abnormal_categories: [] },
+                { name: "gateway-system", status: "warning", pod_count: 1, abnormal_pod_count: 1, last_inspected_at: null, labels: {}, abnormal_categories: ["log_keyword"] },
+                { name: "legacy-system", status: "healthy", pod_count: 1, abnormal_pod_count: 0, last_inspected_at: null, labels: {}, abnormal_categories: [] },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/demo/labels")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ namespace: "demo", executed_at: "2026-07-21T10:00:00Z", labels: [{ key: "app", values: ["api"], selector: "app=api", pod_count: 2 }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/gateway-system/labels")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ namespace: "gateway-system", executed_at: "2026-07-21T10:00:00Z", labels: [{ key: "app", values: ["gateway"], selector: "app=gateway", pod_count: 1 }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/legacy-system/labels")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ namespace: "legacy-system", executed_at: "2026-07-21T10:00:00Z", labels: [{ key: "app", values: ["legacy"], selector: "app=legacy", pod_count: 1 }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       throw new Error(`Unexpected request: ${url}`);
     });
   });
@@ -172,9 +215,9 @@ describe("TemplatesPage", () => {
     expect(within(editor).getByRole("heading", { name: "对象组" })).toBeInTheDocument();
 
     await user.click(within(editor).getByRole("button", { name: "新增对象组" }));
-    await user.clear(within(editor).getByLabelText("名称空间 2"));
-    await user.type(within(editor).getByLabelText("名称空间 2"), "demo");
-    await user.type(within(editor).getByLabelText("Label Selector 2"), "app=api");
+    await user.selectOptions(within(editor).getByLabelText("名称空间 2"), "demo");
+    await screen.findByRole("option", { name: "app=api（2 个 Pod）" });
+    await user.selectOptions(within(editor).getByLabelText("Label Selector 2"), "app=api");
 
     expect(within(editor).getByLabelText("名称空间 2")).toHaveValue("demo");
     expect(within(editor).getByLabelText("Label Selector 2")).toHaveValue("app=api");
@@ -191,8 +234,7 @@ describe("TemplatesPage", () => {
     await user.clear(within(editor).getByLabelText("场景标识"));
     await user.type(within(editor).getByLabelText("场景标识"), "targeted_diagnosis");
     await user.click(within(editor).getByRole("button", { name: "下一步" }));
-    await user.clear(within(editor).getByLabelText("名称空间"));
-    await user.type(within(editor).getByLabelText("名称空间"), "demo");
+    await user.selectOptions(within(editor).getByLabelText("名称空间"), "demo");
     await user.click(within(editor).getByRole("button", { name: "下一步" }));
 
     expect(within(editor).getByRole("option", { name: "日志包含关键字" })).toBeInTheDocument();
@@ -342,7 +384,7 @@ describe("TemplatesPage", () => {
     expect(within(editor).getByLabelText("对象组标识 1")).toHaveValue("legacy");
     expect(within(editor).getByLabelText("名称空间")).toHaveValue("legacy-system");
     expect(within(editor).getByLabelText("Label Selector 1")).toHaveValue("app=legacy");
-    expect(within(editor).getByLabelText("Pod 名称模式 1")).toHaveValue("legacy-*");
-    expect(within(editor).getByLabelText("Deployment")).toBeChecked();
+    expect(within(editor).queryByLabelText("Pod 名称模式 1")).not.toBeInTheDocument();
+    expect(within(editor).queryByLabelText("Deployment")).not.toBeInTheDocument();
   });
 });

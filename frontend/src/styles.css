@@ -1102,6 +1102,10 @@ a {
   padding: 14px 16px;
 }
 
+.template-target-card {
+  background: linear-gradient(135deg, rgba(248, 251, 253, 0.98), rgba(255, 255, 255, 0.94));
+}
+
 .template-details-card summary {
   cursor: pointer;
   display: flex;
@@ -1112,8 +1116,84 @@ a {
 
 .template-details-body {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   margin-top: 14px;
+}
+
+.template-editor-form {
+  gap: 16px;
+}
+
+.template-form-grid,
+.template-label-row {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.template-field {
+  min-width: 0;
+}
+
+.template-input {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 13px 16px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(157, 182, 202, 0.42) !important;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.template-input:focus {
+  outline: none;
+  border-color: rgba(15, 118, 110, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.template-textarea-large {
+  min-height: 132px;
+  line-height: 1.55;
+}
+
+.template-code-textarea {
+  min-height: 104px;
+  font: 13px/1.55 "SFMono-Regular", Consolas, monospace !important;
+}
+
+.template-toggle-field {
+  width: fit-content;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 10px !important;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(216, 243, 220, 0.62);
+  color: #1b5e20;
+}
+
+.template-action-row {
+  gap: 10px;
+}
+
+.template-primary-button,
+.template-secondary-button {
+  min-height: 40px !important;
+  padding: 9px 18px !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.template-primary-button {
+  background: linear-gradient(135deg, #0f766e, #22a08f) !important;
+  color: #fff !important;
+}
+
+.template-secondary-button {
+  border: 1px solid rgba(157, 182, 202, 0.42) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: var(--ink) !important;
 }
 
 .template-hint-panel {

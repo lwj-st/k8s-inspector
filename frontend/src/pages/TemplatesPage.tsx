@@ -8,6 +8,8 @@ import type {
   TemplateTarget,
 } from "../api/types";
 import { StatusBadge } from "../components/StatusBadge";
+import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
+import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
 import { useTemplates } from "../features/templates/useTemplates";
 
 type TargetDraft = {
@@ -36,11 +38,9 @@ type StepDefinition = {
   description: string;
 };
 
-const resourceScopeOptions = ["pods", "deployment", "services", "ingresses", "daemonsets", "tls_secrets"] as const;
-
 const stepDefinitions: StepDefinition[] = [
-  { key: "basic", title: "基本信息", description: "先说明这是哪类故障经验，以及是否启用。" },
-  { key: "targets", title: "目标范围", description: "把对象组、名称空间、标签和资源范围说明清楚。" },
+  { key: "basic", title: "基本信息", description: "说明这是哪类故障经验。" },
+  { key: "targets", title: "目标范围", description: "选择名称空间和 Label Selector，确定检查对象组。" },
   { key: "conditions", title: "匹配条件", description: "按对象组补齐日志、状态、重启次数等可量化条件。" },
   { key: "advice", title: "原因与建议", description: "录入诊断原因、处理建议、命令和风险说明。" },
   { key: "preview", title: "预览与保存", description: "最后检查摘要，再决定新增或更新模板。" },
@@ -60,15 +60,6 @@ const operatorLabels: Record<TemplateConditionOperator, string> = {
   in: "属于任一值",
   gte: "大于等于",
   lte: "小于等于",
-};
-
-const resourceScopeLabels: Record<(typeof resourceScopeOptions)[number], string> = {
-  pods: "Pod",
-  deployment: "Deployment",
-  services: "Service",
-  ingresses: "Ingress",
-  daemonsets: "DaemonSet",
-  tls_secrets: "TLS Secret",
 };
 
 function formatJson(value: unknown) {
@@ -280,9 +271,6 @@ function getTemplateValidation(args: {
     if (target.namespace.trim().length === 0) {
       issues.targets.push(`对象组 ${index + 1} 缺少名称空间`);
     }
-    if (target.resource_scope.length === 0) {
-      issues.targets.push(`对象组 ${index + 1} 至少选择一个资源范围`);
-    }
   });
 
   args.conditions.forEach((condition, index) => {
@@ -304,6 +292,99 @@ function getTemplateValidation(args: {
   return issues;
 }
 
+type TargetScopeEditorProps = {
+  target: TargetDraft;
+  index: number;
+  totalTargets: number;
+  namespaceOptions: string[];
+  onUpdate: (index: number, patch: Partial<TargetDraft>) => void;
+  onRemove: (index: number) => void;
+};
+
+function TargetScopeEditor({ target, index, totalTargets, namespaceOptions, onUpdate, onRemove }: TargetScopeEditorProps) {
+  const { data: labelDiscovery, loading: labelLoading, error: labelError } = useDiscoverNamespaceLabels(target.namespace);
+  const labelOptions = labelDiscovery?.labels ?? [];
+  const namespaceValues = target.namespace && !namespaceOptions.includes(target.namespace)
+    ? [target.namespace, ...namespaceOptions]
+    : namespaceOptions;
+
+  return (
+    <details className="template-details-card template-target-card" open>
+      <summary>
+        <span>对象组 {index + 1}：{target.target_ref || "未命名对象组"}</span>
+        <span className="section-tip">{target.namespace || "待选名称空间"}</span>
+      </summary>
+      <div className="template-details-body">
+        <div className="section-header">
+          <strong>目标范围</strong>
+          <button type="button" className="mini-button" disabled={totalTargets === 1} onClick={() => onRemove(index)}>
+            删除对象组
+          </button>
+        </div>
+        <div className="template-form-grid">
+          <label className="template-field">
+            对象组标识
+            <input
+              className="template-input"
+              aria-label={`对象组标识 ${index + 1}`}
+              value={target.target_ref}
+              onChange={(event) => onUpdate(index, { target_ref: event.target.value })}
+              placeholder="例如：api"
+            />
+          </label>
+          <label className="template-field">
+            名称空间
+            <select
+              className="template-input"
+              aria-label={index === 0 ? "名称空间" : `名称空间 ${index + 1}`}
+              value={target.namespace}
+              onChange={(event) => onUpdate(index, { namespace: event.target.value, label_selector: "" })}
+            >
+              <option value="">请选择名称空间</option>
+              {namespaceValues.map((namespace) => (
+                <option key={namespace} value={namespace}>{namespace}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="template-label-row">
+          <label className="template-field">
+            Label Selector
+            <select
+              className="template-input"
+              aria-label={`Label Selector ${index + 1}`}
+              value={target.label_selector}
+              onChange={(event) => onUpdate(index, { label_selector: event.target.value })}
+              disabled={!target.namespace}
+            >
+              <option value="">{labelLoading ? "正在发现标签..." : "请选择 Label Selector"}</option>
+              {target.label_selector && !labelOptions.some((item) => item.selector === target.label_selector) ? (
+                <option value={target.label_selector}>{target.label_selector}</option>
+              ) : null}
+              {labelOptions.map((item) => (
+                <option key={item.selector} value={item.selector}>
+                  {item.selector}（{item.pod_count} 个 Pod）
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="template-field">
+            手动 Label Selector
+            <input
+              className="template-input"
+              aria-label={`手动 Label Selector ${index + 1}`}
+              value={target.label_selector}
+              onChange={(event) => onUpdate(index, { label_selector: event.target.value })}
+              placeholder="例如：app=gateway"
+            />
+          </label>
+        </div>
+        {labelError ? <p className="inline-note">Label 发现失败：{labelError}</p> : null}
+      </div>
+    </details>
+  );
+}
+
 export function TemplatesPage() {
   const {
     data,
@@ -317,6 +398,7 @@ export function TemplatesPage() {
     exportAll,
     importAll,
   } = useTemplates();
+  const { data: namespaceDiscovery } = useDiscoverNamespaces();
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [activeStep, setActiveStep] = useState<StepKey>("basic");
@@ -344,6 +426,10 @@ export function TemplatesPage() {
     .flat();
   const currentStepIndex = stepDefinitions.findIndex((step) => step.key === activeStep);
   const activeStepDefinition = stepDefinitions[currentStepIndex];
+  const namespaceOptions = useMemo(
+    () => (namespaceDiscovery?.namespaces ?? []).map((item) => item.name),
+    [namespaceDiscovery],
+  );
 
   function resetForm() {
     setEditingId(null);
@@ -488,19 +574,6 @@ export function TemplatesPage() {
         ...item,
         target_ref: item.target_ref === targetRef ? fallbackTargetRef : item.target_ref,
       })),
-    );
-  }
-
-  function toggleTargetScope(index: number, scope: string) {
-    setTargets((current) =>
-      current.map((item, itemIndex) => {
-        if (itemIndex !== index) {
-          return item;
-        }
-        return item.resource_scope.includes(scope)
-          ? { ...item, resource_scope: item.resource_scope.filter((value) => value !== scope) }
-          : { ...item, resource_scope: [...item.resource_scope, scope] };
-      }),
     );
   }
 
@@ -667,8 +740,6 @@ export function TemplatesPage() {
                               <div key={`${item.id}-group-${index}`} className="stack-item">
                                 <strong>对象组：{group.ref}</strong>
                                 <p>{group.namespace}{group.label_selector ? ` / ${group.label_selector}` : ""}</p>
-                                {group.name ? <p className="inline-note">Pod 名称模式：{group.name}</p> : null}
-                                {group.resource_scope?.length ? <p className="inline-note">资源范围：{group.resource_scope.join(", ")}</p> : null}
                               </div>
                             ))}
                           </div>
@@ -732,16 +803,18 @@ export function TemplatesPage() {
             ) : null}
 
             {activeStep === "basic" ? (
-            <div className="page-section">
-              <label>
+            <div className="page-section template-editor-form">
+              <div className="template-form-grid">
+              <label className="template-field">
                 模板名称
-                <input aria-label="模板名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：网关 502 故障" />
+                <input className="template-input" aria-label="模板名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：网关 502 故障" />
               </label>
-              <label>
+              <label className="template-field">
                 场景标识
-                <input aria-label="场景标识" value={scenario} onChange={(event) => setScenario(event.target.value)} placeholder="例如：gateway_502" />
+                <input className="template-input" aria-label="场景标识" value={scenario} onChange={(event) => setScenario(event.target.value)} placeholder="例如：gateway_502" />
               </label>
-              <label>
+              </div>
+              <label className="template-toggle-field">
                 <input type="checkbox" checked={enabled} onChange={(event) => setTemplateEnabled(event.target.checked)} />
                 模板启用
               </label>
@@ -756,49 +829,15 @@ export function TemplatesPage() {
               </div>
               <div className="stack-list">
                 {targets.map((target, index) => (
-                  <details key={`target-${index}`} className="template-details-card" open>
-                    <summary>
-                      <span>对象组 {index + 1}：{target.target_ref || "未命名对象组"}</span>
-                      <span className="section-tip">{target.namespace || "待选名称空间"}</span>
-                    </summary>
-                    <div className="template-details-body">
-                      <div className="section-header">
-                        <strong>目标范围</strong>
-                        <button type="button" disabled={targets.length === 1} onClick={() => removeTarget(index)}>
-                          删除对象组
-                        </button>
-                      </div>
-                      <label>
-                        对象组标识
-                        <input aria-label={`对象组标识 ${index + 1}`} value={target.target_ref} onChange={(event) => updateTarget(index, { target_ref: event.target.value })} />
-                      </label>
-                      <label>
-                        名称空间
-                        <input aria-label={index === 0 ? "名称空间" : `名称空间 ${index + 1}`} value={target.namespace} onChange={(event) => updateTarget(index, { namespace: event.target.value })} placeholder="例如：gateway-system" />
-                      </label>
-                      <label>
-                        Label Selector
-                        <input aria-label={`Label Selector ${index + 1}`} value={target.label_selector} onChange={(event) => updateTarget(index, { label_selector: event.target.value })} placeholder="例如：app=gateway" />
-                      </label>
-                      <label>
-                        Pod 名称模式
-                        <input aria-label={`Pod 名称模式 ${index + 1}`} value={target.pod_name_pattern} onChange={(event) => updateTarget(index, { pod_name_pattern: event.target.value })} placeholder="例如：gateway-*" />
-                      </label>
-                      <div className="stack-list">
-                        <strong>资源范围</strong>
-                        {resourceScopeOptions.map((scope) => (
-                          <label key={`${target.target_ref}-${scope}`}>
-                            <input
-                              type="checkbox"
-                              checked={target.resource_scope.includes(scope)}
-                              onChange={() => toggleTargetScope(index, scope)}
-                            />
-                            {resourceScopeLabels[scope]}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </details>
+                  <TargetScopeEditor
+                    key={`target-${index}`}
+                    target={target}
+                    index={index}
+                    totalTargets={targets.length}
+                    namespaceOptions={namespaceOptions}
+                    onUpdate={updateTarget}
+                    onRemove={removeTarget}
+                  />
                 ))}
               </div>
             </div>
@@ -913,22 +952,22 @@ export function TemplatesPage() {
           ) : null}
 
           {activeStep === "advice" ? (
-            <div className="page-section">
-              <label>
+            <div className="page-section template-editor-form">
+              <label className="template-field">
                 诊断原因
-                <textarea aria-label="诊断原因" value={reason} onChange={(event) => setReason(event.target.value)} rows={3} placeholder="例如：网关进程无法连接上游服务" />
+                <textarea className="template-input template-textarea-large" aria-label="诊断原因" value={reason} onChange={(event) => setReason(event.target.value)} rows={5} placeholder="例如：网关进程无法连接上游服务" />
               </label>
-              <label>
+              <label className="template-field">
                 处理建议
-                <textarea aria-label="处理建议" value={suggestion} onChange={(event) => setSuggestion(event.target.value)} rows={3} placeholder="例如：检查上游 Service 和配置" />
+                <textarea className="template-input template-textarea-large" aria-label="处理建议" value={suggestion} onChange={(event) => setSuggestion(event.target.value)} rows={5} placeholder="例如：检查上游 Service 和配置" />
               </label>
-              <label>
+              <label className="template-field">
                 建议命令
-                <input aria-label="建议命令" value={command} onChange={(event) => setCommand(event.target.value)} placeholder="例如：kubectl logs -n xxx deploy/xxx" />
+                <textarea className="template-input template-code-textarea" aria-label="建议命令" value={command} onChange={(event) => setCommand(event.target.value)} rows={4} placeholder="例如：kubectl logs -n xxx deploy/xxx" />
               </label>
-              <label>
+              <label className="template-field">
                 风险说明
-                <input aria-label="风险说明" value={riskNote} onChange={(event) => setRiskNote(event.target.value)} placeholder="例如：只读命令，可直接执行" />
+                <textarea className="template-input template-textarea-large" aria-label="风险说明" value={riskNote} onChange={(event) => setRiskNote(event.target.value)} rows={4} placeholder="例如：只读命令，可直接执行" />
               </label>
             </div>
           ) : null}
@@ -951,8 +990,6 @@ export function TemplatesPage() {
                     <div key={`preview-target-${index}`} className="stack-item">
                       <strong>{target.target_ref || `对象组 ${index + 1}`}</strong>
                       <p>{target.namespace || "待填写名称空间"}{target.label_selector ? ` / ${target.label_selector}` : ""}</p>
-                      {target.pod_name_pattern ? <p className="inline-note">Pod 名称模式：{target.pod_name_pattern}</p> : null}
-                      <p className="inline-note">资源范围：{target.resource_scope.map((scope) => resourceScopeLabels[scope as keyof typeof resourceScopeLabels] ?? scope).join(", ") || "未选择"}</p>
                     </div>
                   ))}
                 </div>
@@ -977,12 +1014,12 @@ export function TemplatesPage() {
             </div>
           ) : null}
 
-          <div className="button-row">
-            <button type="button" onClick={() => moveStep("prev")} disabled={currentStepIndex === 0 || saving}>上一步</button>
+          <div className="button-row template-action-row">
+            <button className="template-secondary-button" type="button" onClick={() => moveStep("prev")} disabled={currentStepIndex === 0 || saving}>上一步</button>
             {activeStep !== "preview" ? (
-              <button type="button" onClick={() => moveStep("next")} disabled={currentStepIndex === stepDefinitions.length - 1 || saving}>下一步</button>
+              <button className="template-primary-button" type="button" onClick={() => moveStep("next")} disabled={currentStepIndex === stepDefinitions.length - 1 || saving}>下一步</button>
             ) : null}
-            <button type="button" disabled={saving} onClick={() => void handleSubmit()}>
+            <button className="template-primary-button" type="button" disabled={saving} onClick={() => void handleSubmit()}>
               {saving ? "处理中..." : editingId !== null ? "保存模板" : "新增模板"}
             </button>
           </div>
