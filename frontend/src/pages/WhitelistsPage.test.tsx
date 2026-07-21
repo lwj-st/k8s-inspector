@@ -11,6 +11,39 @@ describe("WhitelistsPage", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
+      if (url.endsWith("/discovery/namespaces")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({
+            executed_at: "2026-07-21T10:00:00Z",
+            namespaces: [
+              { name: "demo", status: "healthy", pod_count: 1, abnormal_pod_count: 0, last_inspected_at: null, labels: {}, abnormal_categories: [] },
+              { name: "prod", status: "healthy", pod_count: 2, abnormal_pod_count: 0, last_inspected_at: null, labels: {}, abnormal_categories: [] },
+              { name: "qa", status: "healthy", pod_count: 1, abnormal_pod_count: 0, last_inspected_at: null, labels: {}, abnormal_categories: [] },
+            ],
+          }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/prod/labels")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({
+            namespace: "prod",
+            executed_at: "2026-07-21T10:00:01Z",
+            labels: [{ selector: "app=worker", pod_count: 1 }],
+          }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        );
+      }
+
+      if (url.includes("/discovery/namespaces/") && url.endsWith("/labels")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({
+            namespace: "demo",
+            executed_at: "2026-07-21T10:00:01Z",
+            labels: [{ selector: "app=demo", pod_count: 1 }],
+          }), { status: 200, headers: { "Content-Type": "application/json" } }),
+        );
+      }
+
       if (url.endsWith("/keywords") && (!init || init.method === undefined)) {
         return Promise.resolve(
           new Response(JSON.stringify([
@@ -289,6 +322,7 @@ describe("WhitelistsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "新增白名单" }));
     const whitelistDialog = await screen.findByRole("dialog", { name: "新增白名单" });
     fireEvent.change(within(whitelistDialog).getByLabelText("名称空间"), { target: { value: "prod" } });
+    await within(whitelistDialog).findByRole("option", { name: "app=worker（1 个 Pod）" });
     fireEvent.change(within(whitelistDialog).getByLabelText("Label Selector"), { target: { value: "app=worker" } });
     fireEvent.change(within(whitelistDialog).getByLabelText("Pod 名称匹配"), { target: { value: "worker-*" } });
     fireEvent.change(within(whitelistDialog).getByLabelText("容器名称"), { target: { value: "worker" } });

@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 import type { KeywordHitSeverity, KeywordRule, Whitelist } from "../api/types";
 import { StatusBadge } from "../components/StatusBadge";
+import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
+import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
 import { useKeywords } from "../features/whitelists/useKeywords";
 import { useWhitelists } from "../features/whitelists/useWhitelists";
 
@@ -101,6 +103,7 @@ export function WhitelistsPage() {
     exportAll: exportWhitelists,
     importAll: importWhitelists,
   } = useWhitelists();
+  const { data: namespaceDiscovery } = useDiscoverNamespaces();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("keywords");
   const [keywordEditingId, setKeywordEditingId] = useState<number | null>(null);
@@ -124,10 +127,14 @@ export function WhitelistsPage() {
   const [whitelistImportText, setWhitelistImportText] = useState("");
   const [whitelistExportText, setWhitelistExportText] = useState("");
   const [whitelistMessage, setWhitelistMessage] = useState<string | null>(null);
+  const { data: labelDiscovery, loading: labelsLoading } = useDiscoverNamespaceLabels(namespace);
 
   const enabledKeywords = useMemo(() => keywords.filter((item) => item.enabled).length, [keywords]);
   const builtinKeywords = useMemo(() => keywords.filter((item) => item.builtin).length, [keywords]);
   const enabledWhitelists = useMemo(() => whitelists.filter((item) => item.enabled).length, [whitelists]);
+  const namespaceOptions = useMemo(() => (namespaceDiscovery?.namespaces ?? []).map((item) => item.name), [namespaceDiscovery]);
+  const labelOptions = labelDiscovery?.labels ?? [];
+  const keywordOptions = useMemo(() => keywords.map((item) => item.keyword), [keywords]);
 
   function resetKeywordForm() {
     setKeywordEditingId(null);
@@ -421,33 +428,40 @@ export function WhitelistsPage() {
       {keywordModalType === "create" || keywordModalType === "edit" ? (
         <ModalShell title={keywordModalType === "edit" ? "编辑关键字" : "新增关键字"} note="关键字会直接影响日志命中结果，请明确类别、严重程度和用途说明。" onClose={closeKeywordModal}>
           <div className="entry-form-grid">
-            <label>
+            <label className="modal-form-field">
               关键字
-              <input aria-label="关键字" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+              <input className="template-input" aria-label="关键字" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
             </label>
-            <label>
+            <label className="modal-form-field">
               类别
-              <input aria-label="类别" value={category} onChange={(event) => setCategory(event.target.value)} />
-            </label>
-            <label>
-              严重级别
-              <select aria-label="严重级别" value={severity} onChange={(event) => setSeverity(event.target.value as KeywordHitSeverity)}>
-                <option value="info">info</option>
-                <option value="warning">warning</option>
-                <option value="error">error</option>
-                <option value="critical">critical</option>
+              <select className="template-input" aria-label="类别" value={category} onChange={(event) => setCategory(event.target.value)}>
+                <option value="application">应用</option>
+                <option value="runtime">运行时</option>
+                <option value="database">数据库</option>
+                <option value="network">网络</option>
+                <option value="frontend">前端</option>
+                <option value="python">Python</option>
               </select>
             </label>
-            <label style={{ gridColumn: "1 / -1" }}>
+            <label className="modal-form-field">
+              严重级别
+              <select className="template-input" aria-label="严重级别" value={severity} onChange={(event) => setSeverity(event.target.value as KeywordHitSeverity)}>
+                <option value="info">提示</option>
+                <option value="warning">中</option>
+                <option value="error">高</option>
+                <option value="critical">严重</option>
+              </select>
+            </label>
+            <label className="modal-form-field" style={{ gridColumn: "1 / -1" }}>
               说明
-              <input aria-label="说明" value={description} onChange={(event) => setDescription(event.target.value)} />
+              <input className="template-input" aria-label="说明" value={description} onChange={(event) => setDescription(event.target.value)} />
             </label>
           </div>
-          <div className="button-row">
-            <button type="button" className="mini-button" disabled={keywordSaving || keyword.trim().length === 0} onClick={() => void handleSubmitKeyword()}>
+          <div className="button-row modal-action-row">
+            <button type="button" className="modal-primary-button" disabled={keywordSaving || keyword.trim().length === 0} onClick={() => void handleSubmitKeyword()}>
               {keywordSaving ? "处理中..." : keywordEditingId !== null ? "保存关键字" : "新增关键字"}
             </button>
-            <button type="button" className="mini-button" onClick={closeKeywordModal}>取消</button>
+            <button type="button" className="modal-secondary-button" onClick={closeKeywordModal}>取消</button>
           </div>
         </ModalShell>
       ) : null}
@@ -480,36 +494,54 @@ export function WhitelistsPage() {
       {whitelistModalType === "create" || whitelistModalType === "edit" ? (
         <ModalShell title={whitelistModalType === "edit" ? "编辑白名单" : "新增白名单"} note="请明确忽略会作用在哪个名称空间、标签、Pod、容器和关键字上。" onClose={closeWhitelistModal}>
           <div className="entry-form-grid">
-            <label>
+            <label className="modal-form-field">
               名称空间
-              <input aria-label="名称空间" value={namespace} onChange={(event) => setNamespace(event.target.value)} />
+              <select className="template-input" aria-label="名称空间" value={namespace} onChange={(event) => setNamespace(event.target.value)}>
+                <option value="">请选择名称空间</option>
+                {namespace && !namespaceOptions.includes(namespace) ? <option value={namespace}>{namespace}</option> : null}
+                {namespaceOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
             </label>
-            <label>
+            <label className="modal-form-field">
               Label Selector
-              <input aria-label="Label Selector" value={labelSelector} onChange={(event) => setLabelSelector(event.target.value)} />
+              <select className="template-input" aria-label="Label Selector" value={labelSelector} onChange={(event) => setLabelSelector(event.target.value)} disabled={!namespace}>
+                <option value="">{labelsLoading ? "正在发现标签..." : "不限 Label"}</option>
+                {labelSelector && !labelOptions.some((item) => item.selector === labelSelector) ? <option value={labelSelector}>{labelSelector}</option> : null}
+                {labelOptions.map((item) => (
+                  <option key={item.selector} value={item.selector}>{item.selector}（{item.pod_count} 个 Pod）</option>
+                ))}
+              </select>
             </label>
-            <label>
+            <label className="modal-form-field">
               Pod 名称匹配
-              <input aria-label="Pod 名称匹配" value={podNamePattern} onChange={(event) => setPodNamePattern(event.target.value)} />
+              <input className="template-input" aria-label="Pod 名称匹配" value={podNamePattern} onChange={(event) => setPodNamePattern(event.target.value)} placeholder="可选，例如 worker-*" />
             </label>
-            <label>
+            <label className="modal-form-field">
               容器名称
-              <input aria-label="容器名称" value={containerName} onChange={(event) => setContainerName(event.target.value)} />
+              <input className="template-input" aria-label="容器名称" value={containerName} onChange={(event) => setContainerName(event.target.value)} placeholder="可选，例如 worker" />
             </label>
-            <label>
+            <label className="modal-form-field">
               白名单关键字
-              <input aria-label="白名单关键字" value={whitelistKeyword} onChange={(event) => setWhitelistKeyword(event.target.value)} />
+              <select className="template-input" aria-label="白名单关键字" value={whitelistKeyword} onChange={(event) => setWhitelistKeyword(event.target.value)}>
+                <option value="">请选择关键字</option>
+                {whitelistKeyword && !keywordOptions.includes(whitelistKeyword) ? <option value={whitelistKeyword}>{whitelistKeyword}</option> : null}
+                {keywordOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
             </label>
-            <label style={{ gridColumn: "1 / -1" }}>
+            <label className="modal-form-field" style={{ gridColumn: "1 / -1" }}>
               备注
-              <input aria-label="备注" value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：来自巡检误报，启动预热阶段忽略" />
+              <input className="template-input" aria-label="备注" value={note} onChange={(event) => setNote(event.target.value)} placeholder="例如：来自巡检误报，启动预热阶段忽略" />
             </label>
           </div>
-          <div className="button-row">
-            <button type="button" className="mini-button" disabled={whitelistSaving || namespace.trim().length === 0 || whitelistKeyword.trim().length === 0} onClick={() => void handleSubmitWhitelist()}>
+          <div className="button-row modal-action-row">
+            <button type="button" className="modal-primary-button" disabled={whitelistSaving || namespace.trim().length === 0 || whitelistKeyword.trim().length === 0} onClick={() => void handleSubmitWhitelist()}>
               {whitelistSaving ? "处理中..." : whitelistEditingId !== null ? "保存白名单" : "新增白名单"}
             </button>
-            <button type="button" className="mini-button" onClick={closeWhitelistModal}>取消</button>
+            <button type="button" className="modal-secondary-button" onClick={closeWhitelistModal}>取消</button>
           </div>
         </ModalShell>
       ) : null}

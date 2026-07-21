@@ -122,14 +122,53 @@ function describeCondition(input: RawCondition | NormalizedCondition) {
   return `对象组 ${targetRef} 满足 ${condition.type} ${condition.operator} ${expectedValue}`;
 }
 
-function summarizeEvidence(item: Record<string, unknown>) {
-  const type = String(item.type ?? "证据");
-  const pod = item.pod ? String(item.pod) : null;
-  const pods = Array.isArray(item.pods) ? item.pods.join(", ") : null;
-  const matchedText = item.matched_text ? String(item.matched_text) : null;
-  const value = Array.isArray(item.value) ? item.value.join(", ") : item.value ? String(item.value) : null;
+function evidenceObjectName(item: Record<string, unknown>) {
+  if (item.pod) {
+    return String(item.pod);
+  }
+  if (Array.isArray(item.pods) && item.pods.length > 0) {
+    return item.pods.map((value) => String(value)).join(", ");
+  }
+  if (item.object_name) {
+    return String(item.object_name);
+  }
+  if (item.name) {
+    return String(item.name);
+  }
+  return "匹配对象";
+}
 
-  return [type, pod ?? pods, matchedText ?? value].filter(Boolean).join(" / ");
+function evidenceStatusText(item: Record<string, unknown>) {
+  if (item.status) {
+    return String(item.status);
+  }
+  if (item.value) {
+    return Array.isArray(item.value) ? item.value.map((value) => String(value)).join(", ") : String(item.value);
+  }
+  if (item.matched_text) {
+    return String(item.matched_text);
+  }
+  return "已匹配";
+}
+
+function evidenceTypeLabel(item: Record<string, unknown>) {
+  const type = String(item.type ?? "");
+  if (type === "pod_status") {
+    return "Pod 状态";
+  }
+  if (type === "restart_count") {
+    return "重启次数";
+  }
+  if (type === "event_keyword") {
+    return "事件";
+  }
+  if (type === "related_object_status") {
+    return "关联对象";
+  }
+  if (type === "log_keyword") {
+    return "日志";
+  }
+  return type || "证据";
 }
 
 function summarizePods(item: Record<string, unknown>) {
@@ -226,33 +265,27 @@ function MatchResultDetails({ item, kind, compact = false }: { item: NormalizedM
           <details className="diagnosis-evidence-details">
             <summary>查看证据（{item.evidence_refs.length}）</summary>
             <div className="page-section diagnosis-evidence-body">
-              <section className="compact-subpanel">
-                <strong>证据摘要</strong>
-                <ul className="plain-list">
-                  {item.evidence_refs.map((evidence, index) => (
-                    <li key={`${item.template_id}-evidence-summary-${index}`}>{summarizeEvidence(evidence)}</li>
-                  ))}
-                </ul>
-              </section>
               {item.evidence_refs.map((evidence, index) => {
                 const logContext = evidenceContext(evidence);
-                const isLogEvidence = evidence.type === "log_keyword";
 
                 return (
-                  <section key={`${item.template_id}-evidence-json-${index}`} className="compact-subpanel">
-                    <div className="section-header">
-                      <strong>证据 {index + 1}</strong>
-                      <span className="section-tip">{summarizeEvidence(evidence)}</span>
-                    </div>
+                  <section key={`${item.template_id}-evidence-${index}`} className="compact-subpanel">
                     {logContext ? (
                       <>
-                        <span className="inline-note">日志预览</span>
+                        <span className="inline-note">
+                          {evidenceObjectName(evidence)}
+                          {evidence.container_name ? ` / ${String(evidence.container_name)}` : ""}
+                          {evidence.matched_text ? ` / 命中：${String(evidence.matched_text)}` : ""}
+                        </span>
                         <pre className="log-block code-block-scroll terminal-log-block">{normalizeLogText(logContext)}</pre>
                       </>
-                    ) : null}
-                    {!isLogEvidence || !logContext ? (
-                      <pre className="log-block code-block-scroll">{JSON.stringify(evidence, null, 2)}</pre>
-                    ) : null}
+                    ) : (
+                      <div className="diagnosis-evidence-row">
+                        <span>{evidenceTypeLabel(evidence)}</span>
+                        <strong className="ellipsis-cell" title={evidenceObjectName(evidence)}>{evidenceObjectName(evidence)}</strong>
+                        <StatusBadge status={evidenceStatusText(evidence)} />
+                      </div>
+                    )}
                   </section>
                 );
               })}
@@ -386,14 +419,6 @@ export function DiagnosisResultPanel({
         <p className="inline-note">
           命中模板 {matchedResults.length} / 未命中模板 {unmatchedResults.length} / 无法判断 {undeterminedResults.length}
         </p>
-        {data.evidence_summary.length > 0 ? (
-          <>
-            <p className="inline-note">全局证据摘要</p>
-            <pre className="log-block code-block-scroll">
-              {data.evidence_summary.map((item) => summarizeEvidence(item)).join("\n")}
-            </pre>
-          </>
-        ) : null}
       </section>
       {matchedResults.length > 0 ? <MatchResultList title="已命中模板" items={matchedResults} kind="matched" /> : null}
       {results.length === 0 ? (

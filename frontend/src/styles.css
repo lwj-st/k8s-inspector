@@ -48,18 +48,51 @@ a {
 }
 
 .brand-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 28px;
 }
 
-.brand-block h1 {
-  margin: 0 0 8px;
-  font-size: 26px;
-  line-height: 1.2;
+.brand-icon {
+  width: 42px;
+  height: 42px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.28), rgba(248, 173, 44, 0.18));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 12px 24px rgba(0, 0, 0, 0.16);
 }
 
-.brand-block p {
+.brand-icon svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+}
+
+.brand-icon path:first-child {
+  fill: rgba(255, 255, 255, 0.08);
+  stroke: #8ee3d4;
+  stroke-width: 2;
+}
+
+.brand-icon path:nth-child(2) {
+  stroke: #f7c56b;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.brand-icon circle {
+  fill: #f7c56b;
+  stroke: #fff7df;
+  stroke-width: 1.5;
+}
+
+.brand-block h1 {
   margin: 0;
-  color: rgba(245, 247, 250, 0.72);
+  font-size: 26px;
+  line-height: 1.2;
 }
 
 .nav-list {
@@ -668,6 +701,13 @@ a {
   width: min(680px, 100%);
   border-radius: 18px;
   padding: 20px;
+}
+
+.modal-form-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 700;
 }
 
 .modal-save-field {
@@ -1488,6 +1528,20 @@ a {
 
 .diagnosis-evidence-body {
   margin-top: 6px;
+}
+
+.diagnosis-evidence-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 38px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diagnosis-evidence-row strong {
+  color: var(--ink);
 }
 
 .log-hit-card {

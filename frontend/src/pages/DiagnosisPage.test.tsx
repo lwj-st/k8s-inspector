@@ -190,7 +190,8 @@ describe("DiagnosisPage", () => {
     expect(within(unmatchedDetails as HTMLDetailsElement).getByText("当前没有发现 redis timeout 日志")).toBeInTheDocument();
 
     await user.click(within(panel).getByText("查看证据（2）"));
-    expect(within(panel).getByText("日志预览")).toBeInTheDocument();
+    expect(within(panel).queryByText("全局证据摘要")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("证据摘要")).not.toBeInTheDocument();
     expect(
       within(panel).getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s"),
     ).toBeInTheDocument();
