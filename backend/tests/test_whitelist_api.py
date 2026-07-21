@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.keyword_service import match_log_text
+from app.services.keyword_service import match_explicit_log_keywords, match_log_text
 
 
 def test_create_and_list_whitelist(client) -> None:
@@ -47,6 +47,7 @@ def test_list_keywords_includes_common_builtin_error_keywords(client) -> None:
 
     for keyword in [
         "Traceback (most recent call last)",
+        "ERROR",
         "ModuleNotFoundError",
         "SyntaxError",
         "UnhandledPromiseRejection",
@@ -296,3 +297,87 @@ def test_keyword_hit_contains_up_to_five_lines_of_log_context(client, match_inde
     assert hits[0].context_before == [f"line-{index}" for index in range(max(0, match_index - 5), match_index)]
     assert hits[0].context_after == [f"line-{index}" for index in range(match_index + 1, min(13, match_index + 6))]
     assert hits[0].context_text == "\n".join([*hits[0].context_before, hits[0].matched_text, *hits[0].context_after])
+
+
+def test_short_keyword_does_not_match_inside_config_field_name(client) -> None:
+    session = client.app.state.session_factory()
+    try:
+        hits = match_log_text(
+            session,
+            "demo",
+            None,
+            "demo-api",
+            "envoy",
+            "envoy.tcp_proxy.per_connection_idle_timeout_ms: 300000",
+        )
+    finally:
+        session.close()
+
+    assert [hit.keyword for hit in hits if hit.keyword == "timeout"] == []
+
+
+def test_short_keyword_matches_standalone_log_word(client) -> None:
+    session = client.app.state.session_factory()
+    try:
+        hits = match_log_text(
+            session,
+            "demo",
+            None,
+            "demo-api",
+            "api",
+            "upstream request timeout after 30s",
+        )
+    finally:
+        session.close()
+
+    assert any(hit.keyword == "timeout" and hit.matched_text == "upstream request timeout after 30s" for hit in hits)
+
+
+@pytest.mark.parametrize("log_text", ["[error] upstream reset", "[ERROR] upstream reset"])
+def test_error_keyword_matches_bracketed_log_level(client, log_text: str) -> None:
+    session = client.app.state.session_factory()
+    try:
+        hits = match_log_text(session, "demo", None, "demo-api", "api", log_text)
+    finally:
+        session.close()
+
+    assert any(hit.keyword == "ERROR" and hit.matched_text == log_text for hit in hits)
+
+
+def test_error_keyword_does_not_match_inside_config_field_name(client) -> None:
+    session = client.app.state.session_factory()
+    try:
+        hits = match_log_text(session, "demo", None, "demo-api", "api", "error_code: 0")
+    finally:
+        session.close()
+
+    assert [hit.keyword for hit in hits if hit.keyword == "ERROR"] == []
+
+
+def test_explicit_log_keyword_uses_same_token_boundary(client) -> None:
+    session = client.app.state.session_factory()
+    try:
+        config_hits = match_explicit_log_keywords(
+            session,
+            "demo",
+            None,
+            "demo-api",
+            "envoy",
+            "envoy.tcp_proxy.per_connection_idle_timeout_ms: 300000",
+            ["timeout"],
+        )
+        log_hits = match_explicit_log_keywords(
+            session,
+            "demo",
+            None,
+            "demo-api",
+            "envoy",
+            "request timeout: upstream reset",
+            ["timeout"],
+        )
+    finally:
+        session.close()
+
+    assert config_hits == []
+    assert len(log_hits) == 1
+    assert log_hits[0].matched_text == "request timeout: upstream reset"

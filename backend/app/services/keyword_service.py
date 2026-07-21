@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy.orm import Session
 
 from app.models import KeywordRule
@@ -20,6 +22,14 @@ DEFAULT_KEYWORDS = [
         "category": "network",
         "severity": "warning",
         "description": "请求超时，通常表示网络、依赖服务或探针异常。",
+        "enabled": True,
+        "builtin": True,
+    },
+    {
+        "keyword": "ERROR",
+        "category": "generic",
+        "severity": "error",
+        "description": "通用错误日志级别，支持匹配 [error]、[ERROR] 等常见日志格式。",
         "enabled": True,
         "builtin": True,
     },
@@ -260,10 +270,8 @@ def match_log_text(
     )
 
     hits: list[KeywordHit] = []
-    lowered_text = log_text.lower()
     for rule in active_keywords:
-        lowered_keyword = rule.keyword.lower()
-        if lowered_keyword not in lowered_text:
+        if not _keyword_matches_text(log_text, rule.keyword):
             continue
 
         matched_text, context_before, context_after, context_text = _extract_log_context(log_text, rule.keyword)
@@ -307,7 +315,6 @@ def match_explicit_log_keywords(
         return []
 
     hits: list[KeywordHit] = []
-    lowered_text = log_text.lower()
     seen_keywords: set[str] = set()
     for keyword in keywords:
         normalized_keyword = str(keyword or "").strip()
@@ -315,7 +322,7 @@ def match_explicit_log_keywords(
         if not lowered_keyword or lowered_keyword in seen_keywords:
             continue
         seen_keywords.add(lowered_keyword)
-        if lowered_keyword not in lowered_text:
+        if not _keyword_matches_text(log_text, normalized_keyword):
             continue
 
         matched_text, context_before, context_after, context_text = _extract_log_context(log_text, normalized_keyword)
@@ -347,20 +354,31 @@ def match_explicit_log_keywords(
 
 
 def _extract_matched_text(log_text: str, keyword: str) -> str:
-    lowered_keyword = keyword.lower()
     for line in log_text.splitlines():
-        if lowered_keyword in line.lower():
+        if _keyword_matches_text(line, keyword):
             return line
     return log_text
 
 
 def _extract_log_context(log_text: str, keyword: str, radius: int = 5) -> tuple[str, list[str], list[str], str | None]:
     lines = log_text.splitlines()
-    lowered_keyword = keyword.lower()
     for index, line in enumerate(lines):
-        if lowered_keyword not in line.lower():
+        if not _keyword_matches_text(line, keyword):
             continue
         before = lines[max(0, index - radius):index]
         after = lines[index + 1:index + radius + 1]
         return line, before, after, "\n".join([*before, line, *after])
     return log_text, [], [], None
+
+
+def _keyword_matches_text(text: str, keyword: str) -> bool:
+    normalized_keyword = keyword.strip()
+    if not normalized_keyword:
+        return False
+    if _requires_token_boundary(normalized_keyword):
+        return re.search(rf"(?<![A-Za-z0-9_]){re.escape(normalized_keyword)}(?![A-Za-z0-9_])", text, re.IGNORECASE) is not None
+    return normalized_keyword.lower() in text.lower()
+
+
+def _requires_token_boundary(keyword: str) -> bool:
+    return re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", keyword) is not None
