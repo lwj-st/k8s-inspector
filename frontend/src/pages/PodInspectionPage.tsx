@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ignoreWhitelistLogHit, runNamespaceInspection } from "../api/client";
 import type { InspectedPod, KeywordHit, SavedInspectionTarget } from "../api/types";
@@ -31,6 +31,44 @@ function logHitContext(hit: KeywordHit) {
   return hit.context_text?.trim() || hit.matched_text;
 }
 
+function normalizeLogText(value: string) {
+  return value.replaceAll("\\n", "\n");
+}
+
+function renderHighlightedLog(value: string, keyword: string) {
+  const text = normalizeLogText(value);
+  const normalizedKeyword = keyword.trim();
+  if (!normalizedKeyword) {
+    return text;
+  }
+
+  const lowerText = text.toLowerCase();
+  const lowerKeyword = normalizedKeyword.toLowerCase();
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let index = lowerText.indexOf(lowerKeyword);
+
+  while (index !== -1) {
+    if (index > cursor) {
+      parts.push(text.slice(cursor, index));
+    }
+    const match = text.slice(index, index + normalizedKeyword.length);
+    parts.push(
+      <mark key={`${index}-${match}`} className="log-keyword-highlight">
+        {match}
+      </mark>,
+    );
+    cursor = index + normalizedKeyword.length;
+    index = lowerText.indexOf(lowerKeyword, cursor);
+  }
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+
+  return parts;
+}
+
 type PodInspectionPageProps = {
   initialScopeMode?: PodScopeMode;
 };
@@ -50,7 +88,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [namespace, setNamespace] = useState("");
   const [scopeMode, setScopeMode] = useState<PodScopeMode>(initialScopeMode);
   const [labelSelector, setLabelSelector] = useState("");
-  const [manualLabelEnabled, setManualLabelEnabled] = useState(false);
   const [podName, setPodName] = useState("");
   const [podOptions, setPodOptions] = useState<string[]>([]);
   const [podOptionsLoading, setPodOptionsLoading] = useState(false);
@@ -98,8 +135,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     sortedRangePods.find((pod) => pod.name === selectedRangePodName) ??
     sortedRangePods[0] ??
     null;
-  const rangeAbnormalPods = sortedRangePods.filter((pod) => !isHealthyPod(pod));
-  const rangeHealthyPods = sortedRangePods.filter(isHealthyPod);
   const currentPod = scopeMode === "single" ? podInspection.data?.pod ?? null : selectedRangePod;
   const currentLogHits = currentPod?.log_hits ?? [];
   const currentScopeText =
@@ -110,6 +145,11 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         : scopeMode === "label"
           ? `${namespace.trim()} / ${labelSelector.trim() || "未填写 Label Selector"}`
           : `${namespace.trim()} / ${podName.trim() || "未选择 Pod"}`;
+  const inspectionPoints = useMemo(
+    () => targets.filter((target) => Boolean(target.label_selector?.trim()) && !target.pod_name?.trim()),
+    [targets],
+  );
+  const defaultInspectionPointName = namespace.trim() && labelSelector.trim() ? `${namespace.trim()} / ${labelSelector.trim()}` : "";
 
   useEffect(() => {
     if (scopeMode !== "single" || !namespace.trim() || podOptionsNamespace === namespace.trim()) {
@@ -163,7 +203,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     setNamespace(nextNamespace);
     setPodName("");
     setLabelSelector("");
-    setManualLabelEnabled(false);
     setPodOptions([]);
     setPodOptionsNamespace(null);
     setPodOptionsError(null);
@@ -246,8 +285,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   }
 
   function openCreateSaveModal() {
+    if (scopeMode !== "label" || !namespace.trim() || !labelSelector.trim()) {
+      setSaveMessage("只有 Label Selector 范围可以保存为巡检点");
+      return;
+    }
     setEditingTargetId(null);
-    setTargetName("");
+    setTargetName(defaultInspectionPointName);
     setModalType("save");
   }
 
@@ -257,33 +300,21 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     setNamespaceSearch(target.namespace);
     resetNamespaceContext(target.namespace);
     setLabelSelector(target.label_selector ?? "");
-    if (target.pod_name && target.pod_name.trim()) {
-      setScopeMode("single");
-      setPodName(target.pod_name);
-    } else if (target.label_selector) {
-      setScopeMode("label");
-      setPodName("");
-    } else {
-      setScopeMode("all");
-      setPodName("");
-    }
+    setScopeMode("label");
+    setPodName("");
     setSavedTargetsOpen(true);
     setModalType("save");
   }
 
   async function handleSaveCurrentTarget() {
-    const normalizedName = targetName.trim();
+    const normalizedName = targetName.trim() || defaultInspectionPointName;
     const normalizedNamespace = namespace.trim();
-    if (!normalizedName) {
-      setSaveMessage("请先填写常用范围名称");
-      return;
-    }
     if (!normalizedNamespace) {
       setSaveMessage("请先选择名称空间");
       return;
     }
-    if (scopeMode === "single" && !podName.trim()) {
-      setSaveMessage("单个 Pod 巡检前，请先选择 Pod，再保存常用范围");
+    if (scopeMode !== "label" || !labelSelector.trim()) {
+      setSaveMessage("只有 Label Selector 范围可以保存为巡检点");
       return;
     }
 
@@ -291,8 +322,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       const payload = {
         name: normalizedName,
         namespace: normalizedNamespace,
-        label_selector: scopeMode === "label" ? labelSelector.trim() || null : null,
-        pod_name: scopeMode === "single" ? podName.trim() : "",
+        label_selector: labelSelector.trim(),
+        pod_name: "",
         resource_scope: ["pods"],
       };
 
@@ -331,7 +362,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     setCopyMessage(null);
     try {
       const items = await exportTargets();
-      setExportContent(JSON.stringify(items, null, 2));
+      const labelTargets = items.filter((item) => Boolean(item.label_selector?.trim()) && !item.pod_name?.trim());
+      setExportContent(JSON.stringify(labelTargets, null, 2));
       setModalType("export");
     } catch {
       setExportContent("导出失败");
@@ -361,12 +393,13 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         pod_name?: string | null;
         resource_scope: string[];
       }>;
-      const created = await importTargets(parsed);
+      const labelTargets = parsed.filter((item) => item.target_type === "pod" && Boolean(item.label_selector?.trim()) && !item.pod_name?.trim());
+      const created = await importTargets(labelTargets);
       if (created.length === 0) {
-        setSaveMessage("导入内容不包含当前页面可导入的 Pod 巡检对象");
+        setSaveMessage("导入内容不包含 Label Selector 巡检点");
         return;
       }
-      setSaveMessage(`已导入 ${created.length} 个 Pod 巡检对象`);
+      setSaveMessage(`已导入 ${created.length} 个巡检点`);
       setImportContent("");
       setSavedTargetsOpen(true);
       setModalType(null);
@@ -394,7 +427,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           <div className="section-header">
             <div>
               <h3>选择范围</h3>
-              <p className="inline-note">先选名称空间，再决定检查全部 Pod、Label Selector 范围，还是单个 Pod。</p>
             </div>
           </div>
           <div className="entry-form-grid entry-form-grid-compact">
@@ -440,8 +472,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           </div>
 
           {scopeMode === "label" ? (
-            <div className="compact-subpanel">
-              <label>
+            <div className="compact-subpanel label-selector-panel">
+              <label className="label-selector-field">
                 Label Selector
                 <select
                   aria-label="Label Selector"
@@ -457,25 +489,16 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                   ))}
                 </select>
               </label>
-              <div className="toolbar-row">
-                <button type="button" className="text-button mini-button" onClick={() => setManualLabelEnabled((current) => !current)}>
-                  {manualLabelEnabled ? "收起手动输入" : "手动输入"}
-                </button>
-              </div>
-              <p className="inline-note">
-                {labelError ? `标签发现失败：${labelError}` : "优先使用自动发现候选；特殊情况再手动输入。"}
-              </p>
-              {manualLabelEnabled ? (
-                <label>
-                  手动 Label Selector
-                  <input
-                    aria-label="手动 Label Selector"
-                    value={labelSelector}
-                    onChange={(event) => setLabelSelector(event.target.value)}
-                    placeholder="例如：app=demo-api"
-                  />
-                </label>
-              ) : null}
+              <label className="label-selector-field">
+                手动 Label Selector
+                <input
+                  aria-label="手动 Label Selector"
+                  value={labelSelector}
+                  onChange={(event) => setLabelSelector(event.target.value)}
+                  placeholder="例如：app=demo-api"
+                />
+              </label>
+              {labelError ? <p className="inline-note">标签发现失败：{labelError}</p> : null}
             </div>
           ) : null}
 
@@ -511,7 +534,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               {podInspection.loading || namespaceInspection.loading ? "巡检中..." : currentRunLabel}
             </button>
           </div>
-          <p className="inline-note">当前范围：{currentScopeText}</p>
           {namespaceLoading ? <p className="inline-note">名称空间发现中...</p> : null}
           {namespaceError ? <p>名称空间读取失败：{namespaceError}</p> : null}
           {scopeMode === "single" && podOptionsError ? <p>Pod 下拉加载失败：{podOptionsError}</p> : null}
@@ -532,15 +554,14 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         <div className="section-header">
           <div>
             <h3>次级操作</h3>
-            <p className="inline-note">保存范围、导入导出和复用入口都收在这里，不占主流程位置。</p>
           </div>
         </div>
         <div className="secondary-action-row">
           <button type="button" className="text-button mini-button" onClick={openCreateSaveModal}>
-            保存当前范围
+            保存巡检点
           </button>
           <button type="button" className="text-button mini-button" onClick={() => setSavedTargetsOpen((current) => !current)}>
-            {savedTargetsOpen ? "收起常用范围" : "常用范围"}
+            {savedTargetsOpen ? "收起巡检点" : "巡检点"}
           </button>
           <button type="button" className="text-button mini-button" onClick={() => setModalType("import")}>
             导入
@@ -554,12 +575,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         {savedTargetsOpen ? (
           <section className="saved-target-panel">
             <div className="section-header">
-              <h4>常用范围</h4>
-              <span className="section-tip">统一复用全部 Pod、标签范围和单 Pod 入口</span>
+              <h4>巡检点</h4>
+              <span className="section-tip">只保存 Label Selector 筛选范围</span>
             </div>
             {targetsLoading ? <p>加载已保存对象中...</p> : null}
-            {!targetsLoading && targets.length === 0 ? <p>暂无保存对象，保存当前 Pod 巡检范围后可复用。</p> : null}
-            {targets.length > 0 ? (
+            {!targetsLoading && inspectionPoints.length === 0 ? <p>暂无巡检点，选择 Label Selector 后可保存。</p> : null}
+            {inspectionPoints.length > 0 ? (
               <div className="table-scroll-shell">
                 <table className="compact-table">
                   <thead>
@@ -571,7 +592,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     </tr>
                   </thead>
                   <tbody>
-                    {targets.map((target) => (
+                    {inspectionPoints.map((target) => (
                       <tr key={target.id}>
                         <td>{target.name}</td>
                         <td>{target.namespace}</td>
@@ -607,23 +628,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
       {scopeMode === "single" && podInspection.data ? (
         <>
-          <section className="panel">
-            <div className="section-header">
-              <div>
-                <h3>最近一次巡检摘要</h3>
-                <p className="inline-note">当前为单个 Pod 精确巡检，只展示这一条 Pod 的证据链。</p>
-              </div>
-              <StatusBadge status={podInspection.data.health_status} />
-            </div>
-            <KeyValueList
-              items={[
-                { label: "名称空间", value: podInspection.data.namespace },
-                { label: "Pod", value: currentPod?.name ?? "--" },
-                { label: "状态", value: currentPod?.status ?? "--" },
-                { label: "重启次数", value: currentPod ? String(currentPod.restarts) : "--" },
-              ]}
-            />
-          </section>
           {currentPod ? (
             <div className="inspection-layout">
               <div className="panel">
@@ -673,8 +677,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                               <strong>{hit.keyword}</strong>
                               <StatusBadge status={ignored ? "disabled" : hit.severity} />
                             </div>
-                            <span className="inline-note">命中上下文（不是完整日志）</span>
-                            <pre className="log-block code-block-scroll">{logHitContext(hit)}</pre>
+                            <span className="inline-note">原始日志</span>
+                            <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                             <div className="log-hit-actions">
                               <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignored || ignoring}>
                                 {hit.whitelisted ? "白名单已生效" : ignored ? "已忽略" : ignoring ? "处理中..." : "忽略此报错"}
@@ -696,23 +700,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
       {scopeMode !== "single" && namespaceInspection.data ? (
         <>
-          <section className="panel">
-            <div className="section-header">
-              <div>
-                <h3>最近一次巡检摘要</h3>
-                <p className="inline-note">当前是 Pod 范围巡检，Label Selector 命中多个 Pod 时会展示多个 Pod 结果。</p>
-              </div>
-              <StatusBadge status={namespaceInspection.data.health_status} />
-            </div>
-            <KeyValueList
-              items={[
-                { label: "名称空间", value: namespaceInspection.data.namespace },
-                { label: "巡检范围", value: scopeMode === "label" ? namespaceInspection.data.inspection_target.label_selector ?? "Label Selector" : "全部 Pod" },
-                { label: "异常 Pod", value: String(rangeAbnormalPods.length) },
-                { label: "正常 / 已完成 Pod", value: String(rangeHealthyPods.length) },
-              ]}
-            />
-          </section>
           <div className="inspection-layout">
             <div className="panel">
               <div className="section-header">
@@ -784,8 +771,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                                 <strong>{hit.keyword}</strong>
                                 <StatusBadge status={ignored ? "disabled" : hit.severity} />
                               </div>
-                              <span className="inline-note">命中上下文（不是完整日志）</span>
-                              <pre className="log-block code-block-scroll">{logHitContext(hit)}</pre>
+                              <span className="inline-note">原始日志</span>
+                              <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                               <div className="log-hit-actions">
                                 <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignored || ignoring}>
                                   {hit.whitelisted ? "白名单已生效" : ignored ? "已忽略" : ignoring ? "处理中..." : "忽略此报错"}
@@ -814,17 +801,17 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             className="modal-card modal-card-polished"
             role="dialog"
             aria-modal="true"
-            aria-label={modalType === "save" ? "保存当前范围" : modalType === "import" ? "导入巡检对象" : "导出巡检对象"}
+            aria-label={modalType === "save" ? "保存巡检点" : modalType === "import" ? "导入巡检点" : "导出巡检点"}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="section-header">
               <div>
-                <h3>{modalType === "save" ? (editingTargetId !== null ? "编辑常用范围" : "保存当前范围") : modalType === "import" ? "导入巡检对象" : "导出巡检对象"}</h3>
+                <h3>{modalType === "save" ? (editingTargetId !== null ? "编辑巡检点" : "保存巡检点") : modalType === "import" ? "导入巡检点" : "导出巡检点"}</h3>
                 <p className="inline-note">
                   {modalType === "save"
-                    ? "把当前 Pod 巡检范围保存为可复用入口。"
+                    ? "把当前 Label Selector 筛选范围保存为巡检点。"
                     : modalType === "import"
-                      ? "只导入 Pod 巡检对象，其他类型会自动过滤。"
+                      ? "只导入 Label Selector 巡检点，其他类型会自动过滤。"
                       : "导出后可复制到其他环境导入。"}
                 </p>
               </div>
@@ -835,17 +822,17 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               <>
                 <p className="inline-note">当前将保存：{currentScopeText}</p>
                 <label>
-                  常用范围名称
+                  巡检点名称
                   <input
-                    aria-label="常用范围名称"
+                    aria-label="巡检点名称"
                     value={targetName}
                     onChange={(event) => setTargetName(event.target.value)}
-                    placeholder="例如：demo API 单 Pod 排查"
+                    placeholder={defaultInspectionPointName || "例如：platform / app=kong-service-kong"}
                   />
                 </label>
                 <div className="button-row">
-                  <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || targetName.trim().length === 0}>
-                    {targetSaving ? (editingTargetId !== null ? "更新中..." : "保存中...") : editingTargetId !== null ? "更新当前对象" : "保存当前范围"}
+                  <button type="button" onClick={() => void handleSaveCurrentTarget()} disabled={targetSaving || !labelSelector.trim()}>
+                    {targetSaving ? (editingTargetId !== null ? "更新中..." : "保存中...") : editingTargetId !== null ? "更新巡检点" : "保存巡检点"}
                   </button>
                   <button type="button" onClick={() => setModalType(null)}>取消</button>
                 </div>
@@ -866,7 +853,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                 </label>
                 <div className="button-row">
                   <button type="button" onClick={() => void handleImportTargets()} disabled={targetSaving || importContent.trim().length === 0}>
-                    导入巡检对象
+                    导入巡检点
                   </button>
                   <button type="button" onClick={() => setModalType(null)}>取消</button>
                 </div>

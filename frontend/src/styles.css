@@ -482,7 +482,7 @@ a {
 
 .pod-list {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .pod-list-scroll,
@@ -493,30 +493,60 @@ a {
   overflow: auto;
 }
 
+.pod-list-scroll {
+  max-height: 520px;
+  padding-right: 4px;
+}
+
 .batch-group-scroll {
   align-items: start;
 }
 
 .pod-list-item {
   width: 100%;
-  min-height: auto;
+  height: 76px;
+  min-height: 76px;
   text-align: left;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: #fff;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(239, 252, 248, 0.96), rgba(255, 255, 255, 0.9));
   color: var(--ink);
   cursor: pointer;
+  overflow: hidden;
   box-shadow: none;
+}
+
+.pod-list-item .card-title {
+  min-width: 0;
+  gap: 8px;
+}
+
+.pod-list-item strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pod-list-item p {
+  margin: 4px 0 2px;
+  font-size: 12px;
 }
 
 .pod-list-item small {
   color: var(--muted);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pod-list-item-active {
-  border-color: #f0a323;
-  box-shadow: 0 0 0 2px rgba(240, 163, 35, 0.16);
+  border-color: rgba(15, 118, 110, 0.5);
+  background: linear-gradient(135deg, rgba(219, 245, 238, 0.98), rgba(245, 255, 252, 0.96));
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
 }
 
 .log-block {
@@ -533,6 +563,19 @@ a {
   max-height: 220px;
   overflow: auto;
   font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
+}
+
+.terminal-log-block {
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-x: auto;
+}
+
+.log-keyword-highlight {
+  padding: 0 2px;
+  border-radius: 4px;
+  background: rgba(255, 209, 102, 0.25);
+  color: #ffd166;
 }
 
 .compact-card {
@@ -602,6 +645,19 @@ a {
   border-radius: 16px;
   border: 1px solid rgba(157, 182, 202, 0.24);
   background: rgba(255, 255, 255, 0.72);
+}
+
+.label-selector-panel {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.72fr);
+  align-items: end;
+}
+
+.label-selector-panel .inline-note {
+  grid-column: 1 / -1;
+}
+
+.label-selector-field {
+  min-width: 0;
 }
 
 .quick-target-grid,

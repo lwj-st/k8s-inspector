@@ -287,7 +287,7 @@ describe("PodInspectionPage", () => {
     expect(screen.queryByLabelText("导入内容")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "导出" }));
-    const exportDialog = await screen.findByRole("dialog", { name: "导出巡检对象" });
+    const exportDialog = await screen.findByRole("dialog", { name: "导出巡检点" });
     expect(exportDialog).toBeInTheDocument();
     expect(screen.getByLabelText("导出内容")).toBeInTheDocument();
   });
@@ -300,7 +300,8 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "all" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
 
-    expect(await screen.findByText("最近一次巡检摘要")).toBeInTheDocument();
+    expect(await screen.findByText("范围内 Pod 列表")).toBeInTheDocument();
+    expect(screen.queryByText("最近一次巡检摘要")).not.toBeInTheDocument();
 
     const request = fetchMock.mock.calls.find(
       ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
@@ -320,6 +321,7 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "label" } });
     await screen.findByRole("option", { name: "app=demo-api（1 个 Pod）" });
     fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
+    expect(screen.getByLabelText("手动 Label Selector")).toHaveValue("app=demo-api");
     fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
 
     expect(await screen.findByText("范围内 Pod 列表")).toBeInTheDocument();
@@ -347,7 +349,7 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
 
     expect(await screen.findByText("单 Pod 结果")).toBeInTheDocument();
-    expect(await screen.findByText("database connection refused")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "database connection refused")).toBeInTheDocument();
 
     const request = fetchMock.mock.calls.find(
       ([input, init]) => String(input).endsWith("/inspections/pod/run") && init?.method === "POST",
@@ -456,11 +458,12 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
 
-    expect(await screen.findByText("命中上下文（不是完整日志）")).toBeInTheDocument();
+    expect(await screen.findByText("原始日志")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s\npanic: dependency unavailable")).toBeInTheDocument();
+    expect(screen.getAllByText("connection refused").some((element) => element.tagName.toLowerCase() === "mark")).toBe(true);
   });
 
-  it("saves current pod range through modal", async () => {
+  it("saves current label selector as inspection point through modal", async () => {
     render(<PodInspectionPage />);
 
     await screen.findByRole("option", { name: "demo" });
@@ -468,9 +471,10 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "label" } });
     await screen.findByRole("option", { name: "app=demo-api（1 个 Pod）" });
     fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "保存当前范围" })[0]);
-    const saveDialog = await screen.findByRole("dialog", { name: "保存当前范围" });
-    fireEvent.change(screen.getByLabelText("常用范围名称"), { target: { value: "demo API 标签巡检" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "保存巡检点" })[0]);
+    const saveDialog = await screen.findByRole("dialog", { name: "保存巡检点" });
+    expect(screen.getByLabelText("巡检点名称")).toHaveValue("demo / app=demo-api");
+    fireEvent.change(screen.getByLabelText("巡检点名称"), { target: { value: "demo API 标签巡检" } });
     fireEvent.click(saveDialog.querySelectorAll("button")[1] as HTMLButtonElement);
 
     expect(await screen.findByText("demo API 标签巡检")).toBeInTheDocument();
@@ -503,7 +507,8 @@ describe("PodInspectionPage", () => {
             name: "imported pod target",
             target_type: "pod",
             namespace: "prod",
-            pod_name: "api-0",
+            pod_name: "",
+            label_selector: "app=api",
             resource_scope: ["pods"],
           },
           {
@@ -516,10 +521,10 @@ describe("PodInspectionPage", () => {
         ]),
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "导入巡检对象" }));
+    fireEvent.click(screen.getByRole("button", { name: "导入巡检点" }));
 
     expect(await screen.findByText("imported pod target")).toBeInTheDocument();
-    expect(await screen.findByText("已导入 1 个 Pod 巡检对象")).toBeInTheDocument();
+    expect(await screen.findByText("已导入 1 个巡检点")).toBeInTheDocument();
     expect(screen.queryByText("ignored namespace target")).not.toBeInTheDocument();
   });
 });

@@ -130,7 +130,7 @@ describe("NamespaceInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
 
-    expect(await screen.findByText("最近一次巡检摘要")).toBeInTheDocument();
     expect(await screen.findByText("范围内 Pod 列表")).toBeInTheDocument();
+    expect(screen.queryByText("最近一次巡检摘要")).not.toBeInTheDocument();
   });
 });
