@@ -10,6 +10,7 @@ import { isHealthyPod } from "../features/inspections/podHealth";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 import { useRunPodInspection } from "../features/inspections/useRunPodInspection";
 import { useSavedInspectionTargets } from "../features/inspections/useSavedInspectionTargets";
+import { normalizeTerminalLogText } from "../features/logs/logText";
 
 type PodScopeMode = "all" | "label" | "single";
 type PodModalType = "save" | "import" | "export" | null;
@@ -32,7 +33,7 @@ function logHitContext(hit: KeywordHit) {
 }
 
 function normalizeLogText(value: string) {
-  return value.replaceAll("\\n", "\n");
+  return normalizeTerminalLogText(value);
 }
 
 function renderHighlightedLog(value: string, keyword: string) {

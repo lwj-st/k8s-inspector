@@ -1,5 +1,6 @@
 import type { DiagnosisResponse, TemplateCondition, TemplateConditionOperator, TemplateConditionType } from "../../api/types";
 import { StatusBadge } from "../../components/StatusBadge";
+import { normalizeTerminalLogText } from "../logs/logText";
 
 type RawCondition =
   | TemplateCondition
@@ -192,7 +193,7 @@ function evidenceContext(item: Record<string, unknown>) {
 }
 
 function normalizeLogText(value: string) {
-  return value.replaceAll("\\n", "\n");
+  return normalizeTerminalLogText(value);
 }
 
 function getResultKind(item: NormalizedMatchResult): MatchResultKind {

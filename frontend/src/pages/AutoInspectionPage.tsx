@@ -17,6 +17,7 @@ import { useRunDiagnosis } from "../features/diagnosis/useRunDiagnosis";
 import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
 import { isHealthyPod } from "../features/inspections/podHealth";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
+import { normalizeTerminalLogText } from "../features/logs/logText";
 
 const ABNORMAL_CATEGORY_LABELS = {
   pod_status: "Pod 状态",
@@ -59,7 +60,7 @@ function buildLogHitKey(podName: string, hit: KeywordHit) {
 }
 
 function logHitContext(hit: KeywordHit) {
-  return hit.context_text?.trim() || hit.matched_text;
+  return normalizeTerminalLogText(hit.context_text?.trim() || hit.matched_text);
 }
 
 function NamespaceObjectSection({
