@@ -501,7 +501,7 @@ export function AutoInspectionPage() {
       await ignoreWhitelistLogHit({
         namespace: evidenceInspection.data?.namespace ?? evidenceTarget.detail_target.namespace ?? evidenceTarget.summary.name,
         label_selector: evidenceInspection.data?.inspection_target.label_selector ?? evidenceTarget.detail_target.label_selector ?? null,
-        pod_name_pattern: ignoreTarget.pod.name,
+        pod_name_pattern: null,
         container_name: ignoreTarget.hit.container_name ?? null,
         keyword: ignoreTarget.hit.keyword,
         note: "自动巡检证据抽屉忽略",

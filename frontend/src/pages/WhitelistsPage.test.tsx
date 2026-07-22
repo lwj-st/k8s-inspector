@@ -285,7 +285,7 @@ describe("WhitelistsPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: /白名单/ }));
 
     expect(screen.getByRole("table", { name: "白名单规则表" })).toBeInTheDocument();
-    expect(screen.getByText("demo / app=demo / Pod demo-api-* / 容器 demo-api")).toBeInTheDocument();
+    expect(screen.getByText("demo / app=demo / 容器 demo-api")).toBeInTheDocument();
     expect(screen.getByText("warmup noise")).toBeInTheDocument();
   });
 
@@ -324,7 +324,7 @@ describe("WhitelistsPage", () => {
     fireEvent.change(within(whitelistDialog).getByLabelText("名称空间"), { target: { value: "prod" } });
     await within(whitelistDialog).findByRole("option", { name: "app=worker（1 个 Pod）" });
     fireEvent.change(within(whitelistDialog).getByLabelText("Label Selector"), { target: { value: "app=worker" } });
-    fireEvent.change(within(whitelistDialog).getByLabelText("Pod 名称匹配"), { target: { value: "worker-*" } });
+    expect(within(whitelistDialog).queryByLabelText("Pod 名称匹配")).not.toBeInTheDocument();
     fireEvent.change(within(whitelistDialog).getByLabelText("容器名称"), { target: { value: "worker" } });
     fireEvent.change(within(whitelistDialog).getByLabelText("白名单关键字"), { target: { value: "timeout" } });
     fireEvent.change(within(whitelistDialog).getByLabelText("备注"), { target: { value: "known worker retry" } });

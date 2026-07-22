@@ -258,7 +258,7 @@ describe("PodInspectionPage", () => {
               id: 1,
               namespace: "demo",
               label_selector: null,
-              pod_name_pattern: "demo-api-1",
+              pod_name_pattern: null,
               container_name: "demo-api",
               keyword: "connection refused",
               enabled: true,

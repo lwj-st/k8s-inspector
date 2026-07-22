@@ -2,7 +2,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from app.models import KeywordRule
+from app.models import KeywordRule, Whitelist
 from app.schemas.common import KeywordHit
 from app.schemas.keyword import KeywordRuleCreate, KeywordRuleUpdate
 from app.services.whitelist_service import find_matching_whitelist
@@ -274,14 +274,12 @@ def match_log_text(
         if not _keyword_matches_text(log_text, rule.keyword):
             continue
 
-        matched_text, context_before, context_after, context_text = _extract_log_context(log_text, rule.keyword)
-
-        whitelist_rule = find_matching_whitelist(
+        matched_text, context_before, context_after, context_text, whitelist_rule = _select_keyword_hit_context(
             session=session,
             namespace=namespace,
             label_selector=label_selector,
-            pod_name=pod_name,
             container_name=container_name,
+            log_text=log_text,
             keyword=rule.keyword,
         )
         hits.append(
@@ -325,14 +323,12 @@ def match_explicit_log_keywords(
         if not _keyword_matches_text(log_text, normalized_keyword):
             continue
 
-        matched_text, context_before, context_after, context_text = _extract_log_context(log_text, normalized_keyword)
-
-        whitelist_rule = find_matching_whitelist(
+        matched_text, context_before, context_after, context_text, whitelist_rule = _select_keyword_hit_context(
             session=session,
             namespace=namespace,
             label_selector=label_selector,
-            pod_name=pod_name,
             container_name=container_name,
+            log_text=log_text,
             keyword=normalized_keyword,
         )
         hits.append(
@@ -361,14 +357,50 @@ def _extract_matched_text(log_text: str, keyword: str) -> str:
 
 
 def _extract_log_context(log_text: str, keyword: str, radius: int = 5) -> tuple[str, list[str], list[str], str | None]:
+    contexts = _extract_log_contexts(log_text, keyword, radius)
+    if contexts:
+        return contexts[0]
+    return log_text, [], [], None
+
+
+def _extract_log_contexts(log_text: str, keyword: str, radius: int = 5) -> list[tuple[str, list[str], list[str], str | None]]:
+    contexts: list[tuple[str, list[str], list[str], str | None]] = []
     lines = log_text.splitlines()
     for index, line in enumerate(lines):
         if not _keyword_matches_text(line, keyword):
             continue
         before = lines[max(0, index - radius):index]
         after = lines[index + 1:index + radius + 1]
-        return line, before, after, "\n".join([*before, line, *after])
-    return log_text, [], [], None
+        contexts.append((line, before, after, "\n".join([*before, line, *after])))
+    return contexts
+
+
+def _select_keyword_hit_context(
+    session: Session,
+    namespace: str,
+    label_selector: str | None,
+    container_name: str | None,
+    log_text: str,
+    keyword: str,
+) -> tuple[str, list[str], list[str], str | None, Whitelist | None]:
+    first_whitelisted: tuple[str, list[str], list[str], str | None, Whitelist] | None = None
+    for matched_text, context_before, context_after, context_text in _extract_log_contexts(log_text, keyword):
+        whitelist_rule = find_matching_whitelist(
+            session=session,
+            namespace=namespace,
+            label_selector=label_selector,
+            container_name=container_name,
+            keyword=keyword,
+            matched_text=matched_text,
+        )
+        if whitelist_rule is None:
+            return matched_text, context_before, context_after, context_text, None
+        if first_whitelisted is None:
+            first_whitelisted = (matched_text, context_before, context_after, context_text, whitelist_rule)
+
+    if first_whitelisted is not None:
+        return first_whitelisted
+    return log_text, [], [], None, None
 
 
 def _keyword_matches_text(text: str, keyword: str) -> bool:

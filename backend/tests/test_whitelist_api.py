@@ -117,7 +117,7 @@ def test_ignore_log_hit_creates_whitelist_rule(client) -> None:
     assert payload["keyword"] == "connection refused"
     assert payload["namespace"] == "demo"
     assert payload["label_selector"] == "app=demo"
-    assert payload["pod_name_pattern"] == "demo-api"
+    assert payload["pod_name_pattern"] is None
     assert payload["container_name"] == "demo-api"
     assert payload["enabled"] is True
     assert payload["note"] == "ignored from inspection result"
@@ -194,17 +194,17 @@ def test_namespace_inspection_marks_whitelisted_keyword_hits(client) -> None:
     assert hit["whitelist_rule_id"] is not None
 
 
-def test_namespace_inspection_supports_shell_style_pod_name_pattern(client) -> None:
+def test_namespace_inspection_whitelist_ignores_pod_name_pattern(client) -> None:
     client.post(
         "/api/v1/whitelists",
         json={
             "namespace": "demo",
             "label_selector": "app=demo",
             "keyword": "connection refused",
-            "pod_name_pattern": "demo-api-*",
+            "pod_name_pattern": "does-not-match-*",
             "container_name": "demo-api",
             "enabled": True,
-            "note": "known harmless in warmup",
+            "note": "label scoped rule ignores pod name",
         },
     )
 
@@ -217,6 +217,49 @@ def test_namespace_inspection_supports_shell_style_pod_name_pattern(client) -> N
 
     assert response.status_code == 200
     assert hit["whitelisted"] is True
+
+
+def test_whitelist_phrase_suppresses_only_matching_log_line(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=worker",
+            "keyword": "Error -2 connecting to dragonfly-0.dragonfly",
+            "container_name": "worker",
+            "enabled": True,
+            "note": "known redis warmup retry",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        whitelisted_only = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector="app=worker",
+            pod_name="worker-abc",
+            container_name="worker",
+            log_text="[ERROR] consumer: Error -2 connecting to dragonfly-0.dragonfly.svc.cluster.local",
+        )
+        has_other_error = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector="app=worker",
+            pod_name="worker-def",
+            container_name="worker",
+            log_text=(
+                "[ERROR] consumer: Error -2 connecting to dragonfly-0.dragonfly.svc.cluster.local\n"
+                "[ERROR] payment callback failed"
+            ),
+        )
+
+    error_hit = next(hit for hit in whitelisted_only if hit.keyword == "ERROR")
+    other_error_hit = next(hit for hit in has_other_error if hit.keyword == "ERROR")
+
+    assert error_hit.whitelisted is True
+    assert "dragonfly-0.dragonfly" in error_hit.matched_text
+    assert other_error_hit.whitelisted is False
+    assert other_error_hit.matched_text == "[ERROR] payment callback failed"
 
 
 def test_namespace_inspection_does_not_match_whitelist_when_container_name_differs(client) -> None:

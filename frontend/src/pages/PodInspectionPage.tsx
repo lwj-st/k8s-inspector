@@ -259,7 +259,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           scopeMode === "label"
             ? namespaceInspection.data?.inspection_target.label_selector ?? (labelSelector || null)
             : null,
-        pod_name_pattern: currentPod.name,
+        pod_name_pattern: null,
         container_name: hit.container_name ?? null,
         keyword: hit.keyword,
         note: scopeMode === "single" ? "从 Pod 巡检结果忽略" : "从 Pod 范围巡检结果忽略",
@@ -855,11 +855,11 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     rows={10}
                   />
                 </label>
-                <div className="button-row">
-                  <button type="button" onClick={() => void handleImportTargets()} disabled={targetSaving || importContent.trim().length === 0}>
+                <div className="button-row modal-action-row">
+                  <button className="modal-primary-button" type="button" onClick={() => void handleImportTargets()} disabled={targetSaving || importContent.trim().length === 0}>
                     导入巡检点
                   </button>
-                  <button type="button" onClick={() => setModalType(null)}>取消</button>
+                  <button className="modal-secondary-button" type="button" onClick={() => setModalType(null)}>取消</button>
                 </div>
               </>
             ) : null}

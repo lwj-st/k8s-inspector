@@ -1089,7 +1089,7 @@ describe("AutoInspectionPage", () => {
         expect(JSON.parse(String(init?.body))).toEqual({
           namespace: "detail-name",
           label_selector: "app=api",
-          pod_name_pattern: "broken-api",
+          pod_name_pattern: null,
           container_name: "api",
           keyword: "connection refused",
           note: "自动巡检证据抽屉忽略",
@@ -1098,7 +1098,7 @@ describe("AutoInspectionPage", () => {
           id: 1,
           namespace: "detail-name",
           label_selector: "app=api",
-          pod_name_pattern: "broken-api",
+          pod_name_pattern: null,
           container_name: "api",
           keyword: "connection refused",
           enabled: true,

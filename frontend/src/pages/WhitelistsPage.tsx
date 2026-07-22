@@ -38,9 +38,6 @@ function describeWhitelistScope(item: Whitelist) {
   if (item.label_selector) {
     parts.push(item.label_selector);
   }
-  if (item.pod_name_pattern) {
-    parts.push(`Pod ${item.pod_name_pattern}`);
-  }
   if (item.container_name) {
     parts.push(`容器 ${item.container_name}`);
   }
@@ -178,7 +175,7 @@ export function WhitelistsPage() {
     setWhitelistEditingId(item.id);
     setNamespace(item.namespace);
     setLabelSelector(item.label_selector ?? "");
-    setPodNamePattern(item.pod_name_pattern ?? "");
+    setPodNamePattern("");
     setContainerName(item.container_name ?? "");
     setWhitelistKeyword(item.keyword);
     setNote(item.note ?? "");
@@ -492,7 +489,7 @@ export function WhitelistsPage() {
       ) : null}
 
       {whitelistModalType === "create" || whitelistModalType === "edit" ? (
-        <ModalShell title={whitelistModalType === "edit" ? "编辑白名单" : "新增白名单"} note="请明确忽略会作用在哪个名称空间、标签、Pod、容器和关键字上。" onClose={closeWhitelistModal}>
+        <ModalShell title={whitelistModalType === "edit" ? "编辑白名单" : "新增白名单"} note="白名单按名称空间和 Label Selector 生效，不绑定 Pod 名称；Pod 重启换名后仍可复用。" onClose={closeWhitelistModal}>
           <div className="entry-form-grid">
             <label className="modal-form-field">
               名称空间
@@ -515,22 +512,24 @@ export function WhitelistsPage() {
               </select>
             </label>
             <label className="modal-form-field">
-              Pod 名称匹配
-              <input className="template-input" aria-label="Pod 名称匹配" value={podNamePattern} onChange={(event) => setPodNamePattern(event.target.value)} placeholder="可选，例如 worker-*" />
-            </label>
-            <label className="modal-form-field">
               容器名称
               <input className="template-input" aria-label="容器名称" value={containerName} onChange={(event) => setContainerName(event.target.value)} placeholder="可选，例如 worker" />
             </label>
             <label className="modal-form-field">
               白名单关键字
-              <select className="template-input" aria-label="白名单关键字" value={whitelistKeyword} onChange={(event) => setWhitelistKeyword(event.target.value)}>
-                <option value="">请选择关键字</option>
-                {whitelistKeyword && !keywordOptions.includes(whitelistKeyword) ? <option value={whitelistKeyword}>{whitelistKeyword}</option> : null}
+              <input
+                className="template-input"
+                aria-label="白名单关键字"
+                list="whitelist-keyword-options"
+                value={whitelistKeyword}
+                onChange={(event) => setWhitelistKeyword(event.target.value)}
+                placeholder="可选择关键字，也可粘贴完整误报日志片段"
+              />
+              <datalist id="whitelist-keyword-options">
                 {keywordOptions.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}
-              </select>
+              </datalist>
             </label>
             <label className="modal-form-field" style={{ gridColumn: "1 / -1" }}>
               备注

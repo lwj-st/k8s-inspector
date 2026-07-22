@@ -887,9 +887,9 @@ export function TemplatesPage() {
                 <h4>条件关系说明</h4>
                 <p>AND：所有启用条件都满足才命中故障。</p>
                 <p>OR：任一启用条件满足就命中故障。</p>
-                <label>
+                <label className="template-field">
                   条件关系
-                  <select aria-label="条件关系" value={jointOperator} onChange={(event) => setJointOperator(event.target.value as "AND" | "OR")}>
+                  <select className="template-input" aria-label="条件关系" value={jointOperator} onChange={(event) => setJointOperator(event.target.value as "AND" | "OR")}>
                     <option value="AND">AND：所有条件都满足才命中</option>
                     <option value="OR">OR：任一条件满足就命中</option>
                   </select>
@@ -913,17 +913,18 @@ export function TemplatesPage() {
                           删除条件
                         </button>
                       </div>
-                      <label>
+                      <label className="template-field">
                         绑定对象组
-                        <select aria-label={index === 0 ? "绑定对象组" : `绑定对象组 ${index + 1}`} value={condition.target_ref} onChange={(event) => updateCondition(index, { target_ref: event.target.value })}>
+                        <select className="template-input" aria-label={index === 0 ? "绑定对象组" : `绑定对象组 ${index + 1}`} value={condition.target_ref} onChange={(event) => updateCondition(index, { target_ref: event.target.value })}>
                           {targets.map((target) => (
                             <option key={target.target_ref} value={target.target_ref}>{target.target_ref}</option>
                           ))}
                         </select>
                       </label>
-                      <label>
+                      <label className="template-field">
                         条件类型
                         <select
+                          className="template-input"
                           aria-label={index === 0 ? "条件类型" : `条件类型 ${index + 1}`}
                           value={condition.condition_type}
                           onChange={(event) => updateCondition(index, { condition_type: event.target.value as TemplateConditionType })}
@@ -933,9 +934,10 @@ export function TemplatesPage() {
                           ))}
                         </select>
                       </label>
-                      <label>
+                      <label className="template-field">
                         匹配方式
                         <select
+                          className="template-input"
                           aria-label={index === 0 ? "匹配方式" : `匹配方式 ${index + 1}`}
                           value={condition.operator}
                           onChange={(event) => updateCondition(index, { operator: event.target.value as TemplateConditionOperator })}
@@ -1011,9 +1013,10 @@ export function TemplatesPage() {
                           </select>
                         </label>
                       ) : (
-                        <label>
+                        <label className="template-field">
                           目标值
                           <input
+                            className="template-input"
                             aria-label={index === 0 ? "目标值" : `目标值 ${index + 1}`}
                             value={condition.value_text}
                             onChange={(event) => updateCondition(index, { value_text: event.target.value })}

@@ -1,5 +1,3 @@
-from fnmatch import fnmatchcase
-
 from sqlalchemy.orm import Session
 
 from app.models import Whitelist
@@ -22,7 +20,7 @@ def ignore_log_hit(session: Session, payload: WhitelistIgnoreCreate) -> Whitelis
     whitelist = Whitelist(
         namespace=payload.namespace,
         label_selector=payload.label_selector,
-        pod_name_pattern=payload.pod_name_pattern,
+        pod_name_pattern=None,
         container_name=payload.container_name,
         keyword=payload.keyword,
         enabled=True,
@@ -80,15 +78,14 @@ def find_matching_whitelist(
     session: Session,
     namespace: str,
     label_selector: str | None,
-    pod_name: str,
     container_name: str | None,
     keyword: str,
+    matched_text: str,
 ) -> Whitelist | None:
     rules = (
         session.query(Whitelist)
         .filter(
             Whitelist.namespace == namespace,
-            Whitelist.keyword == keyword,
             Whitelist.enabled.is_(True),
         )
         .order_by(Whitelist.id.desc())
@@ -97,9 +94,21 @@ def find_matching_whitelist(
     for rule in rules:
         if rule.label_selector and rule.label_selector != label_selector:
             continue
-        if rule.pod_name_pattern and not fnmatchcase(pod_name, rule.pod_name_pattern):
-            continue
         if rule.container_name and rule.container_name != container_name:
+            continue
+        if not _whitelist_phrase_covers_hit(rule.keyword, keyword, matched_text):
             continue
         return rule
     return None
+
+
+def _whitelist_phrase_covers_hit(whitelist_keyword: str, hit_keyword: str, matched_text: str) -> bool:
+    normalized_whitelist = whitelist_keyword.strip().lower()
+    normalized_keyword = hit_keyword.strip().lower()
+    normalized_text = matched_text.strip().lower()
+    if not normalized_whitelist or not normalized_keyword:
+        return False
+    return (
+        normalized_whitelist == normalized_keyword
+        or normalized_whitelist in normalized_text
+    )
