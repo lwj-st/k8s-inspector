@@ -10,7 +10,7 @@ import { isHealthyPod } from "../features/inspections/podHealth";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 import { useRunPodInspection } from "../features/inspections/useRunPodInspection";
 import { useSavedInspectionTargets } from "../features/inspections/useSavedInspectionTargets";
-import { normalizeTerminalLogText } from "../features/logs/logText";
+import { findLogKeywordMatchRanges, normalizeTerminalLogText } from "../features/logs/logText";
 
 type PodScopeMode = "all" | "label" | "single";
 type PodModalType = "save" | "import" | "export" | null;
@@ -38,30 +38,26 @@ function normalizeLogText(value: string) {
 
 function renderHighlightedLog(value: string, keyword: string) {
   const text = normalizeLogText(value);
-  const normalizedKeyword = keyword.trim();
-  if (!normalizedKeyword) {
+  const ranges = findLogKeywordMatchRanges(text, keyword);
+  if (ranges.length === 0) {
     return text;
   }
 
-  const lowerText = text.toLowerCase();
-  const lowerKeyword = normalizedKeyword.toLowerCase();
   const parts: ReactNode[] = [];
   let cursor = 0;
-  let index = lowerText.indexOf(lowerKeyword);
 
-  while (index !== -1) {
-    if (index > cursor) {
-      parts.push(text.slice(cursor, index));
+  ranges.forEach(({ start, end }) => {
+    if (start > cursor) {
+      parts.push(text.slice(cursor, start));
     }
-    const match = text.slice(index, index + normalizedKeyword.length);
+    const match = text.slice(start, end);
     parts.push(
-      <mark key={`${index}-${match}`} className="log-keyword-highlight">
+      <mark key={`${start}-${match}`} className="log-keyword-highlight">
         {match}
       </mark>,
     );
-    cursor = index + normalizedKeyword.length;
-    index = lowerText.indexOf(lowerKeyword, cursor);
-  }
+    cursor = end;
+  });
 
   if (cursor < text.length) {
     parts.push(text.slice(cursor));
