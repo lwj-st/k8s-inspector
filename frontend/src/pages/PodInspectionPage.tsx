@@ -132,8 +132,10 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     sortedRangePods.find((pod) => pod.name === selectedRangePodName) ??
     sortedRangePods[0] ??
     null;
+  const getActiveLogHits = (pod: InspectedPod) =>
+    pod.log_hits.filter((hit) => !hit.whitelisted && !ignoredLogKeys.includes(`${pod.name}:${hit.keyword}:${hit.matched_text}`));
   const currentPod = scopeMode === "single" ? podInspection.data?.pod ?? null : selectedRangePod;
-  const currentLogHits = currentPod?.log_hits ?? [];
+  const currentLogHits = currentPod ? getActiveLogHits(currentPod) : [];
   const currentScopeText =
     !namespace.trim()
       ? "未选择名称空间"
@@ -147,8 +149,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     [targets],
   );
   const defaultInspectionPointName = namespace.trim() && labelSelector.trim() ? `${namespace.trim()} / ${labelSelector.trim()}` : "";
-  const getActiveLogHits = (pod: InspectedPod) =>
-    pod.log_hits.filter((hit) => !hit.whitelisted && !ignoredLogKeys.includes(`${pod.name}:${hit.keyword}:${hit.matched_text}`));
   const getPodResultStatus = (pod: InspectedPod) => (!isHealthyPod(pod) || getActiveLogHits(pod).length > 0 ? "error" : "healthy");
   const getPodResultSummary = (pod: InspectedPod) => {
     const activeHits = getActiveLogHits(pod);
@@ -653,7 +653,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               <div className="panel">
                 <div className="section-header">
                   <h3>证据详情</h3>
-                  <span className="section-tip">白名单忽略入口保留在日志命中卡片中</span>
                 </div>
                 <article className="card">
                   <strong>事件</strong>
@@ -669,19 +668,18 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     <div className="log-hit-list">
                       {currentLogHits.map((hit) => {
                         const hitKey = `${currentPod.name}:${hit.keyword}:${hit.matched_text}`;
-                        const ignored = hit.whitelisted || ignoredLogKeys.includes(hitKey);
                         const ignoring = ignoringLogKeys.includes(hitKey);
                         return (
-                          <article key={hitKey} className={`log-hit-card${ignored ? " log-hit-card-muted" : ""}`}>
+                          <article key={hitKey} className="log-hit-card">
                             <div className="card-title">
                               <strong>{hit.keyword}</strong>
-                              <StatusBadge status={ignored ? "disabled" : hit.severity} />
+                              <StatusBadge status={hit.severity} />
                             </div>
                             <span className="inline-note">原始日志</span>
                             <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                             <div className="log-hit-actions">
-                              <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignored || ignoring}>
-                                {hit.whitelisted ? "白名单已生效" : ignored ? "已忽略" : ignoring ? "处理中..." : "忽略此报错"}
+                              <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignoring}>
+                                {ignoring ? "处理中..." : "忽略此报错"}
                               </button>
                             </div>
                           </article>
@@ -763,19 +761,18 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                       <div className="log-hit-list">
                         {currentLogHits.map((hit) => {
                           const hitKey = `${currentPod.name}:${hit.keyword}:${hit.matched_text}`;
-                          const ignored = hit.whitelisted || ignoredLogKeys.includes(hitKey);
                           const ignoring = ignoringLogKeys.includes(hitKey);
                           return (
-                            <article key={hitKey} className={`log-hit-card${ignored ? " log-hit-card-muted" : ""}`}>
+                            <article key={hitKey} className="log-hit-card">
                               <div className="card-title">
                                 <strong>{hit.keyword}</strong>
-                                <StatusBadge status={ignored ? "disabled" : hit.severity} />
+                                <StatusBadge status={hit.severity} />
                               </div>
                               <span className="inline-note">原始日志</span>
                               <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                               <div className="log-hit-actions">
-                                <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignored || ignoring}>
-                                  {hit.whitelisted ? "白名单已生效" : ignored ? "已忽略" : ignoring ? "处理中..." : "忽略此报错"}
+                                <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignoring}>
+                                  {ignoring ? "处理中..." : "忽略此报错"}
                                 </button>
                               </div>
                             </article>

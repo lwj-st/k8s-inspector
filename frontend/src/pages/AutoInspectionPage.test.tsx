@@ -1127,7 +1127,8 @@ describe("AutoInspectionPage", () => {
     fireEvent.click(within(confirmPanel).getByRole("button", { name: "确认忽略" }));
 
     expect(await within(drawer).findByText("已加入白名单，后续相同范围的该命中会自动忽略")).toBeInTheDocument();
-    expect(within(drawer).getByRole("button", { name: "已忽略" })).toBeDisabled();
+    expect(within(drawer).queryByText("connection refused")).not.toBeInTheDocument();
+    expect(within(drawer).queryByRole("button", { name: "已忽略" })).not.toBeInTheDocument();
   });
 
   it("shows ignored state for whitelisted log hit", async () => {
@@ -1179,7 +1180,8 @@ describe("AutoInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
     const drawer = await screen.findByRole("complementary", { name: "prod-core 巡检证据" });
-    expect(within(drawer).getByRole("button", { name: "已忽略" })).toBeDisabled();
+    expect(within(drawer).queryByText("connection refused")).not.toBeInTheDocument();
+    expect(within(drawer).queryByRole("button", { name: "已忽略" })).not.toBeInTheDocument();
   });
 
   it("keeps drawer open and shows readable error when ignore request fails", async () => {

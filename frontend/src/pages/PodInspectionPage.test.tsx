@@ -175,6 +175,17 @@ describe("PodInspectionPage", () => {
                       whitelisted: false,
                       whitelist_rule_id: null,
                     },
+                    {
+                      keyword: "ERROR",
+                      category: "generic",
+                      severity: "error",
+                      source: "current_log",
+                      matched_text: "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}",
+                      context_text: "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}",
+                      container_name: "demo-api",
+                      whitelisted: true,
+                      whitelist_rule_id: 9,
+                    },
                   ],
                   resource_usage: { cpu: "220m", memory: "180Mi" },
                   related_resources: [],
@@ -462,6 +473,7 @@ describe("PodInspectionPage", () => {
     expect(await screen.findByText("原始日志")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s\npanic: dependency unavailable")).toBeInTheDocument();
     expect(screen.getAllByText("connection refused").some((element) => element.tagName.toLowerCase() === "mark")).toBe(true);
+    expect(screen.queryByText((_, element) => element?.textContent === "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}")).not.toBeInTheDocument();
   });
 
   it("saves current label selector as inspection point through modal", async () => {

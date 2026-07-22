@@ -123,6 +123,8 @@ function EvidencePodCard({
   ignoringLogKeys: string[];
   onRequestIgnore: (pod: InspectedPod, hit: KeywordHit) => void;
 }) {
+  const activeLogHits = pod.log_hits.filter((hit) => !hit.whitelisted && !ignoredLogKeys.includes(buildLogHitKey(pod.name, hit)));
+
   return (
     <article className={`evidence-pod-card${isHealthyPod(pod) ? " evidence-pod-card-healthy" : " evidence-pod-card-abnormal"}`}>
       <div className="card-title">
@@ -155,11 +157,10 @@ function EvidencePodCard({
         </div>
         <div>
           <span className="evidence-label">日志关键字命中</span>
-          {pod.log_hits.length > 0 ? (
+          {activeLogHits.length > 0 ? (
             <ul className="plain-list">
-              {pod.log_hits.map((hit) => {
+              {activeLogHits.map((hit) => {
                 const hitKey = buildLogHitKey(pod.name, hit);
-                const isIgnored = hit.whitelisted || ignoredLogKeys.includes(hitKey);
                 const isIgnoring = ignoringLogKeys.includes(hitKey);
 
                 return (
@@ -170,10 +171,10 @@ function EvidencePodCard({
                     <div className="button-row">
                       <button
                         type="button"
-                        disabled={isIgnored || isIgnoring}
+                        disabled={isIgnoring}
                         onClick={() => onRequestIgnore(pod, hit)}
                       >
-                        {isIgnored ? "已忽略" : isIgnoring ? "处理中..." : "忽略此命中"}
+                        {isIgnoring ? "处理中..." : "忽略此命中"}
                       </button>
                     </div>
                   </li>
