@@ -412,5 +412,9 @@ def _keyword_matches_text(text: str, keyword: str) -> bool:
     return normalized_keyword.lower() in text.lower()
 
 
+def keyword_matches_text(text: str, keyword: str) -> bool:
+    return _keyword_matches_text(text, keyword)
+
+
 def _requires_token_boundary(keyword: str) -> bool:
     return re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", keyword) is not None

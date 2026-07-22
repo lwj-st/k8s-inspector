@@ -146,6 +146,83 @@ def test_match_template_ignores_whitelisted_log_hits() -> None:
     assert len(result["unmatched_conditions"]) == 1
 
 
+def test_match_template_log_keyword_does_not_match_inside_config_field_name() -> None:
+    template = {
+        "target_groups": [{"ref": "envoy", "namespace": "demo", "label_selector": "app=envoy"}],
+        "match_conditions": [
+            {"target_ref": "envoy", "type": "log_keyword", "operator": "contains", "value": "timeout"}
+        ],
+        "joint_rule": {"operator": "AND"},
+    }
+    context = {
+        "targets": {
+            "envoy": {
+                "namespace": "demo",
+                "label_selector": "app=envoy",
+                "pods": [
+                    {
+                        "name": "envoy-0",
+                        "status": "Running",
+                        "log_hits": [
+                            {
+                                "keyword": "ERROR",
+                                "matched_text": "envoy.tcp_proxy.per_connection_idle_timeout_ms: 300000",
+                                "whitelisted": False,
+                            }
+                        ],
+                        "events": [],
+                    }
+                ],
+                "related_objects": {"services": [], "ingresses": [], "daemonsets": [], "tls_secrets": []},
+            }
+        }
+    }
+
+    result = match_template(template, context)
+
+    assert result["matched"] is False
+    assert result["matched_conditions"] == []
+    assert len(result["unmatched_conditions"]) == 1
+
+
+def test_match_template_log_keyword_matches_standalone_log_word() -> None:
+    template = {
+        "target_groups": [{"ref": "envoy", "namespace": "demo", "label_selector": "app=envoy"}],
+        "match_conditions": [
+            {"target_ref": "envoy", "type": "log_keyword", "operator": "contains", "value": "timeout"}
+        ],
+        "joint_rule": {"operator": "AND"},
+    }
+    context = {
+        "targets": {
+            "envoy": {
+                "namespace": "demo",
+                "label_selector": "app=envoy",
+                "pods": [
+                    {
+                        "name": "envoy-0",
+                        "status": "Running",
+                        "log_hits": [
+                            {
+                                "keyword": "ERROR",
+                                "matched_text": "upstream request timeout after 30s",
+                                "whitelisted": False,
+                            }
+                        ],
+                        "events": [],
+                    }
+                ],
+                "related_objects": {"services": [], "ingresses": [], "daemonsets": [], "tls_secrets": []},
+            }
+        }
+    }
+
+    result = match_template(template, context)
+
+    assert result["matched"] is True
+    assert len(result["matched_conditions"]) == 1
+
+
 def test_match_template_supports_equals_and_lte_operators() -> None:
     template = {
         "target_groups": [{"ref": "api", "namespace": "demo", "label_selector": "app=demo-api"}],

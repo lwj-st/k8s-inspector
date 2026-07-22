@@ -3,6 +3,8 @@ from __future__ import annotations
 from fnmatch import fnmatch
 from typing import Any
 
+from app.services.keyword_service import keyword_matches_text
+
 
 def _operator(condition: dict[str, Any]) -> str:
     return str(condition.get("operator") or "equals")
@@ -146,6 +148,16 @@ def _matches_scalar(operator: str, actual: Any, expected: Any) -> bool:
     return False
 
 
+def _matches_log_keyword_value(operator: str, actual: Any, expected: Any) -> bool:
+    if operator != "contains":
+        return _matches_scalar(operator, actual, expected)
+    if actual is None:
+        return False
+    actual_text = str(actual)
+    expected_values = [str(item) for item in _as_list(expected) if item is not None]
+    return any(keyword_matches_text(actual_text, item) for item in expected_values)
+
+
 def _match_pod_status(condition: dict[str, Any], target: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
     operator = _operator(condition)
     expected = _expected_value(condition)
@@ -167,8 +179,8 @@ def _match_log_keyword(condition: dict[str, Any], target: dict[str, Any]) -> tup
         for hit in pod.get("log_hits", []):
             if hit.get("whitelisted"):
                 continue
-            keyword_matched = _matches_scalar(operator, hit.get("keyword"), expected)
-            text_matched = operator == "contains" and _matches_scalar(operator, hit.get("matched_text"), expected)
+            keyword_matched = _matches_log_keyword_value(operator, hit.get("keyword"), expected)
+            text_matched = operator == "contains" and _matches_log_keyword_value(operator, hit.get("matched_text"), expected)
             if keyword_matched or text_matched:
                 evidence.append(
                     {
