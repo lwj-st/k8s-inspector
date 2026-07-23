@@ -16,6 +16,7 @@ import { DiagnosisResultPanel } from "../features/diagnosis/DiagnosisResultPanel
 import { useRunDiagnosis } from "../features/diagnosis/useRunDiagnosis";
 import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
 import { isHealthyPod } from "../features/inspections/podHealth";
+import { labelSelectorOptionsForPod } from "../features/inspections/podLabels";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 import { normalizeTerminalLogText } from "../features/logs/logText";
 
@@ -62,6 +63,15 @@ function buildLogHitKey(podName: string, hit: KeywordHit) {
 function logHitContext(hit: KeywordHit) {
   return normalizeTerminalLogText(hit.context_text?.trim() || hit.matched_text);
 }
+
+type IgnoreDraft = {
+  pod: InspectedPod;
+  hit: KeywordHit;
+  namespace: string;
+  labelSelector: string;
+  keyword: string;
+  note: string;
+};
 
 function NamespaceObjectSection({
   title,
@@ -205,9 +215,10 @@ function NamespaceEvidenceDrawer({
   ignoredLogKeys,
   ignoringLogKeys,
   ignoreMessage,
-  ignoreTarget,
+  ignoreDraft,
   onRequestIgnore,
   onCancelIgnore,
+  onChangeIgnoreDraft,
   onConfirmIgnore,
 }: {
   item: NamespaceBatchInspectionResult;
@@ -218,9 +229,10 @@ function NamespaceEvidenceDrawer({
   ignoredLogKeys: string[];
   ignoringLogKeys: string[];
   ignoreMessage: string | null;
-  ignoreTarget: { pod: InspectedPod; hit: KeywordHit } | null;
+  ignoreDraft: IgnoreDraft | null;
   onRequestIgnore: (pod: InspectedPod, hit: KeywordHit) => void;
   onCancelIgnore: () => void;
+  onChangeIgnoreDraft: (draft: IgnoreDraft) => void;
   onConfirmIgnore: () => void;
 }) {
   const namespace = item.detail_target.namespace ?? item.summary.name;
@@ -353,26 +365,80 @@ function NamespaceEvidenceDrawer({
                   <p>{ignoreMessage}</p>
                 </section>
               ) : null}
-              {ignoreTarget ? (
+              {ignoreDraft ? (
                 <section className="panel panel-muted evidence-nested-panel" aria-label="忽略关键字命中确认">
                   <div className="section-header">
                     <h4>确认忽略此命中</h4>
-                    <span className="section-tip">忽略后，当前范围的相同命中会加入白名单</span>
+                    <span className="section-tip">确认白名单字段和生效 Label</span>
                   </div>
-                  <KeyValueList
-                    items={[
-                      { label: "名称空间", value: namespace },
-                      { label: "Label Selector", value: data?.inspection_target.label_selector ?? item.detail_target.label_selector ?? "未设置" },
-                      { label: "Pod", value: ignoreTarget.pod.name },
-                      { label: "容器", value: ignoreTarget.hit.container_name ?? "未区分容器" },
-                      { label: "白名单片段", value: normalizeTerminalLogText(ignoreTarget.hit.matched_text) },
-                    ]}
-                  />
+                  <div className="entry-form-grid">
+                    <label className="modal-form-field">
+                      名称空间
+                      <input className="template-input" aria-label="白名单名称空间" value={ignoreDraft.namespace} readOnly />
+                    </label>
+                    <label className="modal-form-field">
+                      Label Selector
+                      <select
+                        className="template-input"
+                        aria-label="白名单 Label Selector 候选"
+                        value={ignoreDraft.labelSelector}
+                        onChange={(event) => onChangeIgnoreDraft({ ...ignoreDraft, labelSelector: event.target.value })}
+                      >
+                        {labelSelectorOptionsForPod(ignoreDraft.pod, ignoreDraft.labelSelector).length === 0 ? <option value="">未发现可用 Label</option> : null}
+                        {labelSelectorOptionsForPod(ignoreDraft.pod, ignoreDraft.labelSelector).map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="modal-form-field">
+                      手动 Label Selector
+                      <input
+                        className="template-input"
+                        aria-label="手动白名单 Label Selector"
+                        value={ignoreDraft.labelSelector}
+                        onChange={(event) => onChangeIgnoreDraft({ ...ignoreDraft, labelSelector: event.target.value })}
+                        placeholder="例如：app=worker"
+                      />
+                    </label>
+                    <label className="modal-form-field">
+                      容器名称
+                      <input className="template-input" aria-label="白名单容器名称" value={ignoreDraft.hit.container_name ?? ""} readOnly placeholder="未区分容器" />
+                    </label>
+                    <label className="modal-form-field">
+                      Pod
+                      <input className="template-input" aria-label="白名单来源 Pod" value={ignoreDraft.pod.name} readOnly />
+                    </label>
+                    <label className="modal-form-field" style={{ gridColumn: "1 / -1" }}>
+                      白名单字段
+                      <textarea
+                        className="template-input template-code-textarea"
+                        aria-label="白名单字段"
+                        value={ignoreDraft.keyword}
+                        onChange={(event) => onChangeIgnoreDraft({ ...ignoreDraft, keyword: event.target.value })}
+                        rows={4}
+                      />
+                    </label>
+                    <label className="modal-form-field" style={{ gridColumn: "1 / -1" }}>
+                      备注
+                      <input
+                        className="template-input"
+                        aria-label="白名单备注"
+                        value={ignoreDraft.note}
+                        onChange={(event) => onChangeIgnoreDraft({ ...ignoreDraft, note: event.target.value })}
+                        placeholder="例如：已确认是启动预热噪音"
+                      />
+                    </label>
+                  </div>
                   <div className="button-row">
-                    <button type="button" onClick={onConfirmIgnore}>
-                      确认忽略
+                    <button
+                      className="modal-primary-button"
+                      type="button"
+                      onClick={onConfirmIgnore}
+                      disabled={ignoringLogKeys.includes(buildLogHitKey(ignoreDraft.pod.name, ignoreDraft.hit)) || !ignoreDraft.namespace.trim() || !ignoreDraft.labelSelector.trim() || !ignoreDraft.keyword.trim()}
+                    >
+                      {ignoringLogKeys.includes(buildLogHitKey(ignoreDraft.pod.name, ignoreDraft.hit)) ? "保存中..." : "加入白名单"}
                     </button>
-                    <button type="button" onClick={onCancelIgnore}>
+                    <button className="modal-secondary-button" type="button" onClick={onCancelIgnore}>
                       取消
                     </button>
                   </div>
@@ -402,7 +468,7 @@ export function AutoInspectionPage() {
   const [ignoredLogKeys, setIgnoredLogKeys] = useState<string[]>([]);
   const [ignoringLogKeys, setIgnoringLogKeys] = useState<string[]>([]);
   const [ignoreMessage, setIgnoreMessage] = useState<string | null>(null);
-  const [ignoreTarget, setIgnoreTarget] = useState<{ pod: InspectedPod; hit: KeywordHit } | null>(null);
+  const [ignoreDraft, setIgnoreDraft] = useState<IgnoreDraft | null>(null);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const { data, loading, error, refresh } = useDiscoverNamespaces();
   const evidenceInspection = useRunNamespaceInspection();
@@ -468,49 +534,62 @@ export function AutoInspectionPage() {
     setIgnoredLogKeys([]);
     setIgnoringLogKeys([]);
     setIgnoreMessage(null);
-    setIgnoreTarget(null);
+    setIgnoreDraft(null);
     setEvidenceTarget(item);
     void evidenceInspection.submit(item.detail_target.namespace ?? item.summary.name, item.detail_target.label_selector ?? null);
   }
 
   function handleCloseEvidence() {
     setEvidenceTarget(null);
-    setIgnoreTarget(null);
+    setIgnoreDraft(null);
     setIgnoreMessage(null);
     setIgnoredLogKeys([]);
     setIgnoringLogKeys([]);
   }
 
   function handleRequestIgnore(pod: InspectedPod, hit: KeywordHit) {
+    if (!evidenceTarget) {
+      return;
+    }
+    const namespace = evidenceInspection.data?.namespace ?? evidenceTarget.detail_target.namespace ?? evidenceTarget.summary.name;
+    const currentSelector = evidenceInspection.data?.inspection_target.label_selector ?? evidenceTarget.detail_target.label_selector ?? null;
+    const labelOptions = labelSelectorOptionsForPod(pod, currentSelector);
     setIgnoreMessage(null);
-    setIgnoreTarget({ pod, hit });
+    setIgnoreDraft({
+      pod,
+      hit,
+      namespace,
+      labelSelector: labelOptions[0] ?? "",
+      keyword: normalizeTerminalLogText(hit.matched_text),
+      note: "自动巡检证据抽屉忽略",
+    });
   }
 
   function handleCancelIgnore() {
-    setIgnoreTarget(null);
+    setIgnoreDraft(null);
   }
 
   async function handleConfirmIgnore() {
-    if (!evidenceTarget || !ignoreTarget) {
+    if (!evidenceTarget || !ignoreDraft) {
       return;
     }
 
-    const hitKey = buildLogHitKey(ignoreTarget.pod.name, ignoreTarget.hit);
+    const hitKey = buildLogHitKey(ignoreDraft.pod.name, ignoreDraft.hit);
     setIgnoringLogKeys((current) => [...current, hitKey]);
     setIgnoreMessage(null);
 
     try {
       await ignoreWhitelistLogHit({
-        namespace: evidenceInspection.data?.namespace ?? evidenceTarget.detail_target.namespace ?? evidenceTarget.summary.name,
-        label_selector: evidenceInspection.data?.inspection_target.label_selector ?? evidenceTarget.detail_target.label_selector ?? null,
+        namespace: ignoreDraft.namespace.trim(),
+        label_selector: ignoreDraft.labelSelector.trim() || null,
         pod_name_pattern: null,
-        container_name: ignoreTarget.hit.container_name ?? null,
-        keyword: normalizeTerminalLogText(ignoreTarget.hit.matched_text),
-        note: "自动巡检证据抽屉忽略",
+        container_name: ignoreDraft.hit.container_name ?? null,
+        keyword: ignoreDraft.keyword.trim(),
+        note: ignoreDraft.note.trim() || null,
       });
       setIgnoredLogKeys((current) => [...current, hitKey]);
       setIgnoreMessage("已加入白名单，后续相同范围的该命中会自动忽略");
-      setIgnoreTarget(null);
+      setIgnoreDraft(null);
     } catch (reason) {
       setIgnoreMessage(reason instanceof Error ? `加入白名单失败：${reason.message}` : "加入白名单失败");
     } finally {
@@ -723,9 +802,10 @@ export function AutoInspectionPage() {
           ignoredLogKeys={ignoredLogKeys}
           ignoringLogKeys={ignoringLogKeys}
           ignoreMessage={ignoreMessage}
-          ignoreTarget={ignoreTarget}
+          ignoreDraft={ignoreDraft}
           onRequestIgnore={handleRequestIgnore}
           onCancelIgnore={handleCancelIgnore}
+          onChangeIgnoreDraft={(draft) => setIgnoreDraft(draft)}
           onConfirmIgnore={handleConfirmIgnore}
         />
       ) : null}

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PodInspectionPage } from "./PodInspectionPage";
@@ -226,6 +226,7 @@ describe("PodInspectionPage", () => {
               executed_at: "2026-07-19T10:00:00Z",
               pod: {
                 name: payload.pod_name,
+                labels: { app: "demo-api" },
                 status: "CrashLoopBackOff",
                 restarts: 6,
                 containers: [
@@ -265,7 +266,7 @@ describe("PodInspectionPage", () => {
       if (url.endsWith("/whitelists/ignore") && init?.method === "POST") {
         expect(JSON.parse(String(init.body))).toMatchObject({
           namespace: "demo",
-          label_selector: null,
+          label_selector: "app=demo-api",
           pod_name_pattern: null,
           container_name: "demo-api",
           keyword: "level=error msg=database connection refused",
@@ -510,6 +511,12 @@ describe("PodInspectionPage", () => {
     fireEvent.change(await screen.findByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
     fireEvent.click(await screen.findByRole("button", { name: "忽略此报错" }));
+    const ignoreDialog = await screen.findByRole("dialog", { name: "忽略此报错" });
+    expect(within(ignoreDialog).getByLabelText("白名单名称空间")).toHaveValue("demo");
+    expect(within(ignoreDialog).getByLabelText("白名单 Label Selector 候选")).toHaveValue("app=demo-api");
+    expect(within(ignoreDialog).getByLabelText("白名单来源 Pod")).toHaveValue("demo-api-1");
+    expect(within(ignoreDialog).getByLabelText("白名单字段")).toHaveValue("level=error msg=database connection refused");
+    fireEvent.click(within(ignoreDialog).getByRole("button", { name: "加入白名单" }));
 
     await waitFor(() => {
       expect(screen.getByText("已加入白名单，后续 Pod 巡检会自动忽略该命中")).toBeInTheDocument();

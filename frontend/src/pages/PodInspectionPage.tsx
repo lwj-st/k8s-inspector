@@ -7,13 +7,22 @@ import { StatusBadge } from "../components/StatusBadge";
 import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
 import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
 import { isHealthyPod } from "../features/inspections/podHealth";
+import { labelSelectorOptionsForPod } from "../features/inspections/podLabels";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 import { useRunPodInspection } from "../features/inspections/useRunPodInspection";
 import { useSavedInspectionTargets } from "../features/inspections/useSavedInspectionTargets";
 import { findLogKeywordMatchRanges, normalizeTerminalLogText } from "../features/logs/logText";
 
 type PodScopeMode = "all" | "label" | "single";
-type PodModalType = "save" | "import" | "export" | null;
+type PodModalType = "save" | "import" | "export" | "ignore" | null;
+type IgnoreDraft = {
+  pod: InspectedPod;
+  hit: KeywordHit;
+  namespace: string;
+  labelSelector: string;
+  keyword: string;
+  note: string;
+};
 
 function sortPods(pods: InspectedPod[]) {
   return [...pods].sort((left, right) => {
@@ -100,6 +109,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [ignoredLogKeys, setIgnoredLogKeys] = useState<string[]>([]);
   const [ignoringLogKeys, setIgnoringLogKeys] = useState<string[]>([]);
   const [ignoreMessage, setIgnoreMessage] = useState<string | null>(null);
+  const [ignoreDraft, setIgnoreDraft] = useState<IgnoreDraft | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const { data: namespaceDiscovery, loading: namespaceLoading, error: namespaceError } = useDiscoverNamespaces();
@@ -240,29 +250,58 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     resetAfterInspection();
   }
 
-  async function handleIgnoreLogHit(hit: KeywordHit) {
+  function openIgnoreLogHit(hit: KeywordHit) {
     if (!currentPod) {
       return;
     }
 
-    const hitKey = `${currentPod.name}:${hit.keyword}:${hit.matched_text}`;
+    const currentNamespace = scopeMode === "single" ? podInspection.data?.namespace ?? namespace : namespaceInspection.data?.namespace ?? namespace;
+    const currentLabelSelector =
+      scopeMode === "label"
+        ? namespaceInspection.data?.inspection_target.label_selector ?? (labelSelector || null)
+        : scopeMode === "single"
+          ? podInspection.data?.inspection_target.label_selector ?? null
+          : namespaceInspection.data?.inspection_target.label_selector ?? null;
+    const options = labelSelectorOptionsForPod(currentPod, currentLabelSelector);
+    setIgnoreDraft({
+      pod: currentPod,
+      hit,
+      namespace: currentNamespace,
+      labelSelector: options[0] ?? "",
+      keyword: normalizeLogText(hit.matched_text),
+      note: scopeMode === "single" ? "从 Pod 巡检结果忽略" : "从 Pod 范围巡检结果忽略",
+    });
+    setIgnoreMessage(null);
+    setModalType("ignore");
+  }
+
+  function closeIgnoreModal() {
+    setIgnoreDraft(null);
+    setModalType(null);
+  }
+
+  async function handleConfirmIgnoreLogHit() {
+    if (!ignoreDraft) {
+      return;
+    }
+
+    const { pod, hit } = ignoreDraft;
+    const hitKey = `${pod.name}:${hit.keyword}:${hit.matched_text}`;
     setIgnoringLogKeys((current) => [...current, hitKey]);
     setIgnoreMessage(null);
 
     try {
       await ignoreWhitelistLogHit({
-        namespace: scopeMode === "single" ? podInspection.data?.namespace ?? namespace : namespaceInspection.data?.namespace ?? namespace,
-        label_selector:
-          scopeMode === "label"
-            ? namespaceInspection.data?.inspection_target.label_selector ?? (labelSelector || null)
-            : null,
+        namespace: ignoreDraft.namespace.trim(),
+        label_selector: ignoreDraft.labelSelector.trim() || null,
         pod_name_pattern: null,
         container_name: hit.container_name ?? null,
-        keyword: normalizeLogText(hit.matched_text),
-        note: scopeMode === "single" ? "从 Pod 巡检结果忽略" : "从 Pod 范围巡检结果忽略",
+        keyword: ignoreDraft.keyword.trim(),
+        note: ignoreDraft.note.trim() || null,
       });
       setIgnoredLogKeys((current) => [...current, hitKey]);
       setIgnoreMessage(scopeMode === "single" ? "已加入白名单，后续 Pod 巡检会自动忽略该命中" : "已加入白名单，后续范围巡检会自动忽略该命中");
+      closeIgnoreModal();
     } catch (reason) {
       setIgnoreMessage(reason instanceof Error ? `加入白名单失败：${reason.message}` : "加入白名单失败");
     } finally {
@@ -678,7 +717,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                             <span className="inline-note">原始日志</span>
                             <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                             <div className="log-hit-actions">
-                              <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignoring}>
+                              <button type="button" onClick={() => openIgnoreLogHit(hit)} disabled={ignoring}>
                                 {ignoring ? "处理中..." : "忽略此报错"}
                               </button>
                             </div>
@@ -771,7 +810,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                               <span className="inline-note">原始日志</span>
                               <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                               <div className="log-hit-actions">
-                                <button type="button" onClick={() => void handleIgnoreLogHit(hit)} disabled={ignoring}>
+                                <button type="button" onClick={() => openIgnoreLogHit(hit)} disabled={ignoring}>
                                   {ignoring ? "处理中..." : "忽略此报错"}
                                 </button>
                               </div>
@@ -793,26 +832,28 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       ) : null}
 
       {modalType ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setModalType(null)}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={modalType === "ignore" ? closeIgnoreModal : () => setModalType(null)}>
           <section
             className="modal-card modal-card-polished"
             role="dialog"
             aria-modal="true"
-            aria-label={modalType === "save" ? "保存巡检点" : modalType === "import" ? "导入巡检点" : "导出巡检点"}
+            aria-label={modalType === "save" ? "保存巡检点" : modalType === "import" ? "导入巡检点" : modalType === "export" ? "导出巡检点" : "忽略此报错"}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="section-header">
               <div>
-                <h3>{modalType === "save" ? (editingTargetId !== null ? "编辑巡检点" : "保存巡检点") : modalType === "import" ? "导入巡检点" : "导出巡检点"}</h3>
+                <h3>{modalType === "save" ? (editingTargetId !== null ? "编辑巡检点" : "保存巡检点") : modalType === "import" ? "导入巡检点" : modalType === "export" ? "导出巡检点" : "忽略此报错"}</h3>
                 <p className="inline-note">
                   {modalType === "save"
                     ? "把当前 Label Selector 筛选范围保存为巡检点。"
                     : modalType === "import"
                       ? "只导入 Label Selector 巡检点，其他类型会自动过滤。"
-                      : "导出后可复制到其他环境导入。"}
+                      : modalType === "export"
+                        ? "导出后可复制到其他环境导入。"
+                        : "确认白名单字段和生效 Label，后续相同范围的命中会自动忽略。"}
                 </p>
               </div>
-              <button type="button" onClick={() => setModalType(null)}>关闭</button>
+              <button type="button" onClick={modalType === "ignore" ? closeIgnoreModal : () => setModalType(null)}>关闭</button>
             </div>
 
             {modalType === "save" ? (
@@ -870,6 +911,80 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     复制
                   </button>
                   <button type="button" onClick={() => setModalType(null)}>关闭</button>
+                </div>
+              </>
+            ) : null}
+
+            {modalType === "ignore" && ignoreDraft ? (
+              <>
+                <div className="entry-form-grid">
+                  <label className="modal-form-field">
+                    名称空间
+                    <input className="template-input" aria-label="白名单名称空间" value={ignoreDraft.namespace} readOnly />
+                  </label>
+                  <label className="modal-form-field">
+                    Label Selector
+                    <select
+                      className="template-input"
+                      aria-label="白名单 Label Selector 候选"
+                      value={ignoreDraft.labelSelector}
+                      onChange={(event) => setIgnoreDraft((current) => current ? { ...current, labelSelector: event.target.value } : current)}
+                    >
+                      {labelSelectorOptionsForPod(ignoreDraft.pod, ignoreDraft.labelSelector).length === 0 ? <option value="">未发现可用 Label</option> : null}
+                      {labelSelectorOptionsForPod(ignoreDraft.pod, ignoreDraft.labelSelector).map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="modal-form-field">
+                    手动 Label Selector
+                    <input
+                      className="template-input"
+                      aria-label="手动白名单 Label Selector"
+                      value={ignoreDraft.labelSelector}
+                      onChange={(event) => setIgnoreDraft((current) => current ? { ...current, labelSelector: event.target.value } : current)}
+                      placeholder="例如：app=worker"
+                    />
+                  </label>
+                  <label className="modal-form-field">
+                    容器名称
+                    <input className="template-input" aria-label="白名单容器名称" value={ignoreDraft.hit.container_name ?? ""} readOnly placeholder="未区分容器" />
+                  </label>
+                  <label className="modal-form-field">
+                    Pod
+                    <input className="template-input" aria-label="白名单来源 Pod" value={ignoreDraft.pod.name} readOnly />
+                  </label>
+                  <label className="modal-form-field" style={{ gridColumn: "1 / -1" }}>
+                    白名单字段
+                    <textarea
+                      className="template-input template-code-textarea"
+                      aria-label="白名单字段"
+                      value={ignoreDraft.keyword}
+                      onChange={(event) => setIgnoreDraft((current) => current ? { ...current, keyword: event.target.value } : current)}
+                      rows={4}
+                    />
+                  </label>
+                  <label className="modal-form-field" style={{ gridColumn: "1 / -1" }}>
+                    备注
+                    <input
+                      className="template-input"
+                      aria-label="白名单备注"
+                      value={ignoreDraft.note}
+                      onChange={(event) => setIgnoreDraft((current) => current ? { ...current, note: event.target.value } : current)}
+                      placeholder="例如：已确认是启动预热噪音"
+                    />
+                  </label>
+                </div>
+                <div className="button-row modal-action-row">
+                  <button
+                    className="modal-primary-button"
+                    type="button"
+                    onClick={() => void handleConfirmIgnoreLogHit()}
+                    disabled={ignoringLogKeys.includes(`${ignoreDraft.pod.name}:${ignoreDraft.hit.keyword}:${ignoreDraft.hit.matched_text}`) || !ignoreDraft.namespace.trim() || !ignoreDraft.labelSelector.trim() || !ignoreDraft.keyword.trim()}
+                  >
+                    {ignoringLogKeys.includes(`${ignoreDraft.pod.name}:${ignoreDraft.hit.keyword}:${ignoreDraft.hit.matched_text}`) ? "保存中..." : "加入白名单"}
+                  </button>
+                  <button className="modal-secondary-button" type="button" onClick={closeIgnoreModal}>取消</button>
                 </div>
               </>
             ) : null}

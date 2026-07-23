@@ -140,7 +140,7 @@ export type NamespaceSummary = {
   pod_count: number;
   abnormal_pod_count: number;
   last_inspected_at?: string | null;
-  labels: Record<string, string>;
+  labels?: Record<string, string>;
   abnormal_categories: AbnormalCategory[];
 };
 
@@ -164,6 +164,7 @@ export type NamespaceLabelDiscoveryResponse = {
 
 export type InspectedPod = {
   name: string;
+  labels: Record<string, string>;
   status: string;
   node_name?: string | null;
   restarts: number;

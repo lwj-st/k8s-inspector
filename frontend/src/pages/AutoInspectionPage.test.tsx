@@ -1007,7 +1007,7 @@ describe("AutoInspectionPage", () => {
           daemonsets: [],
           pods: [
             {
-              name: "broken-api", status: "CrashLoopBackOff", node_name: "node-a", restarts: 4,
+              name: "broken-api", labels: { app: "api" }, status: "CrashLoopBackOff", node_name: "node-a", restarts: 4,
               containers: [{ name: "api", restart_count: 4, state: "waiting", reason: "CrashLoopBackOff" }],
               events: ["Back-off restarting failed container"], describe_summary: "健康检查失败",
               log_summary: null, previous_log_summary: null,
@@ -1076,7 +1076,7 @@ describe("AutoInspectionPage", () => {
           daemonsets: [],
           pods: [
             {
-              name: "broken-api", status: "CrashLoopBackOff", node_name: "node-a", restarts: 4,
+              name: "broken-api", labels: { app: "api" }, status: "CrashLoopBackOff", node_name: "node-a", restarts: 4,
               containers: [{ name: "api", restart_count: 4, state: "waiting", reason: "CrashLoopBackOff" }],
               events: [], describe_summary: "健康检查失败", log_summary: null, previous_log_summary: null,
               log_hits: [{ keyword: "ERROR", category: "dependency", severity: "warning", source: "current_log", matched_text: "level=error msg=database connection refused", container_name: "api", whitelisted: false }],
@@ -1118,13 +1118,13 @@ describe("AutoInspectionPage", () => {
     fireEvent.click(within(drawer).getByRole("button", { name: "忽略此命中" }));
 
     const confirmPanel = within(drawer).getByLabelText("忽略关键字命中确认");
-    expect(within(confirmPanel).getByText("detail-name")).toBeInTheDocument();
-    expect(within(confirmPanel).getByText("app=api")).toBeInTheDocument();
-    expect(within(confirmPanel).getByText("broken-api")).toBeInTheDocument();
-    expect(within(confirmPanel).getByText("api")).toBeInTheDocument();
-    expect(within(confirmPanel).getByText("level=error msg=database connection refused")).toBeInTheDocument();
+    expect(within(confirmPanel).getByLabelText("白名单名称空间")).toHaveValue("detail-name");
+    expect(within(confirmPanel).getByLabelText("白名单 Label Selector 候选")).toHaveValue("app=api");
+    expect(within(confirmPanel).getByLabelText("白名单来源 Pod")).toHaveValue("broken-api");
+    expect(within(confirmPanel).getByLabelText("白名单容器名称")).toHaveValue("api");
+    expect(within(confirmPanel).getByLabelText("白名单字段")).toHaveValue("level=error msg=database connection refused");
 
-    fireEvent.click(within(confirmPanel).getByRole("button", { name: "确认忽略" }));
+    fireEvent.click(within(confirmPanel).getByRole("button", { name: "加入白名单" }));
 
     expect(await within(drawer).findByText("已加入白名单，后续相同范围的该命中会自动忽略")).toBeInTheDocument();
     expect(within(drawer).queryByText("level=error msg=database connection refused")).not.toBeInTheDocument();
@@ -1237,12 +1237,13 @@ describe("AutoInspectionPage", () => {
 
     const drawer = await screen.findByRole("complementary", { name: "prod-core 巡检证据" });
     fireEvent.click(within(drawer).getByRole("button", { name: "忽略此命中" }));
-    fireEvent.click(within(drawer).getByRole("button", { name: "确认忽略" }));
+    fireEvent.change(within(drawer).getByLabelText("手动白名单 Label Selector"), { target: { value: "app=api" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "加入白名单" }));
 
     expect(await within(drawer).findByText("加入白名单失败：Request failed: 500")).toBeInTheDocument();
     const confirmPanel = within(drawer).getByLabelText("忽略关键字命中确认");
     expect(confirmPanel).toBeInTheDocument();
-    expect(within(confirmPanel).getByText("broken-api")).toBeInTheDocument();
+    expect(within(confirmPanel).getByLabelText("白名单来源 Pod")).toHaveValue("broken-api");
   });
 
   it("shows a readable error when namespace evidence fails", async () => {
