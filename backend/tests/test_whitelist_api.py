@@ -563,6 +563,47 @@ def test_whitelist_fragment_suppresses_error_log_level_in_same_context(client) -
     assert error_hit.matched_text == "[2026-07-23T10:57:08.905] [ERROR] nodeJS - checkFileExpire error:"
 
 
+def test_whitelist_fragment_keeps_warn_line_error_word_visible(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=frontend",
+            "keyword": "Error: connect ECONNREFUSED",
+            "container_name": "web",
+            "enabled": True,
+            "note": "known local dependency startup race",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        hits = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector=None,
+            pod_name="web-1",
+            container_name="web",
+            log_text=(
+                "==> /var/log/onlyoffice/documentserver/docservice/out.log <==\n"
+                "[2026-07-23T10:57:08.905] [WARN] nodeJS - sqlQuery error sqlCommand: SELECT * FROM task_result WHERE last_open_date <= :\n"
+                "Error: connect ECONNREFUSED 127.0.0.1:5432\n"
+                "    at TCPConnectWrap.afterConnect [as oncomplete] (net.js:1148:16)\n"
+                "[2026-07-23T10:57:08.905] [ERROR] nodeJS - checkFileExpire error:\n"
+                "Error: connect ECONNREFUSED 127.0.0.1:5432\n"
+                "    at TCPConnectWrap.afterConnect [as oncomplete] (net.js:1148:16)"
+            ),
+            pod_labels={"app": "frontend"},
+        )
+
+    visible_error_hits = [hit for hit in hits if hit.keyword == "ERROR" and not hit.whitelisted]
+    whitelisted_error_hits = [hit for hit in hits if hit.keyword == "ERROR" and hit.whitelisted]
+
+    assert [hit.matched_text for hit in visible_error_hits] == [
+        "[2026-07-23T10:57:08.905] [WARN] nodeJS - sqlQuery error sqlCommand: SELECT * FROM task_result WHERE last_open_date <= :"
+    ]
+    assert whitelisted_error_hits == []
+
+
 @pytest.mark.parametrize("match_index", [0, 6, 12])
 def test_keyword_hit_contains_up_to_five_lines_of_log_context(client, match_index: int) -> None:
     session = client.app.state.session_factory()

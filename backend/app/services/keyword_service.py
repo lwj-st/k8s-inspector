@@ -390,7 +390,11 @@ def _select_keyword_hit_context(
 ) -> tuple[str, list[str], list[str], str | None, Whitelist | None]:
     first_whitelisted: tuple[str, list[str], list[str], str | None, Whitelist] | None = None
     for matched_text, context_before, context_after, context_text in _extract_log_contexts(log_text, keyword):
-        whitelist_match_text = "\n".join([matched_text, *context_after])
+        whitelist_match_text = (
+            "\n".join([matched_text, *context_after])
+            if _is_error_level_log_line(matched_text)
+            else matched_text
+        )
         whitelist_rule = find_matching_whitelist(
             session=session,
             namespace=namespace,
@@ -472,3 +476,9 @@ def keyword_matches_text(text: str, keyword: str) -> bool:
 
 def _requires_token_boundary(keyword: str) -> bool:
     return re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", keyword) is not None
+
+
+def _is_error_level_log_line(line: str) -> bool:
+    return re.search(r"(?<![A-Za-z0-9_])\[error\](?![A-Za-z0-9_])", line, re.IGNORECASE) is not None or re.match(
+        r"\s*error(?:\s|:)", line, re.IGNORECASE
+    ) is not None
