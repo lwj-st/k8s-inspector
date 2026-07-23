@@ -637,6 +637,35 @@ def test_short_keyword_does_not_match_inside_config_field_name(client) -> None:
     assert [hit.keyword for hit in hits if hit.keyword == "timeout"] == []
 
 
+@pytest.mark.parametrize(
+    ("log_text", "keyword"),
+    [
+        ("x-envoy-is-timeout-retry: false", "timeout"),
+        ("grpc-timeout: 1S", "timeout"),
+        ("timeout-grpc: 1S", "timeout"),
+        ("grpctimeout: 1S", "timeout"),
+        ("grpc-error: unavailable", "ERROR"),
+        ("error-grpc: unavailable", "ERROR"),
+        ("grpcerror: unavailable", "ERROR"),
+    ],
+)
+def test_short_keyword_does_not_match_inside_compound_field_name(client, log_text: str, keyword: str) -> None:
+    session = client.app.state.session_factory()
+    try:
+        hits = match_log_text(
+            session,
+            "demo",
+            None,
+            "demo-api",
+            "envoy",
+            log_text,
+        )
+    finally:
+        session.close()
+
+    assert [hit.keyword for hit in hits if hit.keyword == keyword] == []
+
+
 def test_short_keyword_matches_standalone_log_word(client) -> None:
     session = client.app.state.session_factory()
     try:

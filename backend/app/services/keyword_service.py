@@ -466,7 +466,7 @@ def _keyword_matches_text(text: str, keyword: str) -> bool:
     if not normalized_keyword:
         return False
     if _requires_token_boundary(normalized_keyword):
-        return re.search(rf"(?<![A-Za-z0-9_]){re.escape(normalized_keyword)}(?![A-Za-z0-9_])", text, re.IGNORECASE) is not None
+        return re.search(rf"(?<![A-Za-z0-9_-]){re.escape(normalized_keyword)}(?![A-Za-z0-9_-])", text, re.IGNORECASE) is not None
     return normalized_keyword.lower() in text.lower()
 
 
