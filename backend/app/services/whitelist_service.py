@@ -81,6 +81,7 @@ def find_matching_whitelist(
     container_name: str | None,
     keyword: str,
     matched_text: str,
+    pod_labels: dict[str, str] | None = None,
 ) -> Whitelist | None:
     rules = (
         session.query(Whitelist)
@@ -92,7 +93,9 @@ def find_matching_whitelist(
         .all()
     )
     for rule in rules:
-        if rule.label_selector and rule.label_selector != label_selector:
+        selector_matched_by_request = rule.label_selector == label_selector
+        selector_matched_by_pod_labels = _labels_match_selector(pod_labels, rule.label_selector) if rule.label_selector else True
+        if rule.label_selector and not selector_matched_by_request and not selector_matched_by_pod_labels:
             continue
         if rule.container_name and rule.container_name != container_name:
             continue
@@ -129,3 +132,20 @@ def _normalize_log_fragment(value: str) -> str:
 
 def _compact_log_fragment(value: str) -> str:
     return "".join(value.split())
+
+
+def _labels_match_selector(labels: dict[str, str] | None, selector: str) -> bool:
+    if not labels:
+        return False
+
+    requirements = [item.strip() for item in selector.split(",") if item.strip()]
+    if not requirements:
+        return False
+
+    for requirement in requirements:
+        if "=" not in requirement:
+            return False
+        key, value = [part.strip() for part in requirement.split("=", 1)]
+        if not key or labels.get(key) != value:
+            return False
+    return True

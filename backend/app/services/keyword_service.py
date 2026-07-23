@@ -257,6 +257,7 @@ def match_log_text(
     pod_name: str,
     container_name: str | None,
     log_text: str | None,
+    pod_labels: dict[str, str] | None = None,
 ) -> list[KeywordHit]:
     if not log_text:
         return []
@@ -278,6 +279,7 @@ def match_log_text(
             session=session,
             namespace=namespace,
             label_selector=label_selector,
+            pod_labels=pod_labels,
             container_name=container_name,
             log_text=log_text,
             keyword=rule.keyword,
@@ -308,6 +310,7 @@ def match_explicit_log_keywords(
     container_name: str | None,
     log_text: str | None,
     keywords: list[str],
+    pod_labels: dict[str, str] | None = None,
 ) -> list[KeywordHit]:
     if not log_text:
         return []
@@ -327,6 +330,7 @@ def match_explicit_log_keywords(
             session=session,
             namespace=namespace,
             label_selector=label_selector,
+            pod_labels=pod_labels,
             container_name=container_name,
             log_text=log_text,
             keyword=normalized_keyword,
@@ -379,25 +383,29 @@ def _select_keyword_hit_context(
     session: Session,
     namespace: str,
     label_selector: str | None,
+    pod_labels: dict[str, str] | None,
     container_name: str | None,
     log_text: str,
     keyword: str,
 ) -> tuple[str, list[str], list[str], str | None, Whitelist | None]:
     first_whitelisted: tuple[str, list[str], list[str], str | None, Whitelist] | None = None
     for matched_text, context_before, context_after, context_text in _extract_log_contexts(log_text, keyword):
+        whitelist_match_text = "\n".join([matched_text, *context_after])
         whitelist_rule = find_matching_whitelist(
             session=session,
             namespace=namespace,
             label_selector=label_selector,
             container_name=container_name,
             keyword=keyword,
-            matched_text=matched_text,
+            matched_text=whitelist_match_text,
+            pod_labels=pod_labels,
         )
         if whitelist_rule is None:
             filtered_before = _filter_whitelisted_context_lines(
                 session=session,
                 namespace=namespace,
                 label_selector=label_selector,
+                pod_labels=pod_labels,
                 container_name=container_name,
                 keyword=keyword,
                 lines=context_before,
@@ -406,6 +414,7 @@ def _select_keyword_hit_context(
                 session=session,
                 namespace=namespace,
                 label_selector=label_selector,
+                pod_labels=pod_labels,
                 container_name=container_name,
                 keyword=keyword,
                 lines=context_after,
@@ -424,6 +433,7 @@ def _filter_whitelisted_context_lines(
     session: Session,
     namespace: str,
     label_selector: str | None,
+    pod_labels: dict[str, str] | None,
     container_name: str | None,
     keyword: str,
     lines: list[str],
@@ -440,6 +450,7 @@ def _filter_whitelisted_context_lines(
             container_name=container_name,
             keyword=keyword,
             matched_text=line,
+            pod_labels=pod_labels,
         )
         if whitelist_rule is None:
             visible_lines.append(line)

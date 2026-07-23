@@ -202,6 +202,7 @@ def _attach_log_hits(
     pod: dict,
 ) -> dict:
     hits = []
+    pod_labels = pod.get("labels") or {}
     container_logs = pod.get("container_log_summaries") or {}
     if container_logs:
         for container_name, log_text in container_logs.items():
@@ -213,6 +214,7 @@ def _attach_log_hits(
                     pod_name=pod["name"],
                     container_name=container_name,
                     log_text=log_text,
+                    pod_labels=pod_labels,
                 )
             )
     else:
@@ -225,6 +227,7 @@ def _attach_log_hits(
             pod_name=pod["name"],
             container_name=container_name,
             log_text=pod.get("log_summary"),
+            pod_labels=pod_labels,
         )
     pod["log_hits"] = [hit.model_dump() for hit in hits if not hit.whitelisted]
     return pod

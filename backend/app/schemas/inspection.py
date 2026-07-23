@@ -79,6 +79,7 @@ class RelatedResource(BaseModel):
 
 class InspectedPod(BaseModel):
     name: str
+    labels: dict[str, str] = Field(default_factory=dict)
     status: str
     node_name: str | None = None
     restarts: int

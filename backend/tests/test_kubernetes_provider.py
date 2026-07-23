@@ -173,6 +173,16 @@ def test_run_pod_inspection_reads_logs_for_every_container_even_when_pod_is_runn
     )
 
 
+def test_log_summary_decodes_stringified_bytes_repr() -> None:
+    provider = _make_provider()
+
+    assert provider._summarize_log_text('b"line1\\nError: connect ECONNREFUSED\\nline3"') == (
+        "line1\n"
+        "Error: connect ECONNREFUSED\n"
+        "line3"
+    )
+
+
 def _configure_direct_pod_inspection(provider: KubernetesInspectionProvider, pod_status: SimpleNamespace) -> None:
     provider.core.read_namespaced_pod = lambda name, namespace, _request_timeout: SimpleNamespace(
         metadata=SimpleNamespace(name=name, namespace=namespace, labels={}),

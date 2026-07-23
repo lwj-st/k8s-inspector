@@ -43,6 +43,7 @@ def build_evidence_bundle(namespace: str, pod: dict) -> dict:
 def build_demo_pod(pod_name: str = "demo-api-7c8f6f7c6b-fh2ns") -> dict:
     return {
         "name": pod_name,
+        "labels": {"app": "demo"},
         "status": "CrashLoopBackOff",
         "node_name": "node-a",
         "restarts": 6,

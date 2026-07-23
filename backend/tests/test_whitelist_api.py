@@ -474,6 +474,95 @@ def test_namespace_inspection_disabled_whitelist_restores_non_whitelisted_hit(cl
     assert second_response.status_code == 200
     assert second_hit["whitelisted"] is False
     assert second_hit["whitelist_rule_id"] is None
+
+
+def test_pod_inspection_whitelist_matches_pod_labels_without_request_selector(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "demo",
+            "label_selector": "app=demo",
+            "keyword": "connection refused",
+            "pod_name_pattern": "ignored-pod-name",
+            "container_name": "demo-api",
+            "enabled": True,
+            "note": "single pod inspection should resolve whitelist by pod labels",
+        },
+    )
+
+    response = client.post(
+        "/api/v1/inspections/pod/run",
+        json={"namespace": "demo", "pod_name": "demo-api-7c8f6f7c6b-fh2ns"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["pod"]["log_hits"] == []
+
+
+def test_whitelist_label_selector_matches_supplied_pod_labels(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=frontend",
+            "keyword": "Error: connect ECONNREFUSED",
+            "container_name": "web",
+            "enabled": True,
+            "note": "known local dependency startup race",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        hits = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector=None,
+            pod_name="web-1",
+            container_name="web",
+            log_text="Error: connect ECONNREFUSED 127.0.0.1:5432",
+            pod_labels={"app": "frontend"},
+        )
+
+    error_hit = next(hit for hit in hits if hit.keyword == "ERROR")
+
+    assert error_hit.whitelisted is True
+    assert error_hit.matched_text == "Error: connect ECONNREFUSED 127.0.0.1:5432"
+
+
+def test_whitelist_fragment_suppresses_error_log_level_in_same_context(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=frontend",
+            "keyword": "Error: connect ECONNREFUSED",
+            "container_name": "web",
+            "enabled": True,
+            "note": "known local dependency startup race",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        hits = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector=None,
+            pod_name="web-1",
+            container_name="web",
+            log_text=(
+                "[2026-07-23T10:57:08.905] [ERROR] nodeJS - checkFileExpire error:\n"
+                "Error: connect ECONNREFUSED 127.0.0.1:5432\n"
+                "    at TCPConnectWrap.afterConnect [as oncomplete] (net.js:1148:16)"
+            ),
+            pod_labels={"app": "frontend"},
+        )
+
+    error_hit = next(hit for hit in hits if hit.keyword == "ERROR")
+
+    assert error_hit.whitelisted is True
+    assert error_hit.matched_text == "[2026-07-23T10:57:08.905] [ERROR] nodeJS - checkFileExpire error:"
+
+
 @pytest.mark.parametrize("match_index", [0, 6, 12])
 def test_keyword_hit_contains_up_to_five_lines_of_log_context(client, match_index: int) -> None:
     session = client.app.state.session_factory()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from datetime import datetime, timezone
 
 from kubernetes import client, config
@@ -174,7 +175,7 @@ class KubernetesInspectionProvider:
             except ApiException:
                 continue
             if log_summary:
-                container_logs[container_name] = log_summary
+                container_logs[container_name] = self._coerce_log_text(log_summary)
         return container_logs
 
     def _combine_container_log_summaries(self, container_logs: dict[str, str]) -> str | None:
@@ -185,9 +186,21 @@ class KubernetesInspectionProvider:
             for container_name, log_summary in container_logs.items()
         )
 
-    def _summarize_log_text(self, log_text: str) -> str:
+    def _summarize_log_text(self, log_text: str | bytes) -> str:
         summary_lines = _setting_int(self.settings, "k8s_log_summary_lines", 5)
-        return "\n".join(log_text.splitlines()[:summary_lines])
+        return "\n".join(self._coerce_log_text(log_text).splitlines()[:summary_lines])
+
+    def _coerce_log_text(self, log_text: str | bytes) -> str:
+        if isinstance(log_text, bytes):
+            return log_text.decode("utf-8", errors="replace")
+        if isinstance(log_text, str) and log_text.strip().startswith(("b'", 'b"')):
+            try:
+                parsed = ast.literal_eval(log_text)
+            except (SyntaxError, ValueError):
+                return log_text
+            if isinstance(parsed, bytes):
+                return parsed.decode("utf-8", errors="replace")
+        return str(log_text)
 
     def _pod_previous_log_summary(self, pod: client.V1Pod) -> str | None:
         container_statuses = pod.status.container_statuses or []
@@ -265,6 +278,7 @@ class KubernetesInspectionProvider:
         )
         return {
             "name": pod.metadata.name,
+            "labels": pod.metadata.labels or {},
             "status": waiting_reason or pod.status.phase or "Unknown",
             "node_name": pod.spec.node_name,
             "restarts": restarts,
