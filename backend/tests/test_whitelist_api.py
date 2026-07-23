@@ -294,6 +294,37 @@ def test_whitelist_json_fragment_suppresses_error_key_hit(client) -> None:
     assert '"error":"invalid_client"' in error_hit.matched_text
 
 
+def test_whitelist_json_fragment_matches_escaped_log_text(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=oidc",
+            "keyword": '"error":"invalid_client"',
+            "container_name": "api",
+            "enabled": True,
+            "note": "known upstream auth failure",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        hits = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector="app=oidc",
+            pod_name="oidc-api-1",
+            container_name="api",
+            log_text=(
+                "Token refresh failed detail: {'error': 'Token refresh failed', "
+                "'upstream_body': '{\\\"error\\\":\\\"invalid_client\\\",\\\"error_description\\\":\\\"Client authentication failed\\\"}'}"
+            ),
+        )
+
+    error_hit = next(hit for hit in hits if hit.keyword == "ERROR")
+
+    assert error_hit.whitelisted is True
+
+
 def test_namespace_inspection_does_not_match_whitelist_when_container_name_differs(client) -> None:
     client.post(
         "/api/v1/whitelists",

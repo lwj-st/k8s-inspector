@@ -103,12 +103,29 @@ def find_matching_whitelist(
 
 
 def _whitelist_phrase_covers_hit(whitelist_keyword: str, hit_keyword: str, matched_text: str) -> bool:
-    normalized_whitelist = whitelist_keyword.strip().lower()
-    normalized_keyword = hit_keyword.strip().lower()
-    normalized_text = matched_text.strip().lower()
+    normalized_whitelist = _normalize_log_fragment(whitelist_keyword)
+    normalized_keyword = _normalize_log_fragment(hit_keyword)
+    normalized_text = _normalize_log_fragment(matched_text)
     if not normalized_whitelist or not normalized_keyword:
         return False
     return (
         normalized_whitelist == normalized_keyword
         or normalized_whitelist in normalized_text
+        or _compact_log_fragment(normalized_whitelist) in _compact_log_fragment(normalized_text)
     )
+
+
+def _normalize_log_fragment(value: str) -> str:
+    return (
+        value.strip()
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace('\\"', '"')
+        .replace("\\'", "'")
+        .lower()
+    )
+
+
+def _compact_log_fragment(value: str) -> str:
+    return "".join(value.split())
