@@ -1090,7 +1090,7 @@ describe("AutoInspectionPage", () => {
           namespace: "detail-name",
           label_selector: "app=api",
           pod_name_pattern: null,
-          container_name: "api",
+          container_name: null,
           keyword: "level=error msg=database connection refused",
           note: "自动巡检证据抽屉忽略",
         });
@@ -1121,8 +1121,9 @@ describe("AutoInspectionPage", () => {
     expect(within(confirmPanel).getByLabelText("白名单名称空间")).toHaveValue("detail-name");
     expect(within(confirmPanel).getByLabelText("白名单 Label Selector 候选")).toHaveValue("app=api");
     expect(within(confirmPanel).getByLabelText("白名单来源 Pod")).toHaveValue("broken-api");
-    expect(within(confirmPanel).getByLabelText("白名单容器名称")).toHaveValue("api");
-    expect(within(confirmPanel).getByLabelText("白名单字段")).toHaveValue("level=error msg=database connection refused");
+    expect(within(confirmPanel).queryByLabelText("白名单容器名称")).not.toBeInTheDocument();
+    expect(within(confirmPanel).getByLabelText("白名单字段")).toHaveValue("");
+    fireEvent.change(within(confirmPanel).getByLabelText("白名单字段"), { target: { value: "level=error msg=database connection refused" } });
 
     fireEvent.click(within(confirmPanel).getByRole("button", { name: "加入白名单" }));
 
@@ -1238,6 +1239,7 @@ describe("AutoInspectionPage", () => {
     const drawer = await screen.findByRole("complementary", { name: "prod-core 巡检证据" });
     fireEvent.click(within(drawer).getByRole("button", { name: "忽略此命中" }));
     fireEvent.change(within(drawer).getByLabelText("手动白名单 Label Selector"), { target: { value: "app=api" } });
+    fireEvent.change(within(drawer).getByLabelText("白名单字段"), { target: { value: "database connection refused" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "加入白名单" }));
 
     expect(await within(drawer).findByText("加入白名单失败：Request failed: 500")).toBeInTheDocument();

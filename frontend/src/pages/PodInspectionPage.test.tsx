@@ -268,7 +268,7 @@ describe("PodInspectionPage", () => {
           namespace: "demo",
           label_selector: "app=demo-api",
           pod_name_pattern: null,
-          container_name: "demo-api",
+          container_name: null,
           keyword: "level=error msg=database connection refused",
           note: "从 Pod 巡检结果忽略",
         });
@@ -515,7 +515,8 @@ describe("PodInspectionPage", () => {
     expect(within(ignoreDialog).getByLabelText("白名单名称空间")).toHaveValue("demo");
     expect(within(ignoreDialog).getByLabelText("白名单 Label Selector 候选")).toHaveValue("app=demo-api");
     expect(within(ignoreDialog).getByLabelText("白名单来源 Pod")).toHaveValue("demo-api-1");
-    expect(within(ignoreDialog).getByLabelText("白名单字段")).toHaveValue("level=error msg=database connection refused");
+    expect(within(ignoreDialog).getByLabelText("白名单字段")).toHaveValue("");
+    fireEvent.change(within(ignoreDialog).getByLabelText("白名单字段"), { target: { value: "level=error msg=database connection refused" } });
     fireEvent.click(within(ignoreDialog).getByRole("button", { name: "加入白名单" }));
 
     await waitFor(() => {

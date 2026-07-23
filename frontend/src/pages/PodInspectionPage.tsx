@@ -268,7 +268,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       hit,
       namespace: currentNamespace,
       labelSelector: options[0] ?? "",
-      keyword: normalizeLogText(hit.matched_text),
+      keyword: "",
       note: scopeMode === "single" ? "从 Pod 巡检结果忽略" : "从 Pod 范围巡检结果忽略",
     });
     setIgnoreMessage(null);
@@ -295,7 +295,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         namespace: ignoreDraft.namespace.trim(),
         label_selector: ignoreDraft.labelSelector.trim() || null,
         pod_name_pattern: null,
-        container_name: hit.container_name ?? null,
+        container_name: null,
         keyword: ignoreDraft.keyword.trim(),
         note: ignoreDraft.note.trim() || null,
       });
@@ -945,10 +945,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                       onChange={(event) => setIgnoreDraft((current) => current ? { ...current, labelSelector: event.target.value } : current)}
                       placeholder="例如：app=worker"
                     />
-                  </label>
-                  <label className="modal-form-field">
-                    容器名称
-                    <input className="template-input" aria-label="白名单容器名称" value={ignoreDraft.hit.container_name ?? ""} readOnly placeholder="未区分容器" />
                   </label>
                   <label className="modal-form-field">
                     Pod

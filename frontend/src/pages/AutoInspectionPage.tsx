@@ -401,10 +401,6 @@ function NamespaceEvidenceDrawer({
                       />
                     </label>
                     <label className="modal-form-field">
-                      容器名称
-                      <input className="template-input" aria-label="白名单容器名称" value={ignoreDraft.hit.container_name ?? ""} readOnly placeholder="未区分容器" />
-                    </label>
-                    <label className="modal-form-field">
                       Pod
                       <input className="template-input" aria-label="白名单来源 Pod" value={ignoreDraft.pod.name} readOnly />
                     </label>
@@ -560,7 +556,7 @@ export function AutoInspectionPage() {
       hit,
       namespace,
       labelSelector: labelOptions[0] ?? "",
-      keyword: normalizeTerminalLogText(hit.matched_text),
+      keyword: "",
       note: "自动巡检证据抽屉忽略",
     });
   }
@@ -583,7 +579,7 @@ export function AutoInspectionPage() {
         namespace: ignoreDraft.namespace.trim(),
         label_selector: ignoreDraft.labelSelector.trim() || null,
         pod_name_pattern: null,
-        container_name: ignoreDraft.hit.container_name ?? null,
+        container_name: null,
         keyword: ignoreDraft.keyword.trim(),
         note: ignoreDraft.note.trim() || null,
       });
