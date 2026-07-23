@@ -325,6 +325,41 @@ def test_whitelist_json_fragment_matches_escaped_log_text(client) -> None:
     assert error_hit.whitelisted is True
 
 
+def test_whitelisted_error_line_is_removed_from_other_hit_context(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=worker",
+            "keyword": "level=error msg=",
+            "container_name": "worker",
+            "enabled": True,
+            "note": "known noisy structured log prefix",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        hits = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector="app=worker",
+            pod_name="worker-1",
+            container_name="worker",
+            log_text=(
+                "level=error msg=known startup retry\n"
+                "still starting\n"
+                "[ERROR] payment callback failed"
+            ),
+        )
+
+    error_hit = next(hit for hit in hits if hit.keyword == "ERROR")
+
+    assert error_hit.whitelisted is False
+    assert error_hit.matched_text == "[ERROR] payment callback failed"
+    assert "level=error msg=" not in (error_hit.context_text or "")
+    assert error_hit.context_before == ["still starting"]
+
+
 def test_namespace_inspection_does_not_match_whitelist_when_container_name_differs(client) -> None:
     client.post(
         "/api/v1/whitelists",

@@ -242,11 +242,11 @@ describe("PodInspectionPage", () => {
                 previous_log_summary: "previous database connection refused",
                 log_hits: [
                   {
-                    keyword: "connection refused",
+                    keyword: "ERROR",
                     category: "database",
                     severity: "error",
                     source: "log_summary",
-                    matched_text: "database connection refused",
+                    matched_text: "level=error msg=database connection refused",
                     container_name: "demo-api",
                     whitelisted: false,
                     whitelist_rule_id: null,
@@ -263,6 +263,14 @@ describe("PodInspectionPage", () => {
       }
 
       if (url.endsWith("/whitelists/ignore") && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toMatchObject({
+          namespace: "demo",
+          label_selector: null,
+          pod_name_pattern: null,
+          container_name: "demo-api",
+          keyword: "level=error msg=database connection refused",
+          note: "从 Pod 巡检结果忽略",
+        });
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -271,7 +279,7 @@ describe("PodInspectionPage", () => {
               label_selector: null,
               pod_name_pattern: null,
               container_name: "demo-api",
-              keyword: "connection refused",
+              keyword: "level=error msg=database connection refused",
               enabled: true,
               note: "从 Pod 巡检结果忽略",
             }),
@@ -361,7 +369,7 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
 
     expect(await screen.findByText("单 Pod 结果")).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.textContent === "database connection refused")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "level=error msg=database connection refused")).toBeInTheDocument();
 
     const request = fetchMock.mock.calls.find(
       ([input, init]) => String(input).endsWith("/inspections/pod/run") && init?.method === "POST",

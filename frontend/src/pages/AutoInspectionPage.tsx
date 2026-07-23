@@ -365,7 +365,7 @@ function NamespaceEvidenceDrawer({
                       { label: "Label Selector", value: data?.inspection_target.label_selector ?? item.detail_target.label_selector ?? "未设置" },
                       { label: "Pod", value: ignoreTarget.pod.name },
                       { label: "容器", value: ignoreTarget.hit.container_name ?? "未区分容器" },
-                      { label: "关键字", value: ignoreTarget.hit.keyword },
+                      { label: "白名单片段", value: normalizeTerminalLogText(ignoreTarget.hit.matched_text) },
                     ]}
                   />
                   <div className="button-row">
@@ -505,7 +505,7 @@ export function AutoInspectionPage() {
         label_selector: evidenceInspection.data?.inspection_target.label_selector ?? evidenceTarget.detail_target.label_selector ?? null,
         pod_name_pattern: null,
         container_name: ignoreTarget.hit.container_name ?? null,
-        keyword: ignoreTarget.hit.keyword,
+        keyword: normalizeTerminalLogText(ignoreTarget.hit.matched_text),
         note: "自动巡检证据抽屉忽略",
       });
       setIgnoredLogKeys((current) => [...current, hitKey]);

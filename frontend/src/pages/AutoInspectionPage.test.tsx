@@ -1011,7 +1011,7 @@ describe("AutoInspectionPage", () => {
               containers: [{ name: "api", restart_count: 4, state: "waiting", reason: "CrashLoopBackOff" }],
               events: ["Back-off restarting failed container"], describe_summary: "健康检查失败",
               log_summary: null, previous_log_summary: null,
-              log_hits: [{ keyword: "connection refused", category: "dependency", severity: "warning", source: "current_log", matched_text: "database connection refused", container_name: "api", whitelisted: false }],
+              log_hits: [{ keyword: "ERROR", category: "dependency", severity: "warning", source: "current_log", matched_text: "level=error msg=database connection refused", container_name: "api", whitelisted: false }],
               resource_usage: {}, related_resources: [{ kind: "Service", name: "api", status: "healthy" }],
             },
             {
@@ -1037,9 +1037,9 @@ describe("AutoInspectionPage", () => {
     expect(within(drawer).getByText("事件")).toBeInTheDocument();
     expect(within(drawer).getByText("broken-api")).toBeInTheDocument();
     expect(within(drawer).getByText("Back-off restarting failed container")).toBeInTheDocument();
-    expect(within(drawer).getByText("connection refused")).toBeInTheDocument();
+    expect(within(drawer).getByText("ERROR")).toBeInTheDocument();
     expect(within(drawer).getByText("命中上下文（不是完整日志）")).toBeInTheDocument();
-    expect(within(drawer).getByText("database connection refused")).toBeInTheDocument();
+    expect(within(drawer).getByText((_, element) => element?.textContent === "level=error msg=database connection refused")).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "忽略此命中" })).toBeInTheDocument();
     expect(within(drawer).getByText("healthy-api").closest("details")).not.toHaveAttribute("open");
     expect(within(drawer).getByText("Service（全部正常 1）")).toBeInTheDocument();
@@ -1079,7 +1079,7 @@ describe("AutoInspectionPage", () => {
               name: "broken-api", status: "CrashLoopBackOff", node_name: "node-a", restarts: 4,
               containers: [{ name: "api", restart_count: 4, state: "waiting", reason: "CrashLoopBackOff" }],
               events: [], describe_summary: "健康检查失败", log_summary: null, previous_log_summary: null,
-              log_hits: [{ keyword: "connection refused", category: "dependency", severity: "warning", source: "current_log", matched_text: "database connection refused", container_name: "api", whitelisted: false }],
+              log_hits: [{ keyword: "ERROR", category: "dependency", severity: "warning", source: "current_log", matched_text: "level=error msg=database connection refused", container_name: "api", whitelisted: false }],
               resource_usage: {}, related_resources: [],
             },
           ],
@@ -1091,7 +1091,7 @@ describe("AutoInspectionPage", () => {
           label_selector: "app=api",
           pod_name_pattern: null,
           container_name: "api",
-          keyword: "connection refused",
+          keyword: "level=error msg=database connection refused",
           note: "自动巡检证据抽屉忽略",
         });
         return new Response(JSON.stringify({
@@ -1100,7 +1100,7 @@ describe("AutoInspectionPage", () => {
           label_selector: "app=api",
           pod_name_pattern: null,
           container_name: "api",
-          keyword: "connection refused",
+          keyword: "level=error msg=database connection refused",
           enabled: true,
         }), { status: 200 });
       }
@@ -1122,12 +1122,12 @@ describe("AutoInspectionPage", () => {
     expect(within(confirmPanel).getByText("app=api")).toBeInTheDocument();
     expect(within(confirmPanel).getByText("broken-api")).toBeInTheDocument();
     expect(within(confirmPanel).getByText("api")).toBeInTheDocument();
-    expect(within(confirmPanel).getByText("connection refused")).toBeInTheDocument();
+    expect(within(confirmPanel).getByText("level=error msg=database connection refused")).toBeInTheDocument();
 
     fireEvent.click(within(confirmPanel).getByRole("button", { name: "确认忽略" }));
 
     expect(await within(drawer).findByText("已加入白名单，后续相同范围的该命中会自动忽略")).toBeInTheDocument();
-    expect(within(drawer).queryByText("connection refused")).not.toBeInTheDocument();
+    expect(within(drawer).queryByText("level=error msg=database connection refused")).not.toBeInTheDocument();
     expect(within(drawer).queryByRole("button", { name: "已忽略" })).not.toBeInTheDocument();
   });
 

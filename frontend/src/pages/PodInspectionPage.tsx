@@ -258,7 +258,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             : null,
         pod_name_pattern: null,
         container_name: hit.container_name ?? null,
-        keyword: hit.keyword,
+        keyword: normalizeLogText(hit.matched_text),
         note: scopeMode === "single" ? "从 Pod 巡检结果忽略" : "从 Pod 范围巡检结果忽略",
       });
       setIgnoredLogKeys((current) => [...current, hitKey]);
