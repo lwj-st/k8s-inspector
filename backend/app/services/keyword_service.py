@@ -405,60 +405,13 @@ def _select_keyword_hit_context(
             pod_labels=pod_labels,
         )
         if whitelist_rule is None:
-            filtered_before = _filter_whitelisted_context_lines(
-                session=session,
-                namespace=namespace,
-                label_selector=label_selector,
-                pod_labels=pod_labels,
-                container_name=container_name,
-                keyword=keyword,
-                lines=context_before,
-            )
-            filtered_after = _filter_whitelisted_context_lines(
-                session=session,
-                namespace=namespace,
-                label_selector=label_selector,
-                pod_labels=pod_labels,
-                container_name=container_name,
-                keyword=keyword,
-                lines=context_after,
-            )
-            filtered_context_text = "\n".join([*filtered_before, matched_text, *filtered_after])
-            return matched_text, filtered_before, filtered_after, filtered_context_text, None
+            return matched_text, context_before, context_after, context_text, None
         if first_whitelisted is None:
             first_whitelisted = (matched_text, context_before, context_after, context_text, whitelist_rule)
 
     if first_whitelisted is not None:
         return first_whitelisted
     return log_text, [], [], None, None
-
-
-def _filter_whitelisted_context_lines(
-    session: Session,
-    namespace: str,
-    label_selector: str | None,
-    pod_labels: dict[str, str] | None,
-    container_name: str | None,
-    keyword: str,
-    lines: list[str],
-) -> list[str]:
-    visible_lines: list[str] = []
-    for line in lines:
-        if not _keyword_matches_text(line, keyword):
-            visible_lines.append(line)
-            continue
-        whitelist_rule = find_matching_whitelist(
-            session=session,
-            namespace=namespace,
-            label_selector=label_selector,
-            container_name=container_name,
-            keyword=keyword,
-            matched_text=line,
-            pod_labels=pod_labels,
-        )
-        if whitelist_rule is None:
-            visible_lines.append(line)
-    return visible_lines
 
 
 def _keyword_matches_text(text: str, keyword: str) -> bool:

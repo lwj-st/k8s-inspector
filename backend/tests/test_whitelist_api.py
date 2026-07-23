@@ -320,7 +320,7 @@ def test_whitelist_json_fragment_matches_escaped_log_text(client) -> None:
     assert error_hit.whitelisted is True
 
 
-def test_whitelisted_error_line_is_removed_from_other_hit_context(client) -> None:
+def test_whitelisted_error_line_is_kept_in_other_hit_context(client) -> None:
     client.post(
         "/api/v1/whitelists",
         json={
@@ -351,8 +351,12 @@ def test_whitelisted_error_line_is_removed_from_other_hit_context(client) -> Non
 
     assert error_hit.whitelisted is False
     assert error_hit.matched_text == "[ERROR] payment callback failed"
-    assert "level=error msg=" not in (error_hit.context_text or "")
-    assert error_hit.context_before == ["still starting"]
+    assert error_hit.context_before == ["level=error msg=known startup retry", "still starting"]
+    assert error_hit.context_text == (
+        "level=error msg=known startup retry\n"
+        "still starting\n"
+        "[ERROR] payment callback failed"
+    )
 
 
 def test_whitelist_level_error_msg_fragment_suppresses_error_hit(client) -> None:
