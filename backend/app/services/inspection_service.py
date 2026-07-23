@@ -226,7 +226,7 @@ def _attach_log_hits(
             container_name=container_name,
             log_text=pod.get("log_summary"),
         )
-    pod["log_hits"] = [hit.model_dump() for hit in hits]
+    pod["log_hits"] = [hit.model_dump() for hit in hits if not hit.whitelisted]
     return pod
 
 

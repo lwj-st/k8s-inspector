@@ -558,7 +558,7 @@ def test_run_namespace_batch_inspection_keeps_log_keyword_when_non_whitelisted_h
     assert result["health_status"] == "warning"
 
 
-def test_run_namespace_inspection_keeps_whitelisted_log_hits_in_detail_response(client) -> None:
+def test_run_namespace_inspection_hides_whitelisted_log_hits_in_detail_response(client) -> None:
     client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
         health_status="healthy",
         pods=[
@@ -588,9 +588,7 @@ def test_run_namespace_inspection_keeps_whitelisted_log_hits_in_detail_response(
 
     assert response.status_code == 200
     log_hits = response.json()["pods"][0]["log_hits"]
-    assert len(log_hits) == 1
-    assert log_hits[0]["whitelisted"] is True
-    assert log_hits[0]["keyword"] == "connection refused"
+    assert log_hits == []
 
 
 def test_run_namespace_inspection_matches_keywords_for_every_container(client) -> None:

@@ -165,7 +165,7 @@ def test_namespace_inspection_returns_keyword_hits(client) -> None:
     assert hit["whitelisted"] is False
 
 
-def test_namespace_inspection_marks_whitelisted_keyword_hits(client) -> None:
+def test_namespace_inspection_hides_whitelisted_keyword_hits(client) -> None:
     client.post(
         "/api/v1/whitelists",
         json={
@@ -186,12 +186,9 @@ def test_namespace_inspection_marks_whitelisted_keyword_hits(client) -> None:
 
     payload = response.json()
     pod = payload["pods"][0]
-    hit = pod["log_hits"][0]
 
     assert response.status_code == 200
-    assert hit["keyword"] == "connection refused"
-    assert hit["whitelisted"] is True
-    assert hit["whitelist_rule_id"] is not None
+    assert pod["log_hits"] == []
 
 
 def test_namespace_inspection_whitelist_ignores_pod_name_pattern(client) -> None:
@@ -213,10 +210,8 @@ def test_namespace_inspection_whitelist_ignores_pod_name_pattern(client) -> None
         json={"namespace": "demo", "label_selector": "app=demo"},
     )
 
-    hit = response.json()["pods"][0]["log_hits"][0]
-
     assert response.status_code == 200
-    assert hit["whitelisted"] is True
+    assert response.json()["pods"][0]["log_hits"] == []
 
 
 def test_whitelist_phrase_suppresses_only_matching_log_line(client) -> None:
@@ -360,6 +355,64 @@ def test_whitelisted_error_line_is_removed_from_other_hit_context(client) -> Non
     assert error_hit.context_before == ["still starting"]
 
 
+def test_whitelist_level_error_msg_fragment_suppresses_error_hit(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=worker",
+            "keyword": "level=error msg",
+            "container_name": "worker",
+            "enabled": True,
+            "note": "known structured log prefix",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        hits = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector="app=worker",
+            pod_name="worker-1",
+            container_name="worker",
+            log_text="level=error msg=known startup retry",
+        )
+
+    error_hit = next(hit for hit in hits if hit.keyword == "ERROR")
+
+    assert error_hit.whitelisted is True
+    assert error_hit.matched_text == "level=error msg=known startup retry"
+
+
+def test_whitelist_error_connect_fragment_suppresses_error_hit(client) -> None:
+    client.post(
+        "/api/v1/whitelists",
+        json={
+            "namespace": "platform",
+            "label_selector": "app=frontend",
+            "keyword": "Error: connect ECONNREFUSED",
+            "container_name": "web",
+            "enabled": True,
+            "note": "known local dependency startup race",
+        },
+    )
+
+    with client.app.state.session_factory() as session:
+        hits = match_log_text(
+            session=session,
+            namespace="platform",
+            label_selector="app=frontend",
+            pod_name="web-1",
+            container_name="web",
+            log_text="Error: connect ECONNREFUSED 127.0.0.1:8080",
+        )
+
+    error_hit = next(hit for hit in hits if hit.keyword == "ERROR")
+
+    assert error_hit.whitelisted is True
+    assert error_hit.matched_text == "Error: connect ECONNREFUSED 127.0.0.1:8080"
+
+
 def test_namespace_inspection_does_not_match_whitelist_when_container_name_differs(client) -> None:
     client.post(
         "/api/v1/whitelists",
@@ -406,8 +459,6 @@ def test_namespace_inspection_disabled_whitelist_restores_non_whitelisted_hit(cl
         "/api/v1/inspections/namespace/run",
         json={"namespace": "demo", "label_selector": "app=demo"},
     )
-    first_hit = first_response.json()["pods"][0]["log_hits"][0]
-
     disable_response = client.post(f"/api/v1/whitelists/{whitelist_id}/disable")
 
     second_response = client.post(
@@ -417,8 +468,7 @@ def test_namespace_inspection_disabled_whitelist_restores_non_whitelisted_hit(cl
     second_hit = second_response.json()["pods"][0]["log_hits"][0]
 
     assert first_response.status_code == 200
-    assert first_hit["whitelisted"] is True
-    assert first_hit["whitelist_rule_id"] == whitelist_id
+    assert first_response.json()["pods"][0]["log_hits"] == []
     assert disable_response.status_code == 200
     assert disable_response.json()["enabled"] is False
     assert second_response.status_code == 200

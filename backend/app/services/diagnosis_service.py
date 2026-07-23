@@ -94,7 +94,7 @@ def _attach_log_hits(
                 keywords=template_keywords or [],
             )
         )
-    pod_copy["log_hits"] = [hit.model_dump() for hit in hits]
+    pod_copy["log_hits"] = [hit.model_dump() for hit in hits if not hit.whitelisted]
     return pod_copy
 
 
