@@ -353,7 +353,7 @@ function TargetScopeEditor({ target, index, totalTargets, namespaceOptions, onUp
       <div className="template-details-body">
         <div className="section-header">
           <strong>目标范围</strong>
-          <button type="button" className="mini-button" disabled={totalTargets === 1} onClick={() => onRemove(index)}>
+          <button type="button" className="mini-button button-danger" disabled={totalTargets === 1} onClick={() => onRemove(index)}>
             删除对象组
           </button>
         </div>
@@ -747,10 +747,10 @@ export function TemplatesPage() {
           </div>
           <div className="button-row">
             <button type="button" onClick={startCreate}>新增模板</button>
-            <button type="button" className="mini-button" onClick={() => setModalType("import")}>
+            <button type="button" className="mini-button button-success" onClick={() => setModalType("import")}>
               导入模板
             </button>
-            <button type="button" className="mini-button" onClick={() => void handleOpenExport()}>
+            <button type="button" className="mini-button button-success" onClick={() => void handleOpenExport()}>
               导出模板
             </button>
           </div>
@@ -788,8 +788,8 @@ export function TemplatesPage() {
                       <div className="button-row">
                         <button type="button" className="mini-button" disabled={saving} onClick={() => setSelectedDetail(item)}>详情</button>
                         <button type="button" className="mini-button" disabled={saving} onClick={() => startEdit(item)}>编辑</button>
-                        <button type="button" className="mini-button" disabled={saving} onClick={() => void setEnabled(item.id, !item.enabled)}>{item.enabled ? "停用" : "启用"}</button>
-                        <button type="button" className="mini-button" disabled={saving} onClick={() => void remove(item.id)}>删除</button>
+                        <button type="button" className={`mini-button${item.enabled ? " button-danger" : ""}`} disabled={saving} onClick={() => void setEnabled(item.id, !item.enabled)}>{item.enabled ? "停用" : "启用"}</button>
+                        <button type="button" className="mini-button button-danger" disabled={saving} onClick={() => void remove(item.id)}>删除</button>
                       </div>
                     </td>
                   </tr>
@@ -909,7 +909,7 @@ export function TemplatesPage() {
                     <div className="template-details-body">
                       <div className="section-header">
                         <strong>条件配置</strong>
-                        <button type="button" disabled={conditions.length === 1} onClick={() => removeCondition(index)}>
+                        <button type="button" className="button-danger" disabled={conditions.length === 1} onClick={() => removeCondition(index)}>
                           删除条件
                         </button>
                       </div>

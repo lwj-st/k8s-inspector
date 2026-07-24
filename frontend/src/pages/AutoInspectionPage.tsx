@@ -625,31 +625,35 @@ export function AutoInspectionPage() {
             </div>
           </div>
           <div className="workbench-command-panel status-command-panel">
-            <label className="inline-search">
-              搜索名称空间
-              <input
-                aria-label="搜索名称空间"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="例如：prod、kube-system"
-              />
-            </label>
-            <label className="inline-search">
-              选择名称空间
-              <select
-                aria-label="选择名称空间"
-                value={selectedNamespace}
-                onChange={(event) => setSelectedNamespace(event.target.value)}
-                disabled={filteredNamespaces.length === 0}
-              >
-                <option value="">{filteredNamespaces.length === 0 ? "没有可选名称空间" : "请选择一个名称空间"}</option>
-                {filteredNamespaces.map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="namespace-control-grid">
+              <label className="inline-search namespace-field">
+                <span className="namespace-field-label">搜索名称空间</span>
+                <input
+                  className="namespace-control namespace-search-control"
+                  aria-label="搜索名称空间"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="例如：prod、kube-system"
+                />
+              </label>
+              <label className="inline-search namespace-field">
+                <span className="namespace-field-label">选择名称空间</span>
+                <select
+                  className="namespace-control namespace-select-control"
+                  aria-label="选择名称空间"
+                  value={selectedNamespace}
+                  onChange={(event) => setSelectedNamespace(event.target.value)}
+                  disabled={filteredNamespaces.length === 0}
+                >
+                  <option value="">{filteredNamespaces.length === 0 ? "没有可选名称空间" : "请选择一个名称空间"}</option>
+                  {filteredNamespaces.map((item) => (
+                    <option key={item.name} value={item.name}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="status-action-row">
               <button type="button" className="status-action-button status-action-button-primary" onClick={handleRunSelected} disabled={!hasSelectedNamespace || batchLoading}>
                 {batchLoading ? "巡检中..." : "巡检"}

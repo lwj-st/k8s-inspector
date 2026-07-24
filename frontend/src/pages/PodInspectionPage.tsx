@@ -602,10 +602,10 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           <button type="button" className="text-button mini-button" onClick={() => setSavedTargetsOpen((current) => !current)}>
             {savedTargetsOpen ? "收起巡检点" : "巡检点"}
           </button>
-          <button type="button" className="text-button mini-button" onClick={() => setModalType("import")}>
+          <button type="button" className="mini-button button-success" onClick={() => setModalType("import")}>
             导入
           </button>
-          <button type="button" className="text-button mini-button" onClick={() => void handleOpenExportModal()}>
+          <button type="button" className="mini-button button-success" onClick={() => void handleOpenExportModal()}>
             导出
           </button>
         </div>
@@ -646,7 +646,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                             <button type="button" className="mini-button" onClick={() => startEditingTarget(target)} disabled={targetSaving}>
                               编辑
                             </button>
-                            <button type="button" className="mini-button" onClick={() => void handleDeleteTarget(target)} disabled={targetSaving}>
+                            <button type="button" className="mini-button button-danger" onClick={() => void handleDeleteTarget(target)} disabled={targetSaving}>
                               删除
                             </button>
                           </div>

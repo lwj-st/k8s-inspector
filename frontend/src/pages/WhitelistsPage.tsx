@@ -287,7 +287,7 @@ export function WhitelistsPage() {
 
   return (
     <section className="page-section">
-      <section className="workbench-hero">
+      <section className="workbench-hero keyword-library-hero">
         <div className="workbench-copy">
           <div>
             <p className="eyebrow">配置说明</p>
@@ -331,8 +331,8 @@ export function WhitelistsPage() {
           {keywordMessage ? <p className="inline-note">{keywordMessage}</p> : null}
           <div className="secondary-action-row">
             <button type="button" className="mini-button" disabled={keywordSaving} onClick={openKeywordCreate}>新增关键字</button>
-            <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => setKeywordModalType("import")}>导入关键字</button>
-            <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => void handleExportKeywords()}>导出 JSON</button>
+            <button type="button" className="mini-button button-success" disabled={keywordSaving} onClick={() => setKeywordModalType("import")}>导入关键字</button>
+            <button type="button" className="mini-button button-success" disabled={keywordSaving} onClick={() => void handleExportKeywords()}>导出 JSON</button>
           </div>
           <div className="table-scroll-shell">
             <table className="compact-table" aria-label="关键字规则表">
@@ -359,10 +359,10 @@ export function WhitelistsPage() {
                     <td>
                       <div className="button-row">
                         <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => startEditKeyword(item)}>编辑</button>
-                        <button type="button" className="mini-button" disabled={keywordSaving} onClick={() => void setKeywordEnabled(item.id, !item.enabled)}>
+                        <button type="button" className={`mini-button${item.enabled ? " button-danger" : ""}`} disabled={keywordSaving} onClick={() => void setKeywordEnabled(item.id, !item.enabled)}>
                           {item.enabled ? "停用" : "启用"}
                         </button>
-                        <button type="button" className="mini-button" disabled={keywordSaving || item.builtin} onClick={() => void removeKeyword(item.id)}>删除</button>
+                        <button type="button" className="mini-button button-danger" disabled={keywordSaving || item.builtin} onClick={() => void removeKeyword(item.id)}>删除</button>
                       </div>
                     </td>
                   </tr>
@@ -384,8 +384,8 @@ export function WhitelistsPage() {
           {whitelistMessage ? <p className="inline-note">{whitelistMessage}</p> : null}
           <div className="secondary-action-row">
             <button type="button" className="mini-button" disabled={whitelistSaving} onClick={openWhitelistCreate}>新增白名单</button>
-            <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => setWhitelistModalType("import")}>导入白名单</button>
-            <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => void handleExportWhitelists()}>导出 JSON</button>
+            <button type="button" className="mini-button button-success" disabled={whitelistSaving} onClick={() => setWhitelistModalType("import")}>导入白名单</button>
+            <button type="button" className="mini-button button-success" disabled={whitelistSaving} onClick={() => void handleExportWhitelists()}>导出 JSON</button>
           </div>
           <div className="table-scroll-shell">
             <table className="compact-table" aria-label="白名单规则表">
@@ -408,10 +408,10 @@ export function WhitelistsPage() {
                     <td>
                       <div className="button-row">
                         <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => startEditWhitelist(item)}>编辑</button>
-                        <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => void setWhitelistEnabled(item.id, !item.enabled)}>
+                        <button type="button" className={`mini-button${item.enabled ? " button-danger" : ""}`} disabled={whitelistSaving} onClick={() => void setWhitelistEnabled(item.id, !item.enabled)}>
                           {item.enabled ? "停用" : "启用"}
                         </button>
-                        <button type="button" className="mini-button" disabled={whitelistSaving} onClick={() => void removeWhitelist(item.id)}>删除</button>
+                        <button type="button" className="mini-button button-danger" disabled={whitelistSaving} onClick={() => void removeWhitelist(item.id)}>删除</button>
                       </div>
                     </td>
                   </tr>

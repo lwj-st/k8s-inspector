@@ -326,9 +326,9 @@ a {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
-  background: linear-gradient(135deg, #f0a323, #ffcd74);
-  color: var(--navy);
-  box-shadow: 0 8px 18px rgba(240, 163, 35, 0.16);
+  background: linear-gradient(135deg, #0f766e, #24a08f);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.16);
 }
 
 .panel textarea {
@@ -423,6 +423,62 @@ a {
 
 .status-command-panel select {
   max-width: 520px;
+}
+
+.namespace-control-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  gap: 14px;
+}
+
+.namespace-field {
+  gap: 7px;
+  min-width: 0;
+}
+
+.namespace-field-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.namespace-control {
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 42px 11px 14px !important;
+  border: 1px solid rgba(157, 182, 202, 0.52) !important;
+  border-radius: 14px !important;
+  background-color: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  box-shadow: 0 8px 20px rgba(13, 27, 42, 0.06), inset 0 1px 0 #fff;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.namespace-control:hover {
+  border-color: rgba(15, 118, 110, 0.46) !important;
+}
+
+.namespace-control:focus {
+  outline: none;
+  border-color: var(--teal) !important;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12), 0 8px 20px rgba(13, 27, 42, 0.06);
+}
+
+.namespace-search-control {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%230f766e' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 18px center;
+  background-size: 18px 18px;
+}
+
+.namespace-select-control {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--teal) 50%),
+    linear-gradient(135deg, var(--teal) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 20px, calc(100% - 15px) 20px;
+  background-repeat: no-repeat;
+  background-size: 5px 5px;
 }
 
 .status-action-row {
@@ -690,6 +746,73 @@ a {
   border-radius: 9px !important;
   font-size: 12px !important;
   box-shadow: none !important;
+}
+
+.button-success {
+  border: 1px solid transparent !important;
+  background: linear-gradient(135deg, #0f766e, #24a08f) !important;
+  color: #fff !important;
+}
+
+.button-danger {
+  border: 1px solid transparent !important;
+  background: linear-gradient(135deg, #b94b52, #d86962) !important;
+  color: #fff !important;
+}
+
+.button-danger:disabled {
+  background: #c9a5a8 !important;
+}
+
+.text-button {
+  border: none !important;
+  background: transparent !important;
+  color: var(--teal) !important;
+  box-shadow: none !important;
+}
+
+.template-step-chip {
+  border: 1px solid rgba(157, 182, 202, 0.28) !important;
+  background: rgba(255, 255, 255, 0.76) !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+}
+
+.template-step-chip-active {
+  border-color: rgba(15, 118, 110, 0.4) !important;
+  background: rgba(239, 252, 248, 0.96) !important;
+  color: var(--teal) !important;
+}
+
+.keyword-library-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.8fr);
+  align-items: center;
+  padding: 18px 22px;
+}
+
+.keyword-library-hero .workbench-copy {
+  gap: 12px;
+}
+
+.keyword-library-hero .hero-summary {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.keyword-library-hero .hero-metric-stack {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.keyword-library-hero .hero-metric {
+  min-height: 76px;
+  padding: 12px 14px;
+  border-radius: 14px;
+}
+
+.keyword-library-hero .hero-metric strong {
+  margin-top: 6px;
+  font-size: 28px;
 }
 
 .status-toggle-enabled {
@@ -1600,6 +1723,11 @@ a {
   .workbench-hero,
   .quick-action-grid,
   .workbench-command-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .namespace-control-grid,
+  .keyword-library-hero .hero-metric-stack {
     grid-template-columns: 1fr;
   }
 
