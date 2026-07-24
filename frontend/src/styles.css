@@ -1467,6 +1467,17 @@ a {
   background: rgba(255, 250, 239, 0.94);
 }
 
+.template-import-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 38, 38, 0.24);
+  border-radius: 14px;
+  background: rgba(254, 242, 242, 0.92);
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .template-inline-details {
   margin-top: 8px;
   padding: 10px 12px;

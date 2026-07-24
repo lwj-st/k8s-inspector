@@ -286,6 +286,94 @@ describe("TemplatesPage", () => {
     });
   });
 
+  it("fills new template form from a single cursor json payload", async () => {
+    const user = userEvent.setup();
+    render(<TemplatesPage />);
+
+    await user.click(await screen.findByRole("button", { name: "新增模板" }));
+    const editor = await screen.findByRole("dialog", { name: "模板录入器" });
+    await user.click(within(editor).getByRole("button", { name: "通过 JSON 导入" }));
+
+    const importDialog = await screen.findByRole("dialog", { name: "通过 JSON 导入模板" });
+    fireEvent.change(within(importDialog).getByLabelText("单个模板 JSON"), {
+      target: {
+        value: `\`\`\`json
+{
+  "name": "Redis 连接失败",
+  "scenario": "redis_connect_failed",
+  "targets": [
+    {
+      "target_ref": "worker",
+      "namespace": "demo",
+      "label_selector": "app=api",
+      "pod_name_pattern": null,
+      "resource_scope": ["pods"]
+    }
+  ],
+  "match_conditions": [
+    {
+      "target_ref": "worker",
+      "condition_type": "log_keyword",
+      "operator": "contains",
+      "expected_value": "Cannot connect to redis://default",
+      "join_operator": "AND",
+      "enabled": true
+    }
+  ],
+  "joint_rule": { "operator": "AND" },
+  "reason": "Worker 无法连接 Redis",
+  "suggestion": "检查 Redis Service 和网络",
+  "command": "kubectl logs -n demo -l app=api",
+  "risk_note": "只读排查命令",
+  "enabled": true
+}
+\`\`\``,
+      },
+    });
+    await user.click(within(importDialog).getByRole("button", { name: "填入当前模板" }));
+
+    expect(await screen.findByText("已从 JSON 填入模板，请检查后保存")).toBeInTheDocument();
+    expect(within(editor).getByText("Redis 连接失败")).toBeInTheDocument();
+    expect(within(editor).getByText(/demo \/ app=api/)).toBeInTheDocument();
+    await user.click(within(editor).getByRole("button", { name: "新增模板" }));
+
+    await waitFor(() => {
+      const request = fetchMock.mock.calls.find(
+        ([input, init]) => String(input).endsWith("/templates") && init?.method === "POST",
+      );
+      expect(request).toBeDefined();
+      expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+        name: "Redis 连接失败",
+        scenario: "redis_connect_failed",
+        targets: [
+          {
+            target_ref: "worker",
+            namespace: "demo",
+            label_selector: "app=api",
+            pod_name_pattern: null,
+            resource_scope: ["pods"],
+          },
+        ],
+        match_conditions: [
+          {
+            target_ref: "worker",
+            condition_type: "log_keyword",
+            operator: "contains",
+            expected_value: "Cannot connect to redis://default",
+            join_operator: "AND",
+            enabled: true,
+          },
+        ],
+        joint_rule: { operator: "AND" },
+        reason: "Worker 无法连接 Redis",
+        suggestion: "检查 Redis Service 和网络",
+        command: "kubectl logs -n demo -l app=api",
+        risk_note: "只读排查命令",
+        enabled: true,
+      });
+    });
+  });
+
   it("creates related object status condition with explicit object name", async () => {
     const user = userEvent.setup();
     render(<TemplatesPage />);

@@ -33,6 +33,18 @@ type ConditionDraft = {
 
 type StepKey = "basic" | "targets" | "conditions" | "advice" | "preview";
 type ModalType = "import" | "export" | "editor" | null;
+type TemplateJsonPayload = {
+  name?: unknown;
+  scenario?: unknown;
+  targets?: unknown;
+  match_conditions?: unknown;
+  joint_rule?: unknown;
+  reason?: unknown;
+  suggestion?: unknown;
+  command?: unknown;
+  risk_note?: unknown;
+  enabled?: unknown;
+};
 
 type StepDefinition = {
   key: StepKey;
@@ -82,6 +94,102 @@ const podStatusOptions = ["Running", "Succeeded", "Pending", "Failed", "Unknown"
 
 function formatJson(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function optionalText(value: unknown, fallback = "") {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  return String(value);
+}
+
+function extractJsonObjectText(input: string) {
+  const trimmed = input.trim();
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenceMatch?.[1]?.trim() ?? trimmed;
+  const firstBrace = candidate.indexOf("{");
+  const lastBrace = candidate.lastIndexOf("}");
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    throw new Error("没有找到单个模板 JSON 对象");
+  }
+  return candidate.slice(firstBrace, lastBrace + 1);
+}
+
+function parseTemplateJson(input: string): TemplateJsonPayload {
+  const parsed = JSON.parse(extractJsonObjectText(input)) as unknown;
+  if (Array.isArray(parsed)) {
+    throw new Error("新增模板里的 JSON 导入只支持单个模板对象，不支持数组");
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("JSON 内容必须是单个模板对象");
+  }
+  return parsed as TemplateJsonPayload;
+}
+
+function normalizeTargetDrafts(value: unknown): TargetDraft[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [createDefaultTarget()];
+  }
+
+  return value.map((item, index) => {
+    const target = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const resourceScope = Array.isArray(target.resource_scope)
+      ? target.resource_scope.map((scope) => String(scope)).filter(Boolean)
+      : ["pods"];
+    return {
+      target_ref: optionalText(target.target_ref, `group-${index + 1}`),
+      namespace: optionalText(target.namespace),
+      label_selector: optionalText(target.label_selector),
+      pod_name_pattern: optionalText(target.pod_name_pattern),
+      resource_scope: resourceScope.length > 0 ? resourceScope : ["pods"],
+    };
+  });
+}
+
+function normalizeConditionDrafts(value: unknown, fallbackTargetRef: string): ConditionDraft[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [createDefaultCondition(fallbackTargetRef)];
+  }
+
+  return value.map((item) => {
+    const condition = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const conditionType = String(condition.condition_type ?? condition.type ?? "log_keyword") as TemplateConditionType;
+    const normalizedType = Object.keys(conditionTypeLabels).includes(conditionType) ? conditionType : "log_keyword";
+    const operator = normalizeOperator(normalizedType, String(condition.operator ?? "contains") as TemplateConditionOperator);
+
+    if (normalizedType === "related_object_status") {
+      const expectedValue = condition.expected_value && typeof condition.expected_value === "object"
+        ? condition.expected_value as Record<string, unknown>
+        : {};
+      const statuses = Array.isArray(expectedValue.statuses)
+        ? expectedValue.statuses.map((status) => String(status)).filter(Boolean)
+        : [];
+      return {
+        target_ref: optionalText(condition.target_ref, fallbackTargetRef),
+        condition_type: normalizedType,
+        operator,
+        value_text: statuses.join(", "),
+        related_resource: optionalText(expectedValue.resource, "services"),
+        related_match_any: expectedValue.match_any !== false,
+        related_object_name: optionalText(expectedValue.object_name ?? expectedValue.object_name_pattern),
+        enabled: condition.enabled !== false,
+      };
+    }
+
+    const expectedValue = condition.expected_value ?? condition.value ?? "";
+    return {
+      target_ref: optionalText(condition.target_ref, fallbackTargetRef),
+      condition_type: normalizedType,
+      operator,
+      value_text: Array.isArray(expectedValue)
+        ? expectedValue.map((itemValue) => String(itemValue)).join(", ")
+        : optionalText(expectedValue),
+      related_resource: "services",
+      related_match_any: true,
+      related_object_name: "",
+      enabled: condition.enabled !== false,
+    };
+  });
 }
 
 function createDefaultTarget(): TargetDraft {
@@ -501,6 +609,9 @@ export function TemplatesPage() {
   const [enabled, setTemplateEnabled] = useState(true);
   const [importText, setImportText] = useState("");
   const [exportText, setExportText] = useState("");
+  const [formImportOpen, setFormImportOpen] = useState(false);
+  const [formImportText, setFormImportText] = useState("");
+  const [formImportError, setFormImportError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<FaultTemplate | null>(null);
 
@@ -531,6 +642,9 @@ export function TemplatesPage() {
     setCommand("");
     setRiskNote("");
     setTemplateEnabled(true);
+    setFormImportOpen(false);
+    setFormImportText("");
+    setFormImportError(null);
     setModalType(null);
   }
 
@@ -615,6 +729,9 @@ export function TemplatesPage() {
     setCommand("");
     setRiskNote("");
     setTemplateEnabled(true);
+    setFormImportOpen(false);
+    setFormImportText("");
+    setFormImportError(null);
     setMessage(null);
   }
 
@@ -632,7 +749,39 @@ export function TemplatesPage() {
     setCommand(template.command ?? "");
     setRiskNote(template.risk_note ?? "");
     setTemplateEnabled(template.enabled);
+    setFormImportOpen(false);
+    setFormImportText("");
+    setFormImportError(null);
     setMessage(`正在编辑模板：${template.name}`);
+  }
+
+  function handleFillFormFromJson() {
+    setFormImportError(null);
+    try {
+      const payload = parseTemplateJson(formImportText);
+      const nextTargets = normalizeTargetDrafts(payload.targets);
+      const firstTargetRef = nextTargets[0]?.target_ref ?? "group-1";
+      const jointRule = payload.joint_rule && typeof payload.joint_rule === "object"
+        ? payload.joint_rule as Record<string, unknown>
+        : {};
+
+      setName(optionalText(payload.name));
+      setScenario(optionalText(payload.scenario, "targeted_diagnosis"));
+      setTargets(nextTargets);
+      setConditions(normalizeConditionDrafts(payload.match_conditions, firstTargetRef));
+      setJointOperator(jointRule.operator === "OR" ? "OR" : "AND");
+      setReason(optionalText(payload.reason));
+      setSuggestion(optionalText(payload.suggestion));
+      setCommand(optionalText(payload.command));
+      setRiskNote(optionalText(payload.risk_note));
+      setTemplateEnabled(payload.enabled !== false);
+      setActiveStep("preview");
+      setFormImportOpen(false);
+      setFormImportText("");
+      setMessage("已从 JSON 填入模板，请检查后保存");
+    } catch (reason) {
+      setFormImportError(reason instanceof Error ? reason.message : "JSON 解析失败");
+    }
   }
 
   function addTarget() {
@@ -813,6 +962,11 @@ export function TemplatesPage() {
               </div>
               <div className="secondary-action-row">
                 <StatusBadge status={saving ? "warning" : editingId !== null ? "enabled" : "info"} />
+                {editingId === null ? (
+                  <button type="button" className="mini-button button-success" onClick={() => setFormImportOpen(true)}>
+                    通过 JSON 导入
+                  </button>
+                ) : null}
                 <button type="button" className="mini-button" onClick={resetForm}>关闭</button>
               </div>
             </div>
@@ -1108,6 +1262,47 @@ export function TemplatesPage() {
               {saving ? "处理中..." : editingId !== null ? "保存模板" : "新增模板"}
             </button>
           </div>
+          </section>
+        </div>
+      ) : null}
+
+      {formImportOpen ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setFormImportOpen(false)}>
+          <section
+            className="modal-card modal-card-polished"
+            role="dialog"
+            aria-modal="true"
+            aria-label="通过 JSON 导入模板"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="section-header">
+              <div>
+                <h3>通过 JSON 导入</h3>
+                <p className="inline-note">粘贴 Cursor 输出的单个模板 JSON，系统会填入当前新增表单，不会直接保存。</p>
+              </div>
+              <button type="button" onClick={() => setFormImportOpen(false)}>关闭</button>
+            </div>
+            {formImportError ? <p className="template-import-error">{formImportError}</p> : null}
+            <label className="template-field">
+              单个模板 JSON
+              <textarea
+                className="modal-code-input code-block-scroll"
+                aria-label="单个模板 JSON"
+                value={formImportText}
+                onChange={(event) => {
+                  setFormImportText(event.target.value);
+                  setFormImportError(null);
+                }}
+                rows={14}
+                placeholder='{"name":"文书审核网络故障","scenario":"redis_connect_failed","targets":[...],"match_conditions":[...]}'
+              />
+            </label>
+            <div className="button-row">
+              <button className="template-primary-button" type="button" disabled={formImportText.trim().length === 0} onClick={handleFillFormFromJson}>
+                填入当前模板
+              </button>
+              <button className="template-secondary-button" type="button" onClick={() => setFormImportOpen(false)}>取消</button>
+            </div>
           </section>
         </div>
       ) : null}
