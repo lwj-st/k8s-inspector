@@ -41,11 +41,14 @@ ingress:
   className: nginx
   annotations: {}
   hosts:
-    - host: k8s-inspector.local
+    - host: dev-inspector.sensecore.com
       paths:
         - path: /
           pathType: Prefix
-  tls: []
+  tls:
+    - secretName: sensecore-tls
+      hosts:
+        - dev-inspector.sensecore.com
 
 basePath: ""
 
