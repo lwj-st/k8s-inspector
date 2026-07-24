@@ -606,7 +606,7 @@ a {
   border: 1px solid rgba(55, 81, 110, 0.16) !important;
   border-radius: 14px !important;
   background: linear-gradient(135deg, rgba(244, 248, 251, 0.98), rgba(255, 255, 255, 0.94)) !important;
-  color: var(--ink);
+  color: var(--ink) !important;
   cursor: pointer;
   overflow: hidden;
   box-shadow: none !important;
