@@ -56,7 +56,7 @@ const stepDefinitions: StepDefinition[] = [
   { key: "basic", title: "基本信息", description: "说明这是哪类故障经验。" },
   { key: "targets", title: "目标范围", description: "选择名称空间和 Label Selector，确定检查对象组。" },
   { key: "conditions", title: "匹配条件", description: "按对象组补齐日志、状态、重启次数等可量化条件。" },
-  { key: "advice", title: "原因与建议", description: "录入诊断原因、处理建议、命令和风险说明。" },
+  { key: "advice", title: "原因与建议", description: "录入诊断原因、处理建议和建议命令。" },
   { key: "preview", title: "预览与保存", description: "最后检查摘要，再决定新增或更新模板。" },
 ];
 
@@ -1038,9 +1038,6 @@ export function TemplatesPage() {
           {activeStep === "conditions" ? (
             <div className="page-section">
               <section className="panel template-hint-panel">
-                <h4>条件关系说明</h4>
-                <p>AND：所有启用条件都满足才命中故障。</p>
-                <p>OR：任一启用条件满足就命中故障。</p>
                 <label className="template-field">
                   条件关系
                   <select className="template-input" aria-label="条件关系" value={jointOperator} onChange={(event) => setJointOperator(event.target.value as "AND" | "OR")}>
@@ -1204,10 +1201,6 @@ export function TemplatesPage() {
                 建议命令
                 <textarea className="template-input template-code-textarea" aria-label="建议命令" value={command} onChange={(event) => setCommand(event.target.value)} rows={4} placeholder="例如：kubectl logs -n xxx deploy/xxx" />
               </label>
-              <label className="template-field">
-                风险说明
-                <textarea className="template-input template-textarea-large" aria-label="风险说明" value={riskNote} onChange={(event) => setRiskNote(event.target.value)} rows={4} placeholder="例如：只读命令，可直接执行" />
-              </label>
             </div>
           ) : null}
 
@@ -1248,7 +1241,6 @@ export function TemplatesPage() {
                 <p><strong>诊断原因：</strong>{reason || "未填写"}</p>
                 <p><strong>处理建议：</strong>{suggestion || "未填写"}</p>
                 {command ? <p><strong>建议命令：</strong>{command}</p> : null}
-                {riskNote ? <p><strong>风险说明：</strong>{riskNote}</p> : null}
               </section>
             </div>
           ) : null}

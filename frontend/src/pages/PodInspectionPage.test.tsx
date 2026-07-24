@@ -318,9 +318,9 @@ describe("PodInspectionPage", () => {
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
     fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "all" } });
-    fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
-    expect(await screen.findByText("范围内 Pod 列表")).toBeInTheDocument();
+    expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
     expect(screen.queryByText("最近一次巡检摘要")).not.toBeInTheDocument();
     expect(screen.getByText("命中关键字：connection refused")).toBeInTheDocument();
 
@@ -343,9 +343,9 @@ describe("PodInspectionPage", () => {
     await screen.findByRole("option", { name: "app=demo-api（1 个 Pod）" });
     fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
     expect(screen.getByLabelText("手动 Label Selector")).toHaveValue("app=demo-api");
-    fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
-    expect(await screen.findByText("范围内 Pod 列表")).toBeInTheDocument();
+    expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /demo-api-1/ })).toBeInTheDocument();
 
     const request = fetchMock.mock.calls
@@ -477,7 +477,7 @@ describe("PodInspectionPage", () => {
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.click(screen.getByRole("button", { name: "巡检日志范围" }));
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
     expect(await screen.findByText("原始日志")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s\npanic: dependency unavailable")).toBeInTheDocument();

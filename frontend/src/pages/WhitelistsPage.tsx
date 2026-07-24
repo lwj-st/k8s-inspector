@@ -291,7 +291,7 @@ export function WhitelistsPage() {
         <div className="workbench-copy">
           <div>
             <p className="eyebrow">配置说明</p>
-            <p className="hero-summary">关键字决定哪些日志算异常，白名单决定哪些命中应忽略。导入导出只在弹窗里处理，不占用主工作区。</p>
+            <p className="hero-summary">关键字决定哪些日志算异常，白名单决定哪些命中应忽略。</p>
           </div>
           <div className="template-stepper" role="tablist" aria-label="关键字库标签">
             <button type="button" role="tab" aria-selected={activeTab === "keywords"} className={`template-step-chip${activeTab === "keywords" ? " template-step-chip-active" : ""}`} onClick={() => setActiveTab("keywords")}>

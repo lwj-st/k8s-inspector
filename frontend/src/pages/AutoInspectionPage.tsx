@@ -259,10 +259,7 @@ function NamespaceEvidenceDrawer({
         </div>
         <section className="panel panel-muted">
           <div className="section-header">
-            <div>
-              <h4>结论</h4>
-              <p className="inline-note">先看名称空间结论，再决定是否下钻到 Pod 和日志证据。</p>
-            </div>
+            <h4>结论</h4>
             <StatusBadge status={data?.health_status ?? summary.status} />
           </div>
           <div className="evidence-drawer-summary">
@@ -299,10 +296,7 @@ function NamespaceEvidenceDrawer({
           <>
             <section className="panel panel-muted">
               <div className="section-header">
-                <div>
-                  <h4>证据</h4>
-                  <p className="inline-note">异常 Pod、关键字命中和名称空间级对象异常都会在这里展开。</p>
-                </div>
+                <h4>证据</h4>
               </div>
               {pods.length > 0 ? (
                 <div className="evidence-pod-list">

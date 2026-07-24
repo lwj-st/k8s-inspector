@@ -456,8 +456,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   }
 
   const currentModeLabel = scopeMode === "all" ? "全部 Pod" : scopeMode === "label" ? "Label Selector" : "单个 Pod";
-  const currentRunLabel = scopeMode === "single" ? "巡检单个 Pod" : "巡检日志范围";
-  const listTitle = scopeMode === "single" ? "最近使用范围" : "范围内 Pod 列表";
+  const currentRunLabel = scopeMode === "single" ? "巡检单个 Pod" : "日志巡检";
+  const listTitle = scopeMode === "single" ? "最近使用范围" : "Pod 列表";
 
   return (
     <section className="page-section">
@@ -741,7 +741,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             <div className="panel">
               <div className="section-header">
                 <h3>{listTitle}</h3>
-                <span className="section-tip">范围巡检结果不会伪装成单 Pod</span>
               </div>
               <div className="pod-list pod-list-scroll">
                 {sortedRangePods.map((pod) => {
