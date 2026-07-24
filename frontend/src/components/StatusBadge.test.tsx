@@ -18,6 +18,7 @@ describe("StatusBadge", () => {
         <StatusBadge status="succeeded" />
         <StatusBadge status="completed" />
         <StatusBadge status="warning" />
+        <StatusBadge status="matched" />
         <StatusBadge status="error" />
         <StatusBadge status="failed" />
         <StatusBadge status="degraded" />
@@ -35,6 +36,7 @@ describe("StatusBadge", () => {
     expect(screen.getByText("就绪")).toBeInTheDocument();
     expect(screen.getAllByText("已完成")).toHaveLength(2);
     expect(screen.getByText("告警")).toBeInTheDocument();
+    expect(screen.getByText("已命中")).toBeInTheDocument();
     expect(screen.getByText("异常")).toBeInTheDocument();
     expect(screen.getByText("失败")).toBeInTheDocument();
     expect(screen.getByText("降级")).toBeInTheDocument();
@@ -48,6 +50,7 @@ describe("StatusBadge", () => {
         <StatusBadge status="enabled" />
         <StatusBadge status="healthy" />
         <StatusBadge status="warning" />
+        <StatusBadge status="matched" />
         <StatusBadge status="info" />
         <StatusBadge status="error" />
         <StatusBadge status="CrashLoopBackOff" />
@@ -58,8 +61,9 @@ describe("StatusBadge", () => {
     expect(badges[0]).toHaveClass("status-good");
     expect(badges[1]).toHaveClass("status-good");
     expect(badges[2]).toHaveClass("status-warn");
-    expect(badges[3]).toHaveClass("status-neutral");
-    expect(badges[4]).toHaveClass("status-bad");
+    expect(badges[3]).toHaveClass("status-warn");
+    expect(badges[4]).toHaveClass("status-neutral");
     expect(badges[5]).toHaveClass("status-bad");
+    expect(badges[6]).toHaveClass("status-bad");
   });
 });

@@ -308,7 +308,7 @@ function MatchResultList({
   kind: MatchResultKind;
   showHeader?: boolean;
 }) {
-  const badgeStatus = kind === "matched" ? "healthy" : kind === "undetermined" ? "warning" : "info";
+  const badgeStatus = kind === "matched" ? "matched" : kind === "undetermined" ? "warning" : "info";
   return (
     <section className="panel panel-muted diagnosis-highlight-panel">
       {showHeader ? (
