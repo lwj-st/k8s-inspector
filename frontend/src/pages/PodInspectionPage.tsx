@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ignoreWhitelistLogHit, runNamespaceInspection } from "../api/client";
 import type { InspectedPod, KeywordHit, SavedInspectionTarget } from "../api/types";
+import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
 import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
@@ -646,9 +647,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                             <button type="button" className="mini-button" onClick={() => startEditingTarget(target)} disabled={targetSaving}>
                               编辑
                             </button>
-                            <button type="button" className="mini-button button-danger" onClick={() => void handleDeleteTarget(target)} disabled={targetSaving}>
-                              删除
-                            </button>
+                            <ConfirmDeleteButton itemName={`巡检点 ${target.name}`} onConfirm={() => handleDeleteTarget(target)} disabled={targetSaving}>删除</ConfirmDeleteButton>
                           </div>
                         </td>
                       </tr>

@@ -7,6 +7,7 @@ import type {
   TemplateConditionType,
   TemplateTarget,
 } from "../api/types";
+import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
 import { StatusBadge } from "../components/StatusBadge";
 import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
 import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
@@ -461,9 +462,7 @@ function TargetScopeEditor({ target, index, totalTargets, namespaceOptions, onUp
       <div className="template-details-body">
         <div className="section-header">
           <strong>目标范围</strong>
-          <button type="button" className="mini-button button-danger" disabled={totalTargets === 1} onClick={() => onRemove(index)}>
-            删除对象组
-          </button>
+          <ConfirmDeleteButton itemName={`对象组 ${target.target_ref || index + 1}`} disabled={totalTargets === 1} onConfirm={() => onRemove(index)}>删除对象组</ConfirmDeleteButton>
         </div>
         <div className="template-form-grid">
           <label className="template-field">
@@ -938,7 +937,7 @@ export function TemplatesPage() {
                         <button type="button" className="mini-button" disabled={saving} onClick={() => setSelectedDetail(item)}>详情</button>
                         <button type="button" className="mini-button" disabled={saving} onClick={() => startEdit(item)}>编辑</button>
                         <button type="button" className={`mini-button${item.enabled ? " button-danger" : ""}`} disabled={saving} onClick={() => void setEnabled(item.id, !item.enabled)}>{item.enabled ? "停用" : "启用"}</button>
-                        <button type="button" className="mini-button button-danger" disabled={saving} onClick={() => void remove(item.id)}>删除</button>
+                        <ConfirmDeleteButton itemName={`模板 ${item.name}`} disabled={saving} onConfirm={() => remove(item.id)}>删除</ConfirmDeleteButton>
                       </div>
                     </td>
                   </tr>
@@ -1060,9 +1059,7 @@ export function TemplatesPage() {
                     <div className="template-details-body">
                       <div className="section-header">
                         <strong>条件配置</strong>
-                        <button type="button" className="button-danger" disabled={conditions.length === 1} onClick={() => removeCondition(index)}>
-                          删除条件
-                        </button>
+                        <ConfirmDeleteButton className="button-danger" itemName={`条件 ${index + 1}`} disabled={conditions.length === 1} onConfirm={() => removeCondition(index)}>删除条件</ConfirmDeleteButton>
                       </div>
                       <label className="template-field">
                         绑定对象组

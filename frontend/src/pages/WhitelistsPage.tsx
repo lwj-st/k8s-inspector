@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { KeywordHitSeverity, KeywordRule, Whitelist } from "../api/types";
+import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
 import { StatusBadge } from "../components/StatusBadge";
 import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
 import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
@@ -362,7 +363,7 @@ export function WhitelistsPage() {
                         <button type="button" className={`mini-button${item.enabled ? " button-danger" : ""}`} disabled={keywordSaving} onClick={() => void setKeywordEnabled(item.id, !item.enabled)}>
                           {item.enabled ? "停用" : "启用"}
                         </button>
-                        <button type="button" className="mini-button button-danger" disabled={keywordSaving || item.builtin} onClick={() => void removeKeyword(item.id)}>删除</button>
+                        <ConfirmDeleteButton itemName={`关键字 ${item.keyword}`} disabled={keywordSaving || item.builtin} onConfirm={() => removeKeyword(item.id)}>删除</ConfirmDeleteButton>
                       </div>
                     </td>
                   </tr>
@@ -411,7 +412,7 @@ export function WhitelistsPage() {
                         <button type="button" className={`mini-button${item.enabled ? " button-danger" : ""}`} disabled={whitelistSaving} onClick={() => void setWhitelistEnabled(item.id, !item.enabled)}>
                           {item.enabled ? "停用" : "启用"}
                         </button>
-                        <button type="button" className="mini-button button-danger" disabled={whitelistSaving} onClick={() => void removeWhitelist(item.id)}>删除</button>
+                        <ConfirmDeleteButton itemName={`白名单 ${item.keyword}`} disabled={whitelistSaving} onConfirm={() => removeWhitelist(item.id)}>删除</ConfirmDeleteButton>
                       </div>
                     </td>
                   </tr>

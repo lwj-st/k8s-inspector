@@ -394,6 +394,7 @@ describe("WhitelistsPage", () => {
     const importedWhitelistRow = screen.getByText("batch retry").closest("tr");
     expect(importedWhitelistRow).not.toBeNull();
     fireEvent.click(within(importedWhitelistRow as HTMLElement).getByRole("button", { name: "删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
     await waitFor(() => {
       expect(screen.queryByText("batch retry")).not.toBeInTheDocument();
