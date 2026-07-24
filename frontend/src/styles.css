@@ -722,6 +722,15 @@ a {
   white-space: nowrap;
 }
 
+.whitelist-keyword-column {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .copyable-cell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

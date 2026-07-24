@@ -391,7 +391,7 @@ export function WhitelistsPage() {
             <table className="compact-table" aria-label="白名单规则表">
               <thead>
                 <tr>
-                  <th>关键字</th>
+                  <th className="whitelist-keyword-column">关键字</th>
                   <th>范围</th>
                   <th>启用状态</th>
                   <th>备注</th>
@@ -401,7 +401,7 @@ export function WhitelistsPage() {
               <tbody>
                 {whitelists.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.keyword}</td>
+                    <td className="whitelist-keyword-column" title={item.keyword}>{item.keyword}</td>
                     <td className="ellipsis-cell" title={describeWhitelistScope(item)}>{describeWhitelistScope(item)}</td>
                     <td><ToggleBadge enabled={item.enabled} /></td>
                     <td className="ellipsis-cell" title={item.note ?? "未填写来源说明"}>{item.note ?? "未填写来源说明"}</td>
