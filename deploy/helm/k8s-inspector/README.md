@@ -18,6 +18,12 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
 - `ingress.hosts[0].host`：访问域名
 - `ingress.tls`：TLS 证书配置，示例默认使用 `sensecore-tls`
 - `ingress.annotations`：可填 Kong 注解，后续配合 `strip-path`
+- `persistence.enabled`：是否为 SQLite 启用持久化，默认 `true`
+- `persistence.size`：PVC 容量，默认 `512Mi`
+- `persistence.storageClass`：存储类；留空时使用集群默认 StorageClass
+- `persistence.existingClaim`：复用已有 PVC；留空时由 Chart 创建
+
+默认数据库文件位于 `/data/k8s_inspector.db`，通过 `ReadWriteOnce` PVC 持久化。SQLite 部署应保持 `replicaCount: 1`，不支持多个 Pod 同时写入同一数据库文件。
 
 ## 生产 values 示例
 

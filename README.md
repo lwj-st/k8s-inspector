@@ -180,5 +180,6 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
 - K8s 内默认 `K8S_PROVIDER_MODE=kubernetes`
 - 默认 `PREFER_INCLUSTER=true`，优先使用 Pod `ServiceAccount`
 - Chart 会创建只读 `RBAC`，不会授予写权限
-- Chart 默认把 `DATABASE_URL` 设为 `sqlite:////tmp/k8s_inspector.db`，避免非 root 容器写工作目录失败
+- Chart 默认创建 `512Mi` 的 `ReadWriteOnce` PVC，并把 SQLite 数据库存放在 `/data/k8s_inspector.db`
+- SQLite 部署应保持单副本；CI/E2E values 会关闭持久化并继续使用 `/tmp/k8s_inspector.db`
 - 当前 CI 的 E2E 不依赖域名，也不启用 `Kong strip-path`；相关 `basePath` 和 Ingress 配置仍保留，后续可直接扩展

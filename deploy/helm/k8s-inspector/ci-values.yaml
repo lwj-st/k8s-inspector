@@ -1,2 +1,8 @@
 ingress:
   enabled: false
+
+persistence:
+  enabled: false
+
+env:
+  databaseUrl: sqlite:////tmp/k8s_inspector.db
