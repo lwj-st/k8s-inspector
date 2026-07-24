@@ -608,19 +608,19 @@ def test_whitelist_fragment_keeps_warn_line_error_word_visible(client) -> None:
     assert whitelisted_error_hits == []
 
 
-@pytest.mark.parametrize("match_index", [0, 6, 12])
-def test_keyword_hit_contains_up_to_five_lines_of_log_context(client, match_index: int) -> None:
+@pytest.mark.parametrize("match_index", [0, 20, 40])
+def test_keyword_hit_contains_up_to_twenty_lines_of_log_context(client, match_index: int) -> None:
     session = client.app.state.session_factory()
     try:
-        lines = [f"line-{index}" for index in range(13)]
+        lines = [f"line-{index}" for index in range(41)]
         lines[match_index] = "database connection refused"
         hits = match_log_text(session, "demo", None, "demo-api", "demo-api", "\n".join(lines))
     finally:
         session.close()
 
     assert hits[0].matched_text == "database connection refused"
-    assert hits[0].context_before == [f"line-{index}" for index in range(max(0, match_index - 5), match_index)]
-    assert hits[0].context_after == [f"line-{index}" for index in range(match_index + 1, min(13, match_index + 6))]
+    assert hits[0].context_before == [f"line-{index}" for index in range(max(0, match_index - 20), match_index)]
+    assert hits[0].context_after == [f"line-{index}" for index in range(match_index + 1, min(41, match_index + 21))]
     assert hits[0].context_text == "\n".join([*hits[0].context_before, hits[0].matched_text, *hits[0].context_after])
 
 

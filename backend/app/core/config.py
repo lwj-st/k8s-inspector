@@ -14,7 +14,7 @@ class Settings(BaseModel):
     kube_context: str | None = None
     prefer_incluster: bool = True
     k8s_request_timeout: int = 10
-    k8s_log_tail_lines: int = 200
+    k8s_log_tail_lines: int = 1000
     k8s_log_summary_lines: int = 5
     llm_enabled: bool = False
     llm_provider: str = "qwen"
@@ -33,7 +33,7 @@ def get_settings() -> Settings:
         kube_context=getenv("KUBECONTEXT"),
         prefer_incluster=getenv("PREFER_INCLUSTER", "true").lower() == "true",
         k8s_request_timeout=int(getenv("K8S_REQUEST_TIMEOUT", "10")),
-        k8s_log_tail_lines=int(getenv("K8S_LOG_TAIL_LINES", "200")),
+        k8s_log_tail_lines=int(getenv("K8S_LOG_TAIL_LINES", "1000")),
         k8s_log_summary_lines=int(getenv("K8S_LOG_SUMMARY_LINES", "5")),
         llm_enabled=getenv("LLM_ENABLED", "false").lower() == "true",
         llm_provider=getenv("LLM_PROVIDER", "qwen"),

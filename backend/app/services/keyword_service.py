@@ -360,14 +360,14 @@ def _extract_matched_text(log_text: str, keyword: str) -> str:
     return log_text
 
 
-def _extract_log_context(log_text: str, keyword: str, radius: int = 5) -> tuple[str, list[str], list[str], str | None]:
+def _extract_log_context(log_text: str, keyword: str, radius: int = 20) -> tuple[str, list[str], list[str], str | None]:
     contexts = _extract_log_contexts(log_text, keyword, radius)
     if contexts:
         return contexts[0]
     return log_text, [], [], None
 
 
-def _extract_log_contexts(log_text: str, keyword: str, radius: int = 5) -> list[tuple[str, list[str], list[str], str | None]]:
+def _extract_log_contexts(log_text: str, keyword: str, radius: int = 20) -> list[tuple[str, list[str], list[str], str | None]]:
     contexts: list[tuple[str, list[str], list[str], str | None]] = []
     lines = log_text.splitlines()
     for index, line in enumerate(lines):

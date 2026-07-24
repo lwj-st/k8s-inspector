@@ -6,7 +6,7 @@ from app.providers.mock_provider import MockInspectionProvider
 
 def _make_provider() -> KubernetesInspectionProvider:
     provider = KubernetesInspectionProvider.__new__(KubernetesInspectionProvider)
-    provider.settings = SimpleNamespace(k8s_request_timeout=5, k8s_log_tail_lines=200, k8s_log_summary_lines=5)
+    provider.settings = SimpleNamespace(k8s_request_timeout=5, k8s_log_tail_lines=1000, k8s_log_summary_lines=5)
     provider.core = SimpleNamespace()
     provider.apps = SimpleNamespace()
     provider.networking = SimpleNamespace()
@@ -141,14 +141,14 @@ def test_run_pod_inspection_reads_logs_for_every_container_even_when_pod_is_runn
             "name": "demo-api-abc",
             "namespace": "demo",
             "container": "demo-api",
-            "tail_lines": 200,
+            "tail_lines": 1000,
             "_request_timeout": 5,
         },
         {
             "name": "demo-api-abc",
             "namespace": "demo",
             "container": "sidecar",
-            "tail_lines": 200,
+            "tail_lines": 1000,
             "_request_timeout": 5,
         },
     ]

@@ -169,7 +169,7 @@ class KubernetesInspectionProvider:
                     name=pod.metadata.name,
                     namespace=pod.metadata.namespace,
                     container=container_name,
-                    tail_lines=_setting_int(self.settings, "k8s_log_tail_lines", 200),
+                    tail_lines=_setting_int(self.settings, "k8s_log_tail_lines", 1000),
                     _request_timeout=self.settings.k8s_request_timeout,
                 )
             except ApiException:
@@ -218,7 +218,7 @@ class KubernetesInspectionProvider:
                 namespace=pod.metadata.namespace,
                 container=container_name,
                 previous=True,
-                tail_lines=_setting_int(self.settings, "k8s_log_tail_lines", 200),
+                tail_lines=_setting_int(self.settings, "k8s_log_tail_lines", 1000),
                 _request_timeout=self.settings.k8s_request_timeout,
             )
         except ApiException:
