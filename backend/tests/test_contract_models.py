@@ -3,14 +3,35 @@ from pydantic import ValidationError
 
 from app.schemas.common import AbnormalCategory, EvidenceBundle, InspectionTarget, KeywordHit, TemplateCondition, TemplateTarget
 from app.schemas.inspection import (
+    ClusterInspectionResponse,
+    InspectionRunResponse,
     NamespaceBatchInspectionRequest,
     NamespaceBatchInspectionResponse,
     NamespaceDiscoveryResponse,
+    NamespaceInspectionRequest,
+    NamespaceInspectionResponse,
     NamespaceLabelDiscoveryResponse,
     NamespaceLabelSummary,
     NamespaceSummary,
+    PodInspectionResponse,
 )
 from app.schemas.template import FaultTemplateCreate
+
+
+def test_namespace_inspection_request_keeps_legacy_logs_and_allows_opt_out() -> None:
+    legacy = NamespaceInspectionRequest(namespace="demo")
+    explicit_status = NamespaceInspectionRequest(
+        namespace="demo",
+        include_logs=False,
+    )
+    explicit_logs = NamespaceInspectionRequest(
+        namespace="demo",
+        include_logs=True,
+    )
+
+    assert legacy.include_logs is True
+    assert explicit_status.include_logs is False
+    assert explicit_logs.include_logs is True
 
 
 def test_template_contract_supports_typed_targets_and_conditions(client) -> None:
@@ -72,7 +93,11 @@ def test_whitelist_contract_supports_pod_and_container_scope(client) -> None:
 def test_namespace_inspection_response_exposes_unified_target_and_evidence(client) -> None:
     response = client.post(
         "/api/v1/inspections/namespace/run",
-        json={"namespace": "demo", "label_selector": "app=demo"},
+        json={
+            "namespace": "demo",
+            "label_selector": "app=demo",
+            "include_logs": True,
+        },
     )
 
     assert response.status_code == 200
@@ -324,6 +349,75 @@ def test_namespace_batch_response_uses_summary_and_detail_target() -> None:
 
     assert response.results[0].summary.abnormal_categories == [AbnormalCategory.event]
     assert response.results[0].detail_target.namespace == "demo"
+
+
+def test_v11_inspection_fields_default_empty_for_all_legacy_response_models() -> None:
+    legacy_cluster = {
+        "health_status": "healthy",
+        "executed_at": "2026-07-26T08:00:00Z",
+        "results": [],
+    }
+    legacy_namespace = {
+        "inspection_target": {
+            "type": "namespace",
+            "namespace": "demo",
+            "resource_scope": ["pods"],
+        },
+        "namespace": "demo",
+        "health_status": "healthy",
+        "executed_at": "2026-07-26T08:00:00Z",
+        "pods": [],
+        "services": [],
+        "ingresses": [],
+        "tls_secrets": [],
+        "daemonsets": [],
+    }
+    legacy_batch = {
+        "executed_at": "2026-07-26T08:00:00Z",
+        "results": [],
+    }
+    legacy_pod = {
+        "inspection_target": {
+            "type": "pod",
+            "namespace": "demo",
+            "pod_name": "api-0",
+            "resource_scope": ["pods"],
+        },
+        "namespace": "demo",
+        "health_status": "healthy",
+        "executed_at": "2026-07-26T08:00:00Z",
+        "pod": {
+            "name": "api-0",
+            "status": "Running",
+            "restarts": 0,
+            "events": [],
+            "describe_summary": "running",
+            "resource_usage": {},
+        },
+    }
+
+    responses = [
+        ClusterInspectionResponse.model_validate(legacy_cluster),
+        NamespaceInspectionResponse.model_validate(legacy_namespace),
+        NamespaceBatchInspectionResponse.model_validate(legacy_batch),
+        PodInspectionResponse.model_validate(legacy_pod),
+    ]
+
+    for response in responses:
+        payload = response.model_dump(mode="json")
+        assert payload["issues"] == []
+        assert payload["coverage"] == []
+
+    nested = InspectionRunResponse.model_validate(
+        {
+            "target_type": "cluster",
+            "cluster_result": legacy_cluster,
+        }
+    ).model_dump(mode="json")
+    assert nested["cluster_result"]["issues"] == []
+    assert nested["cluster_result"]["coverage"] == []
+    assert "issues" not in nested
+    assert "coverage" not in nested
 
 
 def test_common_contract_models_reject_unknown_enum_values() -> None:

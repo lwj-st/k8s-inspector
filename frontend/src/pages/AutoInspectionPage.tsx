@@ -10,6 +10,7 @@ import type {
   NamespaceInspectionResponse,
   NamespaceSummary,
 } from "../api/types";
+import { InspectionOutcomePanel } from "../components/InspectionOutcomePanel";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
 import { DiagnosisResultPanel } from "../features/diagnosis/DiagnosisResultPanel";
@@ -43,13 +44,28 @@ function abnormalCategoryLabel(category: string) {
 }
 
 function batchRowType(status: NamespaceBatchInspectionResult["health_status"]) {
-  if (status === "error") {
+  const normalized = status.toLowerCase();
+  if (normalized === "error" || normalized === "critical") {
     return "需要处理";
   }
-  if (status === "warning") {
+  if (normalized === "warning") {
     return "需要处理";
   }
-  return "巡检正常";
+  return normalized === "healthy" ? "巡检正常" : "无法判断";
+}
+
+function batchHealthRank(status: NamespaceBatchInspectionResult["health_status"]) {
+  const normalized = status.toLowerCase();
+  if (normalized === "error" || normalized === "critical") {
+    return 0;
+  }
+  if (normalized === "warning") {
+    return 1;
+  }
+  if (normalized === "healthy") {
+    return 3;
+  }
+  return 2;
 }
 
 function isHealthyObject(item: InspectedObject) {
@@ -289,6 +305,14 @@ function NamespaceEvidenceDrawer({
             </div>
           </div>
         </section>
+        {!loading && !error && data ? (
+          <InspectionOutcomePanel
+            healthStatus={data.health_status}
+            issues={data.issues}
+            coverage={data.coverage}
+            title={`${namespace} 巡检结论`}
+          />
+        ) : null}
         {loading ? <p>正在读取名称空间证据...</p> : null}
         {error ? <section className="panel panel-muted"><h4>证据读取失败</h4><p>{error}</p></section> : null}
         {!loading && !error && data && pods.length === 0 && !hasNamespaceObjects ? <p>本次没有返回可展示的证据。</p> : null}
@@ -598,17 +622,24 @@ export function AutoInspectionPage() {
 
   const batchResults = batchResult?.results ?? [];
   const sortedBatchResults = [...batchResults].sort((left, right) => {
-    const leftRank = left.health_status === "error" ? 0 : left.health_status === "warning" ? 1 : 2;
-    const rightRank = right.health_status === "error" ? 0 : right.health_status === "warning" ? 1 : 2;
+    const leftRank = batchHealthRank(left.health_status);
+    const rightRank = batchHealthRank(right.health_status);
     if (leftRank !== rightRank) {
       return leftRank - rightRank;
     }
     return left.summary.name.localeCompare(right.summary.name);
   });
-  const errorBatchCount = batchResults.filter((item) => item.health_status === "error").length;
-  const warningBatchCount = batchResults.filter((item) => item.health_status === "warning").length;
-  const healthyBatchCount = batchResults.filter((item) => item.health_status === "healthy").length;
-  const batchSummaryStatus = errorBatchCount > 0 ? "error" : warningBatchCount > 0 ? "warning" : "healthy";
+  const errorBatchCount = batchResults.filter((item) => batchHealthRank(item.health_status) === 0).length;
+  const warningBatchCount = batchResults.filter((item) => batchHealthRank(item.health_status) === 1).length;
+  const unknownBatchCount = batchResults.filter((item) => batchHealthRank(item.health_status) === 2).length;
+  const healthyBatchCount = batchResults.filter((item) => batchHealthRank(item.health_status) === 3).length;
+  const batchSummaryStatus = errorBatchCount > 0
+    ? "critical"
+    : warningBatchCount > 0
+      ? "warning"
+      : unknownBatchCount > 0 || batchResults.length === 0
+        ? "unknown"
+        : "healthy";
   return (
     <section className="page-section">
       <section className="workbench-hero">
@@ -729,10 +760,17 @@ export function AutoInspectionPage() {
           </div>
           <div className="batch-compact-summary">
             <span>总数 {batchResults.length}</span>
-            <span>失败 {errorBatchCount}</span>
+            <span>严重/失败 {errorBatchCount}</span>
             <span>告警 {warningBatchCount}</span>
+            <span>无法判断 {unknownBatchCount}</span>
             <span>正常 {healthyBatchCount}</span>
           </div>
+          <InspectionOutcomePanel
+            healthStatus={batchSummaryStatus}
+            issues={batchResult.issues}
+            coverage={batchResult.coverage}
+            title="批量巡检整体结论"
+          />
           <div className="table-scroll-shell batch-result-table-shell">
             <table className="compact-table batch-result-table">
               <thead>

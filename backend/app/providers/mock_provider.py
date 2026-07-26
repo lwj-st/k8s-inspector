@@ -1,5 +1,15 @@
 from datetime import datetime, timezone
 
+from app.providers.base import LogPodLimitExceededError, TemporaryPodLogCollection
+from app.schemas.v1_1 import (
+    CollectionLayer,
+    CollectionLimits,
+    ProviderCollectionFailure,
+    ProviderCollectionRequest,
+    ProviderCollectionResult,
+    ProviderObservation,
+    ResourceRef,
+)
 from app.services.pod_health import is_abnormal_pod
 
 
@@ -65,6 +75,103 @@ def build_demo_pod(pod_name: str = "demo-api-7c8f6f7c6b-fh2ns") -> dict:
 
 
 class MockInspectionProvider:
+    def collect_resources(
+        self,
+        request: ProviderCollectionRequest,
+    ) -> ProviderCollectionResult:
+        observed_at = datetime.now(timezone.utc)
+        namespace = request.scope.namespace or (
+            request.scope.namespaces[0] if request.scope.namespaces else "demo"
+        )
+        if request.layer == CollectionLayer.evidence:
+            return ProviderCollectionResult(
+                layer=request.layer,
+                evidence=[],
+                kubernetes_api_calls=len(request.evidence_targets),
+                log_pods_read=0,
+                collected_log_bytes=0,
+                duration_ms=8,
+            )
+        observations = [
+            ProviderObservation(
+                resource=ResourceRef(kind="KubernetesVersion", name="server"),
+                observed_at=observed_at,
+                observed_state="v1.36.0",
+                facts={
+                    "major": 1,
+                    "minor": 36,
+                    "supported": True,
+                    "supported_range": "1.34-1.36",
+                },
+            ),
+            ProviderObservation(
+                resource=ResourceRef(
+                    kind="Deployment",
+                    namespace=namespace,
+                    name="demo-api",
+                ),
+                observed_at=observed_at,
+                observed_state="active",
+                facts={
+                    "desired": 3,
+                    "ready": 1,
+                    "available": 1,
+                    "updated": 1,
+                    "paused": False,
+                    "labels": ["app=demo-api"],
+                },
+            ),
+            ProviderObservation(
+                resource=ResourceRef(
+                    kind="Pod",
+                    namespace=namespace,
+                    name="demo-api-0",
+                ),
+                observed_at=observed_at,
+                observed_state="Running",
+                facts={
+                    "phase": "Running",
+                    "ready": False,
+                    "restart_delta": 0,
+                    "warning_reasons": [],
+                    "missing_references": [],
+                },
+            ),
+            ProviderObservation(
+                resource=ResourceRef(
+                    kind="Service",
+                    namespace=namespace,
+                    name="demo-api",
+                ),
+                observed_at=observed_at,
+                observed_state="ClusterIP",
+                facts={
+                    "service_type": "ClusterIP",
+                    "selector_present": True,
+                    "selector": ["app=demo-api"],
+                    "selected_pods": 1,
+                    "endpoint_slices": 1,
+                    "ready_endpoints": 0,
+                    "ingress_referenced": False,
+                },
+            ),
+        ]
+        return ProviderCollectionResult(
+            layer=request.layer,
+            observations=observations,
+            failures=[
+                ProviderCollectionFailure(
+                    check_code="storage.status",
+                    error_code="MOCK_STORAGE_PARTIAL",
+                    message="Mock：存储 API 局部失败",
+                )
+            ],
+            kubernetes_api_calls=7,
+            log_pods_read=0,
+            collected_log_bytes=0,
+            duration_ms=12,
+        )
+
     def list_namespaces(self) -> dict:
         return {
             "executed_at": now_iso(),
@@ -128,6 +235,25 @@ class MockInspectionProvider:
             ],
         }
 
+    def list_namespace_pods(
+        self,
+        namespace: str,
+        label_selector: str | None = None,
+    ) -> dict:
+        pod = build_demo_pod()
+        return {
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "executed_at": now_iso(),
+            "pod_count": 1,
+            "pods": [
+                {
+                    "name": pod["name"],
+                    "labels": dict(pod["labels"]),
+                }
+            ],
+        }
+
     def get_overview(self) -> dict:
         return {
             "health_status": "warning",
@@ -145,7 +271,11 @@ class MockInspectionProvider:
             ],
         }
 
-    def run_cluster_inspection(self) -> dict:
+    def run_cluster_inspection(
+        self,
+        *,
+        include_logs: bool = False,
+    ) -> dict:
         return {
             "health_status": "warning",
             "executed_at": now_iso(),
@@ -156,13 +286,29 @@ class MockInspectionProvider:
                     "node": "node-a",
                     "status": "degraded",
                     "describe_summary": "Pod 重启 4 次，最近一次因为配置加载失败退出。",
-                    "log_summary": "failed to load default backend",
+                    "log_summary": (
+                        "failed to load default backend"
+                        if include_logs
+                        else None
+                    ),
                 }
             ],
         }
 
-    def run_namespace_inspection(self, namespace: str, label_selector: str | None) -> dict:
-        pods = [build_demo_pod()]
+    def run_namespace_inspection(
+        self,
+        namespace: str,
+        label_selector: str | None,
+        *,
+        include_logs: bool = False,
+        limits: CollectionLimits | None = None,
+    ) -> dict:
+        pod = build_demo_pod()
+        if not include_logs:
+            pod["events"] = []
+            pod["log_summary"] = None
+            pod["previous_log_summary"] = None
+        pods = [pod]
         return {
             "inspection_target": {
                 "type": "namespace",
@@ -183,6 +329,40 @@ class MockInspectionProvider:
             "tls_secrets": [],
             "daemonsets": [],
         }
+
+    def collect_pod_log_samples(
+        self,
+        namespace: str,
+        pod_names: list[str],
+        limits: CollectionLimits,
+    ) -> TemporaryPodLogCollection:
+        unique_names = list(dict.fromkeys(name for name in pod_names if name))
+        if len(unique_names) > limits.max_log_pods:
+            raise LogPodLimitExceededError(len(unique_names), limits.max_log_pods)
+        container_samples: dict[str, dict[str, str]] = {}
+        collected_bytes = 0
+        truncated = False
+        for pod_name in unique_names:
+            raw = str(build_demo_pod(pod_name)["log_summary"] or "")
+            allowed = min(
+                limits.max_log_bytes_per_pod,
+                limits.max_total_log_bytes - collected_bytes,
+            )
+            if allowed <= 0:
+                truncated = True
+                break
+            encoded = raw.encode("utf-8")
+            sample = encoded[:allowed].decode("utf-8", errors="ignore")
+            collected_bytes += min(len(encoded), allowed)
+            truncated = truncated or len(encoded) > allowed
+            if sample:
+                container_samples[pod_name] = {"demo-api": sample}
+        return TemporaryPodLogCollection(
+            container_samples=container_samples,
+            log_pods_read=len(container_samples),
+            collected_log_bytes=collected_bytes,
+            truncated=truncated,
+        )
 
     def run_pod_inspection(self, namespace: str, pod_name: str) -> dict:
         pod = build_demo_pod(pod_name)

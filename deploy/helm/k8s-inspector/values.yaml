@@ -53,6 +53,8 @@ ingress:
 basePath: ""
 
 env:
+  appEnv: production
+  clusterId: change-me
   databaseUrl: sqlite:////data/k8s_inspector.db
   providerMode: kubernetes
   preferIncluster: true
@@ -61,9 +63,23 @@ env:
   llmProvider: qwen
   modelEndpoint: ""
   kubeContext: ""
+  authMode: local
+  sessionCookieName: k8s_inspector_session
+  sessionIdleMinutes: 30
+  sessionAbsoluteHours: 8
+  sessionCookieSecure: true
+  loginFailureLimit: 5
+  loginFailureWindowMinutes: 10
+  trustedDetailBaseUrl: ""
+  webhookAllowedHosts: []
+  webhookAllowedCidrs: []
 
 secretEnv:
   apiKey: ""
+  adminUsername: ""
+  adminPasswordHash: ""
+  sessionSecret: ""
+  configEncryptionKey: ""
 
 persistence:
   enabled: true

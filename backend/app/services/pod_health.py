@@ -20,6 +20,11 @@ def is_abnormal_container(state: Any, reason: Any = None, exit_code: Any = None)
 
 
 def is_abnormal_pod(pod: dict[str, Any]) -> bool:
+    if pod.get("ready") is False and str(pod.get("status") or "").lower() not in {
+        "succeeded",
+        "completed",
+    }:
+        return True
     if not is_normal_pod_status(pod.get("status")):
         return True
     return any(

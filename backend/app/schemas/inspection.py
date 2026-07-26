@@ -3,6 +3,7 @@ from enum import Enum
 from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.common import AbnormalCategory, EvidenceBundle, InspectionTarget, KeywordHit
+from app.schemas.v1_1 import Coverage, Issue
 
 
 class InspectionTargetType(str, Enum):
@@ -24,11 +25,14 @@ class ClusterInspectionResponse(BaseModel):
     health_status: str
     executed_at: str
     results: list[ClusterInspectionResult]
+    issues: list[Issue] = Field(default_factory=list)
+    coverage: list[Coverage] = Field(default_factory=list)
 
 
 class NamespaceInspectionRequest(BaseModel):
     namespace: str = Field(min_length=1)
     label_selector: str | None = None
+    include_logs: bool = True
 
 
 class NamespaceBatchInspectionRequest(BaseModel):
@@ -127,6 +131,25 @@ class NamespaceLabelDiscoveryResponse(BaseModel):
     labels: list[NamespaceLabelSummary] = Field(default_factory=list)
 
 
+class PodDiscoverySummary(BaseModel):
+    name: str
+    labels: dict[str, str] = Field(default_factory=dict)
+
+
+class PodDiscoveryResponse(BaseModel):
+    namespace: str
+    label_selector: str | None = None
+    executed_at: str
+    pod_count: int = Field(ge=0)
+    pods: list[PodDiscoverySummary] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_pod_count(self) -> "PodDiscoveryResponse":
+        if self.pod_count != len(self.pods):
+            raise ValueError("pod_count must equal the number of pods")
+        return self
+
+
 class NamespaceInspectionResponse(BaseModel):
     inspection_target: InspectionTarget
     namespace: str
@@ -139,6 +162,8 @@ class NamespaceInspectionResponse(BaseModel):
     ingresses: list[InspectedObject]
     tls_secrets: list[InspectedObject]
     daemonsets: list[InspectedObject]
+    issues: list[Issue] = Field(default_factory=list)
+    coverage: list[Coverage] = Field(default_factory=list)
 
 
 class NamespaceBatchInspectionResult(BaseModel):
@@ -152,6 +177,8 @@ class NamespaceBatchInspectionResponse(BaseModel):
     all_namespaces: bool = False
     requested_namespaces: list[str] = Field(default_factory=list)
     results: list[NamespaceBatchInspectionResult] = Field(default_factory=list)
+    issues: list[Issue] = Field(default_factory=list)
+    coverage: list[Coverage] = Field(default_factory=list)
 
 
 class PodInspectionResponse(BaseModel):
@@ -161,6 +188,8 @@ class PodInspectionResponse(BaseModel):
     executed_at: str
     pod: InspectedPod
     evidence_bundle: EvidenceBundle | None = None
+    issues: list[Issue] = Field(default_factory=list)
+    coverage: list[Coverage] = Field(default_factory=list)
 
 
 class InspectionRunResponse(BaseModel):

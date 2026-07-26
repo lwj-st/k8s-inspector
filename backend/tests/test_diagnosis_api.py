@@ -1,3 +1,10 @@
+import json
+from unittest.mock import Mock
+
+from app.models import DiagnosisRecord, SystemSetting
+from app.providers.base import TemporaryPodLogCollection
+
+
 def test_run_diagnosis_uses_template_targets_and_returns_condition_breakdown(client) -> None:
     client.post(
         "/api/v1/templates",
@@ -78,6 +85,11 @@ def test_run_diagnosis_passes_template_target_namespace_and_label_selector(clien
         }
 
     client.app.state.provider.run_namespace_inspection = run_namespace
+    client.app.state.provider.collect_pod_log_samples = Mock(
+        side_effect=AssertionError(
+            "template without log_keyword must not read logs"
+        )
+    )
 
     create_response = client.post(
         "/api/v1/templates",
@@ -108,6 +120,7 @@ def test_run_diagnosis_passes_template_target_namespace_and_label_selector(clien
 
     assert response.status_code == 200
     assert recorded_calls == [("demo", "app=demo")]
+    client.app.state.provider.collect_pod_log_samples.assert_not_called()
     body = response.json()
     assert body["matches"][0]["template_name"] == "Targeted template"
     assert body["evidence_summary"]
@@ -155,6 +168,18 @@ def test_run_diagnosis_matches_log_keyword_from_non_first_container(client) -> N
         }
 
     client.app.state.provider.run_namespace_inspection = run_namespace
+    client.app.state.provider.collect_pod_log_samples = (
+        lambda namespace, pod_names, limits: TemporaryPodLogCollection(
+            container_samples={
+                "demo-api-1": {
+                    "demo-api": "ok",
+                    "sidecar": "timeout from sidecar",
+                }
+            },
+            log_pods_read=1,
+            collected_log_bytes=23,
+        )
+    )
     create_response = client.post(
         "/api/v1/templates",
         json={
@@ -238,6 +263,19 @@ def test_run_diagnosis_matches_template_log_keyword_without_keyword_rule(client)
         }
 
     client.app.state.provider.run_namespace_inspection = run_namespace
+    client.app.state.provider.collect_pod_log_samples = (
+        lambda namespace, pod_names, limits: TemporaryPodLogCollection(
+            container_samples={
+                "lazy-rag-file-process-worker-1": {
+                    "worker": "\n".join(
+                        ["recent info line"] * 20 + [redis_error]
+                    )
+                }
+            },
+            log_pods_read=1,
+            collected_log_bytes=512,
+        )
+    )
     create_response = client.post(
         "/api/v1/templates",
         json={
@@ -276,6 +314,270 @@ def test_run_diagnosis_matches_template_log_keyword_without_keyword_rule(client)
     evidence = body["template_match_results"][0]["evidence_refs"][0]
     assert evidence["container_name"] == "worker"
     assert evidence["matched_text"] == redis_error
+
+
+def test_log_template_reads_only_name_pattern_targets(client) -> None:
+    client.app.state.provider.run_namespace_inspection = (
+        lambda namespace, label_selector: {
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "health_status": "healthy",
+            "executed_at": "2026-07-26T00:00:00Z",
+            "pods": [
+                {
+                    "name": "demo-api-0",
+                    "status": "Running",
+                    "containers": [],
+                    "events": [],
+                    "restarts": 0,
+                    "log_summary": None,
+                },
+                {
+                    "name": "demo-worker-0",
+                    "status": "Running",
+                    "containers": [],
+                    "events": [],
+                    "restarts": 0,
+                    "log_summary": None,
+                },
+            ],
+            "services": [],
+            "ingresses": [],
+            "daemonsets": [],
+            "tls_secrets": [],
+        }
+    )
+    log_collector = Mock(
+        return_value=TemporaryPodLogCollection(
+            container_samples={
+                "demo-api-0": {"api": "ERROR target failure"}
+            },
+            log_pods_read=1,
+            collected_log_bytes=20,
+        )
+    )
+    client.app.state.provider.collect_pod_log_samples = log_collector
+    template = client.post(
+        "/api/v1/templates",
+        json={
+            "name": "Targeted log template",
+            "scenario": "targeted_diagnosis",
+            "targets": [
+                {
+                    "target_ref": "api",
+                    "namespace": "demo",
+                    "label_selector": "app=demo",
+                    "pod_name_pattern": "demo-api-*",
+                    "resource_scope": ["pods"],
+                }
+            ],
+            "match_conditions": [
+                {
+                    "target_ref": "api",
+                    "condition_type": "log_keyword",
+                    "operator": "contains",
+                    "expected_value": "ERROR",
+                    "enabled": True,
+                }
+            ],
+            "joint_rule": {"operator": "AND"},
+            "reason": "Target failed",
+            "suggestion": "Inspect target",
+            "enabled": True,
+        },
+    )
+    assert template.status_code == 201
+
+    response = client.post("/api/v1/diagnoses/run", json={})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "matched"
+    assert log_collector.call_count == 1
+    namespace, pod_names, limits = log_collector.call_args.args
+    assert namespace == "demo"
+    assert pod_names == ["demo-api-0"]
+    assert limits.max_log_pods == 200
+
+
+def test_log_template_limit_rejects_before_log_collection(client) -> None:
+    with client.app.state.session_factory() as session:
+        settings = session.get(SystemSetting, 1)
+        settings.inspection_policy = {"max_log_pods": 1}
+        session.commit()
+    client.app.state.provider.run_namespace_inspection = (
+        lambda namespace, label_selector: {
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "health_status": "healthy",
+            "executed_at": "2026-07-26T00:00:00Z",
+            "pods": [
+                {
+                    "name": "demo-api-0",
+                    "status": "Running",
+                    "containers": [],
+                    "events": [],
+                    "restarts": 0,
+                    "log_summary": None,
+                },
+                {
+                    "name": "demo-api-1",
+                    "status": "Running",
+                    "containers": [],
+                    "events": [],
+                    "restarts": 0,
+                    "log_summary": None,
+                },
+            ],
+            "services": [],
+            "ingresses": [],
+            "daemonsets": [],
+            "tls_secrets": [],
+        }
+    )
+    log_collector = Mock(
+        side_effect=AssertionError("limit must reject before log reads")
+    )
+    client.app.state.provider.collect_pod_log_samples = log_collector
+    template = client.post(
+        "/api/v1/templates",
+        json={
+            "name": "Over limit log template",
+            "scenario": "targeted_diagnosis",
+            "targets": [
+                {
+                    "target_ref": "api",
+                    "namespace": "demo",
+                    "label_selector": "app=demo",
+                    "resource_scope": ["pods"],
+                }
+            ],
+            "match_conditions": [
+                {
+                    "target_ref": "api",
+                    "condition_type": "log_keyword",
+                    "operator": "contains",
+                    "expected_value": "ERROR",
+                    "enabled": True,
+                }
+            ],
+            "joint_rule": {"operator": "AND"},
+            "reason": "Target failed",
+            "suggestion": "Inspect target",
+            "enabled": True,
+        },
+    )
+    assert template.status_code == 201
+
+    response = client.post("/api/v1/diagnoses/run", json={})
+
+    assert response.status_code == 200
+    result = response.json()["template_match_results"][0]
+    assert result["matched"] is False
+    assert "超过上限 1，请缩小范围" in result["summary"]
+    log_collector.assert_not_called()
+
+
+def test_diagnosis_redacts_sensitive_log_text_from_api_and_sqlite(client) -> None:
+    secret_values = [
+        "plain-password",
+        "plain-token",
+        "plain-api-key",
+        "plain-bearer",
+        "plain-hook-token",
+        "plain-private-key",
+    ]
+    sensitive_log = (
+        "ERROR password=plain-password token=plain-token "
+        "X-Api-Key=plain-api-key Bearer plain-bearer "
+        "https://open.feishu.cn/open-apis/bot/v2/hook/plain-hook-token "
+        "-----BEGIN PRIVATE KEY-----plain-private-key"
+        "-----END PRIVATE KEY-----"
+    )
+    client.app.state.provider.run_namespace_inspection = (
+        lambda namespace, label_selector: {
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "health_status": "healthy",
+            "executed_at": "2026-07-26T00:00:00Z",
+            "pods": [
+                {
+                    "name": "demo-api-0",
+                    "status": "Running",
+                    "containers": [],
+                    "events": [],
+                    "restarts": 0,
+                    "log_summary": None,
+                }
+            ],
+            "services": [],
+            "ingresses": [],
+            "daemonsets": [],
+            "tls_secrets": [],
+        }
+    )
+    client.app.state.provider.collect_pod_log_samples = Mock(
+        return_value=TemporaryPodLogCollection(
+            container_samples={"demo-api-0": {"api": sensitive_log}},
+            log_pods_read=1,
+            collected_log_bytes=len(sensitive_log.encode("utf-8")),
+        )
+    )
+    template = client.post(
+        "/api/v1/templates",
+        json={
+            "name": "Sensitive log template",
+            "scenario": "targeted_diagnosis",
+            "targets": [
+                {
+                    "target_ref": "api",
+                    "namespace": "demo",
+                    "label_selector": "app=demo",
+                    "resource_scope": ["pods"],
+                }
+            ],
+            "match_conditions": [
+                {
+                    "target_ref": "api",
+                    "condition_type": "log_keyword",
+                    "operator": "contains",
+                    "expected_value": "ERROR",
+                    "enabled": True,
+                }
+            ],
+            "joint_rule": {"operator": "AND"},
+            "reason": "Sensitive failure",
+            "suggestion": "Inspect safely",
+            "enabled": True,
+        },
+    )
+    assert template.status_code == 201
+
+    response = client.post("/api/v1/diagnoses/run", json={})
+
+    assert response.status_code == 200
+    body_text = json.dumps(response.json(), ensure_ascii=False)
+    assert "ERROR" in body_text
+    assert "[REDACTED]" in body_text
+    for secret in secret_values:
+        assert secret not in body_text
+
+    with client.app.state.session_factory() as session:
+        record = (
+            session.query(DiagnosisRecord)
+            .order_by(DiagnosisRecord.id.desc())
+            .first()
+        )
+        stored_text = json.dumps(
+            {
+                "matched_templates": record.matched_templates,
+                "evidence_summary": record.evidence_summary,
+            },
+            ensure_ascii=False,
+        )
+    assert "ERROR" in stored_text
+    assert "[REDACTED]" in stored_text
+    for secret in secret_values:
+        assert secret not in stored_text
 
 
 def test_run_diagnosis_isolates_single_template_collection_failure(client) -> None:

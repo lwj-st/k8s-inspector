@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { ignoreWhitelistLogHit, runNamespaceInspection } from "../api/client";
+import { discoverNamespacePods, getSettings, ignoreWhitelistLogHit } from "../api/client";
 import type { InspectedPod, KeywordHit, SavedInspectionTarget } from "../api/types";
 import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
+import { InspectionOutcomePanel } from "../components/InspectionOutcomePanel";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
 import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
@@ -16,6 +17,12 @@ import { findLogKeywordMatchRanges, normalizeTerminalLogText } from "../features
 
 type PodScopeMode = "all" | "label" | "single";
 type PodModalType = "save" | "import" | "export" | "ignore" | null;
+type RangeInspectionConfirmation = {
+  namespace: string;
+  scopeMode: Exclude<PodScopeMode, "single">;
+  labelSelector: string;
+  podCount: number | null;
+};
 type IgnoreDraft = {
   pod: InspectedPod;
   hit: KeywordHit;
@@ -100,6 +107,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [podOptionsLoading, setPodOptionsLoading] = useState(false);
   const [podOptionsError, setPodOptionsError] = useState<string | null>(null);
   const [podOptionsNamespace, setPodOptionsNamespace] = useState<string | null>(null);
+  const [maxLogPods, setMaxLogPods] = useState<number | null>(null);
+  const [logLimitError, setLogLimitError] = useState<string | null>(null);
   const [selectedRangePodName, setSelectedRangePodName] = useState<string | null>(null);
   const [targetName, setTargetName] = useState("");
   const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
@@ -113,6 +122,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [ignoreDraft, setIgnoreDraft] = useState<IgnoreDraft | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [rangeConfirmation, setRangeConfirmation] = useState<RangeInspectionConfirmation | null>(null);
   const { data: namespaceDiscovery, loading: namespaceLoading, error: namespaceError } = useDiscoverNamespaces();
   const { data: labelDiscovery, loading: labelLoading, error: labelError } = useDiscoverNamespaceLabels(namespace);
   const namespaceInspection = useRunNamespaceInspection();
@@ -128,6 +138,28 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     exportTargets,
     importTargets,
   } = useSavedInspectionTargets("pod");
+
+  useEffect(() => {
+    let alive = true;
+    void getSettings()
+      .then((result) => {
+        if (!alive) {
+          return;
+        }
+        setMaxLogPods(result.inspection_policy.max_log_pods);
+        setLogLimitError(null);
+      })
+      .catch((reason) => {
+        if (!alive) {
+          return;
+        }
+        setMaxLogPods(null);
+        setLogLimitError(reason instanceof Error ? reason.message : "未知错误");
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const filteredNamespaces = useMemo(() => {
     const keyword = namespaceSearch.trim().toLowerCase();
@@ -178,7 +210,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     let alive = true;
     setPodOptionsLoading(true);
     setPodOptionsError(null);
-    void runNamespaceInspection(namespace.trim(), null)
+    void discoverNamespacePods(namespace.trim())
       .then((result) => {
         if (!alive) {
           return;
@@ -203,14 +235,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     };
   }, [namespace, podOptionsNamespace, scopeMode]);
 
-  useEffect(() => {
-    if (!namespaceInspection.data) {
-      return;
-    }
-    setPodOptions(namespaceInspection.data.pods.map((pod) => pod.name));
-    setPodOptionsNamespace(namespaceInspection.data.namespace);
-  }, [namespaceInspection.data]);
-
   function resetAfterInspection() {
     setIgnoredLogKeys([]);
     setIgnoringLogKeys([]);
@@ -226,6 +250,49 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     setPodOptionsNamespace(null);
     setPodOptionsError(null);
     setSelectedRangePodName(null);
+    setRangeConfirmation(null);
+  }
+
+  function discoveredRangePodCount(
+    targetNamespace: string,
+    targetScopeMode: Exclude<PodScopeMode, "single">,
+    targetLabelSelector: string,
+  ) {
+    if (targetScopeMode === "all") {
+      return namespaceDiscovery?.namespaces.find((item) => item.name === targetNamespace)?.pod_count ?? null;
+    }
+    if (labelDiscovery?.namespace !== targetNamespace) {
+      return null;
+    }
+    return labelDiscovery.labels.find((item) => item.selector === targetLabelSelector)?.pod_count ?? null;
+  }
+
+  async function runRangeInspection(request: RangeInspectionConfirmation) {
+    await namespaceInspection.submit(
+      request.namespace,
+      request.scopeMode === "label" ? request.labelSelector : "",
+      true,
+    );
+    resetAfterInspection();
+  }
+
+  async function requestRangeInspection(
+    targetNamespace: string,
+    targetScopeMode: Exclude<PodScopeMode, "single">,
+    targetLabelSelector: string,
+  ) {
+    const podCount = discoveredRangePodCount(targetNamespace, targetScopeMode, targetLabelSelector);
+    const request = {
+      namespace: targetNamespace,
+      scopeMode: targetScopeMode,
+      labelSelector: targetLabelSelector,
+      podCount,
+    };
+    if (podCount === null || maxLogPods === null || podCount > maxLogPods) {
+      setRangeConfirmation(request);
+      return;
+    }
+    await runRangeInspection(request);
   }
 
   async function handleRunInspection() {
@@ -247,8 +314,11 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       return;
     }
 
-    await namespaceInspection.submit(normalizedNamespace, scopeMode === "label" ? labelSelector.trim() || "" : "");
-    resetAfterInspection();
+    await requestRangeInspection(
+      normalizedNamespace,
+      scopeMode,
+      scopeMode === "label" ? labelSelector.trim() : "",
+    );
   }
 
   function openIgnoreLogHit(hit: KeywordHit) {
@@ -324,12 +394,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
     if (target.label_selector) {
       setScopeMode("label");
-      void namespaceInspection.submit(target.namespace, target.label_selector).then(() => resetAfterInspection());
+      void requestRangeInspection(target.namespace, "label", target.label_selector);
       return;
     }
 
     setScopeMode("all");
-    void namespaceInspection.submit(target.namespace, "").then(() => resetAfterInspection());
+    void requestRangeInspection(target.namespace, "all", "");
   }
 
   function openCreateSaveModal() {
@@ -574,7 +644,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               {podInspection.loading || namespaceInspection.loading ? "巡检中..." : currentRunLabel}
             </button>
           </div>
-          {namespaceLoading ? <p className="inline-note">名称空间发现中...</p> : null}
+              {namespaceLoading ? <p className="inline-note">名称空间发现中...</p> : null}
+              {logLimitError ? <p className="inline-note">日志采集上限读取失败：{logLimitError}。范围日志巡检已安全阻断。</p> : null}
           {namespaceError ? <p>名称空间读取失败：{namespaceError}</p> : null}
           {scopeMode === "single" && podOptionsError ? <p>Pod 下拉加载失败：{podOptionsError}</p> : null}
         </div>
@@ -663,6 +734,21 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       {podInspection.error ? <p>巡检失败：{podInspection.error}</p> : null}
       {namespaceInspection.error ? <p>巡检失败：{namespaceInspection.error}</p> : null}
       {ignoreMessage ? <p className="inline-note">{ignoreMessage}</p> : null}
+
+      {scopeMode === "single" && podInspection.data ? (
+        <InspectionOutcomePanel
+          healthStatus={podInspection.data.health_status}
+          issues={podInspection.data.issues}
+          coverage={podInspection.data.coverage}
+        />
+      ) : null}
+      {scopeMode !== "single" && namespaceInspection.data ? (
+        <InspectionOutcomePanel
+          healthStatus={namespaceInspection.data.health_status}
+          issues={namespaceInspection.data.issues}
+          coverage={namespaceInspection.data.coverage}
+        />
+      ) : null}
 
       {scopeMode === "single" && podInspection.data ? (
         <>
@@ -982,6 +1068,43 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                 </div>
               </>
             ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {rangeConfirmation ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal-card modal-card-polished"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="large-range-title"
+          >
+            <div className="section-header">
+              <div>
+                <p className="eyebrow">日志读取保护</p>
+                <h3 id="large-range-title">无法执行大范围日志巡检</h3>
+              </div>
+            </div>
+            {rangeConfirmation.podCount === null ? (
+              <p>当前无法确认该范围的 Pod 数量，为避免读取过多日志，本次巡检已阻断。</p>
+            ) : maxLogPods === null ? (
+              <p>当前无法读取日志采集上限，为避免读取过多日志，本次巡检已阻断。</p>
+            ) : (
+              <p>当前范围发现 {rangeConfirmation.podCount} 个 Pod，超过当前日志采集上限 {maxLogPods} 个，本次巡检已阻断。</p>
+            )}
+            <p className="inline-note">
+              {rangeConfirmation.podCount === null
+                ? "请先刷新发现数据、选择可确认 Pod 数量的范围，或使用 Label Selector 缩小范围后重试。"
+                : maxLogPods === null
+                  ? "请确认系统设置可用并重新打开页面后重试。"
+                  : `请使用 Label Selector 缩小到 ${maxLogPods} 个及以下 Pod 后重试。`}
+            </p>
+            <div className="button-row modal-action-row">
+              <button type="button" className="modal-primary-button" onClick={() => setRangeConfirmation(null)}>
+                返回缩小范围
+              </button>
+            </div>
           </section>
         </div>
       ) : null}

@@ -1,0 +1,87 @@
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_db_session
+from app.schemas.v1_1 import (
+    Issue,
+    IssueAcknowledgeRequest,
+    IssueEvent,
+    IssueListFilter,
+    IssueSeverity,
+    IssueSortMode,
+    IssueStatus,
+    Page,
+)
+from app.services import issue_lifecycle, issue_query
+
+
+router = APIRouter(prefix="/issues", tags=["issues"])
+
+
+@router.get("", response_model=Page[Issue])
+def list_issues(
+    status_filter: IssueStatus | None = Query(default=None, alias="status"),
+    severity: IssueSeverity | None = None,
+    namespace: str | None = None,
+    resource_kind: str | None = None,
+    source_check: str | None = None,
+    sort: IssueSortMode = IssueSortMode.priority,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    session: Session = Depends(get_db_session),
+) -> Page[Issue]:
+    return issue_query.list_issues(
+        session,
+        IssueListFilter(
+            status=status_filter,
+            severity=severity,
+            namespace=namespace,
+            resource_kind=resource_kind,
+            source_check=source_check,
+            sort=sort,
+            page=page,
+            page_size=page_size,
+        ),
+    )
+
+
+@router.get("/{issue_id}", response_model=Issue)
+def get_issue(issue_id: int, session: Session = Depends(get_db_session)) -> Issue:
+    row = issue_query.get_issue(session, issue_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
+    return issue_query.issue_from_model(row)
+
+
+@router.get("/{issue_id}/events", response_model=Page[IssueEvent])
+def list_issue_events(
+    issue_id: int,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    session: Session = Depends(get_db_session),
+) -> Page[IssueEvent]:
+    result = issue_query.list_issue_events(
+        session,
+        issue_id=issue_id,
+        page=page,
+        page_size=page_size,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
+    return result
+
+
+@router.post("/{issue_id}/acknowledge", response_model=Issue)
+def acknowledge_issue(
+    issue_id: int,
+    payload: IssueAcknowledgeRequest,
+    session: Session = Depends(get_db_session),
+) -> Issue:
+    result = issue_lifecycle.acknowledge_issue(
+        session,
+        issue_id=issue_id,
+        payload=payload,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
+    return result

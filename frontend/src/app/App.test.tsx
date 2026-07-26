@@ -1,219 +1,93 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { appRoutes } from "../routes";
 import { getRouterBasename } from "./config";
 
 const fetchMock = vi.fn();
 
+function authenticatedSession() {
+  return {
+    authenticated: true,
+    username: "admin",
+    csrf_token: "csrf-token-at-least-16",
+    idle_expires_at: "2026-07-26T22:00:00Z",
+    absolute_expires_at: "2026-07-27T05:00:00Z",
+  };
+}
+
 describe("App", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockImplementation(async (input: string | URL | Request) => {
-      const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
-
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/session")) {
+        return new Response(JSON.stringify(authenticatedSession()), { status: 200 });
+      }
+      if (url.includes("/api/v1/issues?")) {
+        return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: url.includes("page_size=1") ? 1 : 20 }), { status: 200 });
+      }
+      if (url.includes("/api/v1/inspection-runs?")) {
+        return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: 1 }), { status: 200 });
+      }
       if (url.endsWith("/api/v1/discovery/namespaces")) {
-        return new Response(
-          JSON.stringify({
-            executed_at: "2026-07-12T12:00:00Z",
-            namespaces: [
-              {
-                name: "default",
-                status: "healthy",
-                pod_count: 12,
-                abnormal_pod_count: 0,
-                last_inspected_at: null,
-                labels: {},
-                abnormal_categories: [],
-              },
-              {
-                name: "prod-core",
-                status: "warning",
-                pod_count: 18,
-                abnormal_pod_count: 2,
-                last_inspected_at: "2026-07-12T11:30:00Z",
-                labels: { env: "prod" },
-                abnormal_categories: ["pod_status"],
-              },
-            ],
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          }
-        );
+        return new Response(JSON.stringify({
+          executed_at: "2026-07-26T12:00:00Z",
+          namespaces: [{
+            name: "default",
+            status: "healthy",
+            pod_count: 12,
+            abnormal_pod_count: 0,
+            last_inspected_at: null,
+            labels: {},
+            abnormal_categories: [],
+          }],
+        }), { status: 200 });
       }
-
       if (url.endsWith("/api/v1/inspection-targets")) {
-        return new Response(
-          JSON.stringify([]),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          },
-        );
+        return new Response(JSON.stringify([]), { status: 200 });
       }
-
-      if (url.endsWith("/api/v1/inspections/cluster/run")) {
-        return new Response(
-          JSON.stringify({
-            health_status: "warning",
-            executed_at: "2026-07-02T12:01:00Z",
-            results: [
-              {
-                component: "ingress-nginx",
-                namespace: "ingress-nginx",
-                node: "node-a",
-                status: "degraded",
-                describe_summary: "controller restarted 3 times",
-                log_summary: "failed to load backend",
-              },
-              {
-                component: "Calico CNI",
-                namespace: "calico-system",
-                node: "node-b",
-                status: "NotReady",
-                describe_summary: "felix pod not ready",
-                log_summary: null,
-              }
-            ],
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          }
-        );
-      }
-
-      if (url.endsWith("/api/v1/templates")) {
-        return new Response(
-          JSON.stringify([
-            {
-              id: 1,
-              name: "ingress 控制器故障",
-              scenario: "ingress",
-              object_scope: "deployment",
-              namespace_scope: "ingress-nginx",
-              label_selector: "app.kubernetes.io/component=controller",
-              match_conditions: [
-                {
-                  target_ref: "controller",
-                  condition_type: "log_keyword",
-                  operator: "contains",
-                  expected_value: "failed to load backend"
-                }
-              ],
-              joint_rule: { operator: "AND" },
-              reason: "控制器无法加载后端",
-              suggestion: "检查 upstream 配置与 service",
-              enabled: true
-            }
-          ]),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          },
-        );
-      }
-
-      if (url.endsWith("/api/v1/whitelists")) {
-        return new Response(
-          JSON.stringify([
-            {
-              id: 1,
-              namespace: "demo",
-              label_selector: "app=demo-api",
-              keyword: "readiness probe failed",
-              enabled: true,
-              note: "已确认是预发布环境的已知噪音"
-            }
-          ]),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          },
-        );
-      }
-
-      if (url.endsWith("/api/v1/settings")) {
-        return new Response(
-          JSON.stringify({
-            base_path: "/inspector",
-            provider_mode: "kubernetes",
-            kubeconfig_path: "/path/to/.kube/config",
-            kube_context: "kubernetes-admin@kubernetes",
-            llm_provider: "openai",
-            model: "gpt-5",
-            api_key: "",
-            default_namespace: "default",
-            system_status: "ready"
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          }
-        );
-      }
-
-      if (url.endsWith("/api/v1/system/status")) {
-        return new Response(
-          JSON.stringify({
-            status: "ready",
-            version: "0.1.0",
-            message: "kubernetes provider active",
-            provider_mode: "kubernetes",
-            kube_context: "kubernetes-admin@kubernetes"
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          }
-        );
-      }
-
       throw new Error(`Unexpected request: ${url}`);
     });
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     fetchMock.mockReset();
   });
 
-  it("renders status inspection home with namespace list", async () => {
+  it("renders the problem workbench and preserves all v1.0 entries", async () => {
     const router = createMemoryRouter(appRoutes, {
       initialEntries: ["/"],
-      basename: getRouterBasename("")
+      basename: getRouterBasename(""),
     });
 
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "名称空间" })).toBeInTheDocument();
-    expect(screen.getByLabelText("搜索名称空间")).toBeInTheDocument();
-    expect(screen.getByLabelText("选择名称空间")).toBeInTheDocument();
-    expect(screen.queryByText("名称空间列表")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "问题工作台" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "状态巡检" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "日志巡检" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "模板检查" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "故障模板" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "关键字库" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "系统配置" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "自动巡检" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "名称空间巡检" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "单 Pod 巡检" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "关键字与白名单" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "系统设置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开菜单" })).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("redirects old pod route to the merged namespace log inspection page", async () => {
+  it("keeps the old pod route on the merged log inspection page in single-pod mode", async () => {
     const router = createMemoryRouter(appRoutes, {
       initialEntries: ["/inspections/pod"],
-      basename: getRouterBasename("")
+      basename: getRouterBasename(""),
     });
 
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "选择范围" })).toBeInTheDocument();
     expect(screen.getByLabelText("范围类型")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("全部 Pod")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("单个 Pod")).toBeInTheDocument();
   });
+
 });

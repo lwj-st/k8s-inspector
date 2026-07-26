@@ -11,8 +11,10 @@ from app.main import create_app
 @pytest.fixture()
 def test_settings(tmp_path: Path) -> Settings:
     return Settings(
+        app_env="test",
         base_path="",
         database_url=f"sqlite:///{tmp_path / 'test.db'}",
+        encryption_key="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
         llm_enabled=False,
     )
 

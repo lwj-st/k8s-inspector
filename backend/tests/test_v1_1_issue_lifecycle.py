@@ -1,0 +1,220 @@
+from datetime import datetime, timedelta, timezone
+
+from app.models import InspectionRun as InspectionRunModel
+from app.models import Issue as IssueModel
+from app.models import IssueScopeMembership
+from app.models.v1_1 import inspection_run_issues
+from app.schemas.v1_1 import (
+    CheckEvaluation,
+    CheckStatus,
+    Coverage,
+    InspectionScope,
+    InspectionTrigger,
+    IssueCandidate,
+    IssueCode,
+    IssueScope,
+    IssueSeverity,
+    ResourceRef,
+    build_inspection_scope_key,
+)
+from app.services.issue_lifecycle import apply_evaluations
+
+
+def _run(session, scope: InspectionScope, when: datetime) -> InspectionRunModel:
+    row = InspectionRunModel(
+        trigger="manual",
+        status="running",
+        scope=scope.model_dump(mode="json"),
+        started_at=when,
+        coverage=[],
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def _evaluation(scope: InspectionScope, *, present: bool, status: CheckStatus | None = None):
+    candidate = IssueCandidate(
+        issue_code=IssueCode.POD_NOT_READY,
+        severity=IssueSeverity.warning,
+        scope=IssueScope.pod,
+        resource=ResourceRef(kind="Pod", namespace="demo", name="api-0"),
+        summary="Pod 未就绪",
+        reason="Ready=False",
+        suggestion="检查容器状态",
+        source_check="pod.runtime",
+    )
+    candidates = [candidate] if present else []
+    check_status = status or (CheckStatus.abnormal if present else CheckStatus.passed)
+    return CheckEvaluation(
+        scope=scope,
+        scope_key=build_inspection_scope_key(scope),
+        coverage=Coverage(
+            check_code="pod.runtime",
+            name="Pod 运行状态",
+            status=check_status,
+            reason=None if check_status == CheckStatus.passed else "发现异常" if present else "检查失败",
+            checked_objects=1,
+            duration_ms=1,
+            issue_count=len(candidates),
+        ),
+        issue_candidates=candidates,
+    )
+
+
+def test_multi_scope_membership_delays_recovery_until_all_scopes_clear(client):
+    session_factory = client.app.state.session_factory
+    now = datetime.now(timezone.utc)
+    namespace_scope = InspectionScope(type="namespace", namespace="demo")
+    pod_scope = InspectionScope(type="pod", namespace="demo", pod_name="api-0")
+    with session_factory() as session:
+        run1 = _run(session, namespace_scope, now)
+        first = apply_evaluations(
+            session,
+            cluster_id="cluster-a",
+            run_id=run1.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(namespace_scope, present=True)],
+            occurred_at=now,
+        )
+        session.commit()
+        issue_id = next(iter(first.issue_ids))
+
+        run2 = _run(session, pod_scope, now + timedelta(minutes=1))
+        apply_evaluations(
+            session,
+            cluster_id="cluster-a",
+            run_id=run2.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(pod_scope, present=True)],
+            occurred_at=now + timedelta(minutes=1),
+        )
+        session.commit()
+        memberships = session.query(IssueScopeMembership).filter_by(issue_id=issue_id).all()
+        assert len(memberships) == 2
+        assert all(item.active for item in memberships)
+
+        run3 = _run(session, namespace_scope, now + timedelta(minutes=2))
+        partial_clear = apply_evaluations(
+            session,
+            cluster_id="cluster-a",
+            run_id=run3.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(namespace_scope, present=False)],
+            occurred_at=now + timedelta(minutes=2),
+        )
+        session.commit()
+        assert partial_clear.recovered_count == 0
+        assert session.get(IssueModel, issue_id).status == "open"
+
+        run4 = _run(session, pod_scope, now + timedelta(minutes=3))
+        recovered = apply_evaluations(
+            session,
+            cluster_id="cluster-a",
+            run_id=run4.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(pod_scope, present=False)],
+            occurred_at=now + timedelta(minutes=3),
+        )
+        session.commit()
+        assert recovered.recovered_count == 1
+        assert recovered.issue_ids == {issue_id}
+        assert session.get(IssueModel, issue_id).status == "recovered"
+        linked = session.execute(
+            inspection_run_issues.select().where(
+                inspection_run_issues.c.run_id == run4.id,
+                inspection_run_issues.c.issue_id == issue_id,
+            )
+        ).first()
+        assert linked is not None
+
+        run5 = _run(session, pod_scope, now + timedelta(minutes=4))
+        reopened = apply_evaluations(
+            session,
+            cluster_id="cluster-a",
+            run_id=run5.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(pod_scope, present=True)],
+            occurred_at=now + timedelta(minutes=4),
+        )
+        session.commit()
+        assert reopened.opened_count == 1
+        assert session.get(IssueModel, issue_id).status == "open"
+        membership = session.get(
+            IssueScopeMembership,
+            {"issue_id": issue_id, "scope_key": build_inspection_scope_key(pod_scope)},
+        )
+        assert membership.active is True
+        assert membership.deactivated_at is None
+
+
+def test_failed_check_does_not_deactivate_membership(client):
+    session_factory = client.app.state.session_factory
+    now = datetime.now(timezone.utc)
+    scope = InspectionScope(type="namespace", namespace="demo")
+    with session_factory() as session:
+        first_run = _run(session, scope, now)
+        first = apply_evaluations(
+            session,
+            cluster_id="cluster-b",
+            run_id=first_run.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(scope, present=True)],
+            occurred_at=now,
+        )
+        session.commit()
+        issue_id = next(iter(first.issue_ids))
+        failed_run = _run(session, scope, now + timedelta(minutes=1))
+        result = apply_evaluations(
+            session,
+            cluster_id="cluster-b",
+            run_id=failed_run.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(scope, present=False, status=CheckStatus.failed)],
+            occurred_at=now + timedelta(minutes=1),
+        )
+        session.commit()
+        assert result.recovered_count == 0
+        assert session.get(IssueModel, issue_id).status == "open"
+        membership = session.get(
+            IssueScopeMembership,
+            {"issue_id": issue_id, "scope_key": build_inspection_scope_key(scope)},
+        )
+        assert membership.active is True
+
+
+def test_issue_acknowledgement_keeps_health_status_and_events_are_paged(client):
+    inspected = client.post(
+        "/api/v1/inspections/namespace/run",
+        json={"namespace": "demo"},
+    )
+    assert inspected.status_code == 200
+    issue = inspected.json()["issues"][0]
+    acknowledged = client.post(
+        f"/api/v1/issues/{issue['id']}/acknowledge",
+        json={"note": "值班同学处理中"},
+    )
+    assert acknowledged.status_code == 200
+    body = acknowledged.json()
+    assert body["status"] == issue["status"]
+    assert body["acknowledge_note"] == "值班同学处理中"
+
+    timeline = client.get(f"/api/v1/issues/{issue['id']}/events?page=1&page_size=1")
+    assert timeline.status_code == 200
+    assert timeline.json()["total"] >= 2
+    assert len(timeline.json()["items"]) == 1
+    assert timeline.json()["items"][0]["event_type"] == "acknowledged"
+
+
+def test_issue_priority_sort_is_stable_across_pages(client):
+    client.post("/api/v1/inspections/namespace/run", json={"namespace": "demo"})
+    first_page = client.get("/api/v1/issues?sort=priority&page=1&page_size=1")
+    second_page = client.get("/api/v1/issues?sort=priority&page=2&page_size=1")
+    assert first_page.status_code == second_page.status_code == 200
+    first = first_page.json()
+    second = second_page.json()
+    assert first["total"] >= 2
+    assert first["items"][0]["id"] != second["items"][0]["id"]
+    severity_rank = {"critical": 0, "warning": 1, "info": 2}
+    assert severity_rank[first["items"][0]["severity"]] <= severity_rank[second["items"][0]["severity"]]

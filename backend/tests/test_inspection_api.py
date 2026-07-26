@@ -1,6 +1,48 @@
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
+import pytest
+
+from app.models import InspectionRecord, SystemSetting
+from app.models import InspectionRun as InspectionRunModel
+from app.providers.base import LogPodLimitExceededError
+from app.providers.kubernetes_provider import KubernetesInspectionProvider
 from app.schemas.common import KeywordHit
+from app.schemas.inspection import NamespaceInspectionRequest
+from app.services import inspection_service
+
+
+def _v11_issue_payload() -> dict:
+    return {
+        "id": 1,
+        "cluster_id": "default",
+        "issue_code": "NODE_NOT_READY",
+        "fingerprint": "a" * 64,
+        "severity": "critical",
+        "status": "open",
+        "scope": "node",
+        "resource": {"kind": "Node", "name": "node-a"},
+        "summary": "Node 未就绪",
+        "reason": "Ready=False",
+        "suggestion": "检查节点状态",
+        "evidence": [],
+        "first_seen_at": "2026-07-26T08:00:00Z",
+        "last_seen_at": "2026-07-26T08:00:00Z",
+        "occurrence_count": 1,
+        "source_check": "node.readiness",
+    }
+
+
+def _v11_coverage_payload() -> dict:
+    return {
+        "check_code": "node.readiness",
+        "name": "Node 就绪状态",
+        "status": "abnormal",
+        "reason": "存在未就绪 Node",
+        "checked_objects": 1,
+        "duration_ms": 5,
+        "issue_count": 1,
+    }
 
 
 def _namespace_batch_discovery_summary() -> dict:
@@ -15,6 +57,23 @@ def _namespace_batch_discovery_summary() -> dict:
                 "last_inspected_at": "2026-07-12T00:00:00Z",
                 "labels": {"team": "platform"},
                 "abnormal_categories": [],
+            }
+        ],
+    }
+
+
+def _oversized_discovery_summary() -> dict:
+    return {
+        "executed_at": "2026-07-26T08:00:00Z",
+        "namespaces": [
+            {
+                "name": "demo",
+                "status": "warning",
+                "pod_count": 201,
+                "abnormal_pod_count": 201,
+                "last_inspected_at": "2026-07-26T08:00:00Z",
+                "labels": {},
+                "abnormal_categories": ["pod_status"],
             }
         ],
     }
@@ -91,6 +150,499 @@ def test_run_namespace_inspection_returns_pod_evidence(client) -> None:
     assert payload["namespace"] == "demo"
     assert payload["pods"][0]["describe_summary"]
     assert "log_summary" in payload["pods"][0]
+
+
+@pytest.mark.parametrize(
+    ("request_body", "expected_include_logs"),
+    [
+        ({"namespace": "demo"}, True),
+        ({"namespace": "demo", "include_logs": True}, True),
+        ({"namespace": "demo", "include_logs": False}, False),
+    ],
+)
+def test_namespace_api_forwards_explicit_log_collection_mode(
+    client,
+    request_body,
+    expected_include_logs,
+) -> None:
+    provider = client.app.state.provider
+    provider.list_namespace_pods = Mock(
+        return_value={
+            "namespace": "demo",
+            "label_selector": None,
+            "executed_at": "2026-07-26T00:00:00Z",
+            "pod_count": 1,
+            "pods": [{"name": "demo-api-0", "labels": {}}],
+        }
+    )
+    provider.run_namespace_inspection = Mock(
+        return_value=_namespace_batch_inspection_payload()
+    )
+
+    response = client.post(
+        "/api/v1/inspections/namespace/run",
+        json=request_body,
+    )
+
+    assert response.status_code == 200
+    _, _, kwargs = provider.run_namespace_inspection.mock_calls[0]
+    assert kwargs["include_logs"] is expected_include_logs
+    assert kwargs["limits"].max_log_pods == 200
+    if expected_include_logs:
+        provider.list_namespace_pods.assert_called_once_with("demo", None)
+    else:
+        provider.list_namespace_pods.assert_not_called()
+
+
+def test_cluster_api_explicit_status_mode_skips_log_preflight(client) -> None:
+    provider = client.app.state.provider
+    provider.list_namespaces = Mock(
+        side_effect=AssertionError("status mode must not estimate log targets")
+    )
+    provider.run_cluster_inspection = Mock(
+        return_value={
+            "health_status": "healthy",
+            "executed_at": "2026-07-26T00:00:00Z",
+            "results": [],
+        }
+    )
+
+    response = client.post(
+        "/api/v1/inspections/cluster/run",
+        params={"include_logs": "false"},
+    )
+
+    assert response.status_code == 200
+    provider.list_namespaces.assert_not_called()
+    provider.run_cluster_inspection.assert_called_once_with(
+        include_logs=False
+    )
+
+
+def test_all_inspection_endpoints_return_v11_array_fields(client) -> None:
+    responses = [
+        client.post("/api/v1/inspections/cluster/run"),
+        client.post("/api/v1/inspections/namespace/run", json={"namespace": "demo"}),
+        client.post("/api/v1/inspections/namespaces/run", json={"namespaces": ["demo"]}),
+        client.post(
+            "/api/v1/inspections/pod/run",
+            json={"namespace": "demo", "pod_name": "demo-api-7c8f6f7c6b-fh2ns"},
+        ),
+    ]
+
+    for response in responses:
+        assert response.status_code == 200
+        payload = response.json()
+        assert isinstance(payload["issues"], list)
+        assert isinstance(payload["coverage"], list)
+
+    nested_response = client.post(
+        "/api/v1/inspections/run",
+        json={"target_type": "cluster"},
+    )
+    assert nested_response.status_code == 200
+    nested = nested_response.json()
+    assert isinstance(nested["cluster_result"]["issues"], list)
+    assert isinstance(nested["cluster_result"]["coverage"], list)
+    assert "issues" not in nested
+    assert "coverage" not in nested
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        ("/api/v1/inspections/cluster/run", None),
+        ("/api/v1/inspections/namespace/run", {"namespace": "demo"}),
+        ("/api/v1/inspections/run", {"target_type": "cluster"}),
+    ],
+)
+def test_log_inspection_scope_over_200_is_rejected_before_execution(
+    client,
+    path,
+    payload,
+):
+    provider = client.app.state.provider
+    provider.list_namespaces = Mock(return_value=_oversized_discovery_summary())
+    provider.list_namespace_pods = Mock(
+        return_value={
+            "namespace": "demo",
+            "label_selector": None,
+            "executed_at": "2026-07-26T08:00:00Z",
+            "pod_count": 201,
+            "pods": [
+                {"name": f"demo-{index}", "labels": {}}
+                for index in range(201)
+            ],
+        }
+    )
+    provider.run_cluster_inspection = Mock(
+        side_effect=AssertionError("超限后不应执行集群巡检")
+    )
+    provider.run_namespace_inspection = Mock(
+        side_effect=AssertionError("超限后不应执行名称空间巡检")
+    )
+
+    response = client.post(path, json=payload) if payload is not None else client.post(path)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "INSPECTION_LOG_SCOPE_TOO_LARGE"
+    assert "请缩小范围" in body["message"]
+    assert body["details"] == {"estimated_pods": 201, "limit": 200}
+    provider.run_cluster_inspection.assert_not_called()
+    provider.run_namespace_inspection.assert_not_called()
+    with client.app.state.session_factory() as session:
+        assert session.query(InspectionRecord).count() == 0
+        assert session.query(InspectionRunModel).count() == 0
+
+
+def test_namespace_batch_over_200_uses_status_collection_without_log_gate(
+    client,
+) -> None:
+    provider = client.app.state.provider
+    provider.list_namespaces = Mock(
+        return_value=_oversized_discovery_summary()
+    )
+    provider.run_namespace_inspection = Mock(
+        return_value=_namespace_batch_inspection_payload()
+    )
+
+    response = client.post(
+        "/api/v1/inspections/namespaces/run",
+        json={"namespaces": ["demo"], "all_namespaces": False},
+    )
+
+    assert response.status_code == 200
+    provider.run_namespace_inspection.assert_called_once_with(
+        "demo",
+        None,
+        include_logs=False,
+    )
+
+
+def test_configured_log_limit_is_used_by_namespace_preflight(client) -> None:
+    with client.app.state.session_factory() as session:
+        settings = session.get(SystemSetting, 1)
+        settings.inspection_policy = {"max_log_pods": 1}
+        session.commit()
+    provider = client.app.state.provider
+    provider.list_namespace_pods = Mock(
+        return_value={
+            "namespace": "demo",
+            "label_selector": "app=api",
+            "executed_at": "2026-07-26T00:00:00Z",
+            "pod_count": 2,
+            "pods": [
+                {"name": "api-0", "labels": {"app": "api"}},
+                {"name": "api-1", "labels": {"app": "api"}},
+            ],
+        }
+    )
+    provider.run_namespace_inspection = Mock(
+        side_effect=AssertionError("over limit must not inspect")
+    )
+
+    response = client.post(
+        "/api/v1/inspections/namespace/run",
+        json={
+            "namespace": "demo",
+            "label_selector": "app=api",
+            "include_logs": True,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["details"] == {
+        "estimated_pods": 2,
+        "limit": 1,
+    }
+    provider.run_namespace_inspection.assert_not_called()
+
+
+def test_provider_log_limit_race_is_normalized_to_422(client) -> None:
+    provider = client.app.state.provider
+    provider.list_namespace_pods = Mock(
+        return_value={
+            "namespace": "demo",
+            "label_selector": None,
+            "executed_at": "2026-07-26T00:00:00Z",
+            "pod_count": 1,
+            "pods": [{"name": "api-0", "labels": {}}],
+        }
+    )
+    provider.run_namespace_inspection = Mock(
+        side_effect=LogPodLimitExceededError(2, 1)
+    )
+
+    response = client.post(
+        "/api/v1/inspections/namespace/run",
+        json={"namespace": "demo", "include_logs": True},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["details"] == {
+        "estimated_pods": 2,
+        "limit": 1,
+    }
+
+
+def test_cluster_dynamic_log_limit_stops_before_any_pod_log_read(
+    client,
+) -> None:
+    with client.app.state.session_factory() as session:
+        settings = session.get(SystemSetting, 1)
+        settings.inspection_policy = {"max_log_pods": 1}
+        session.commit()
+    provider = KubernetesInspectionProvider.__new__(
+        KubernetesInspectionProvider
+    )
+    provider.list_namespaces = Mock(
+        return_value={
+            "executed_at": "2026-07-26T00:00:00Z",
+            "namespaces": [
+                {
+                    "name": "demo",
+                    "status": "warning",
+                    "pod_count": 2,
+                    "abnormal_pod_count": 2,
+                    "last_inspected_at": "2026-07-26T00:00:00Z",
+                    "labels": {},
+                    "abnormal_categories": ["pod_status"],
+                }
+            ],
+        }
+    )
+    provider.core = SimpleNamespace(
+        read_namespaced_pod_log=Mock()
+    )
+    client.app.state.provider = provider
+
+    response = client.post(
+        "/api/v1/inspections/cluster/run",
+        params={"include_logs": "true"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["details"] == {
+        "estimated_pods": 2,
+        "limit": 1,
+    }
+    provider.core.read_namespaced_pod_log.assert_not_called()
+
+
+def test_namespace_label_scope_over_200_is_rejected_before_execution(client):
+    provider = client.app.state.provider
+    provider.list_namespace_pods = Mock(
+        return_value={
+            "namespace": "demo",
+            "label_selector": "app=large",
+            "executed_at": "2026-07-26T08:00:00Z",
+            "pod_count": 201,
+            "pods": [
+                {"name": f"demo-{index}", "labels": {"app": "large"}}
+                for index in range(201)
+            ],
+        }
+    )
+    provider.run_namespace_inspection = Mock(
+        side_effect=AssertionError("超限后不应执行名称空间巡检")
+    )
+
+    response = client.post(
+        "/api/v1/inspections/namespace/run",
+        json={"namespace": "demo", "label_selector": "app=large"},
+    )
+
+    assert response.status_code == 422
+    assert "请缩小范围" in response.json()["message"]
+    provider.run_namespace_inspection.assert_not_called()
+
+
+def test_direct_service_call_rejects_oversized_scope_before_execution(client):
+    provider = client.app.state.provider
+    provider.list_namespace_pods = Mock(
+        return_value={
+            "namespace": "demo",
+            "label_selector": None,
+            "executed_at": "2026-07-26T08:00:00Z",
+            "pod_count": 201,
+            "pods": [
+                {"name": f"demo-{index}", "labels": {}}
+                for index in range(201)
+            ],
+        }
+    )
+    provider.run_namespace_inspection = Mock(
+        side_effect=AssertionError("超限后不应执行名称空间巡检")
+    )
+    with client.app.state.session_factory() as session:
+        with pytest.raises(
+            inspection_service.LogInspectionScopeTooLargeError,
+            match="请缩小范围",
+        ):
+            inspection_service.run_namespace_inspection(
+                session,
+                provider,
+                NamespaceInspectionRequest(namespace="demo"),
+            )
+        assert session.query(InspectionRecord).count() == 0
+        assert session.query(InspectionRunModel).count() == 0
+    provider.run_namespace_inspection.assert_not_called()
+
+
+def test_public_inspection_results_redact_nested_secrets_and_keep_safe_summary(client):
+    sensitive_text = "\n".join(
+        [
+            "password=plain-password",
+            "passwd=passwd-value",
+            "token=token-value",
+            "secret=secret-value",
+            "api-key=api-key-value",
+            "Bearer bearer-value",
+            "https://open.feishu.cn/open-apis/bot/v2/hook/webhook-value",
+            "-----BEGIN PRIVATE KEY-----private-material-----END PRIVATE KEY-----",
+            "ERROR upstream unavailable",
+        ]
+    )
+
+    def sensitive_result(namespace: str, pod_name: str) -> dict:
+        pod = _inspected_pod(
+            status="CrashLoopBackOff",
+            events=[sensitive_text],
+            log_summary=sensitive_text,
+            container_log_summaries={"demo-api": sensitive_text},
+        )
+        pod["name"] = pod_name
+        pod["describe_summary"] = sensitive_text
+        pod["previous_log_summary"] = sensitive_text
+        return {
+            "inspection_target": {
+                "type": "pod",
+                "namespace": namespace,
+                "pod_name": pod_name,
+                "resource_scope": ["pods"],
+            },
+            "namespace": namespace,
+            "health_status": "warning",
+            "executed_at": "2026-07-26T08:00:00Z",
+            "pod": pod,
+            "evidence_bundle": None,
+        }
+
+    def sensitive_namespace_result(
+        namespace: str,
+        label_selector: str | None,
+        *,
+        include_logs: bool = True,
+        limits=None,
+    ) -> dict:
+        pod_result = sensitive_result(namespace, "sensitive-pod")
+        pod = pod_result["pod"]
+        return {
+            "inspection_target": {
+                "type": "namespace",
+                "namespace": namespace,
+                "label_selector": label_selector,
+                "resource_scope": ["pods", "services", "ingresses", "daemonsets", "secrets"],
+            },
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "health_status": sensitive_text,
+            "executed_at": "2026-07-26T08:00:00Z",
+            "evidence_bundles": [],
+            "pods": [pod],
+            "services": [],
+            "ingresses": [],
+            "tls_secrets": [],
+            "daemonsets": [],
+        }
+
+    client.app.state.provider.run_cluster_inspection = lambda *, include_logs=True: {
+        "health_status": "warning",
+        "executed_at": "2026-07-26T08:00:00Z",
+        "results": [
+            {
+                "component": "api",
+                "namespace": "demo",
+                "node": "node-a",
+                "status": "degraded",
+                "describe_summary": sensitive_text,
+                "log_summary": sensitive_text,
+            }
+        ],
+    }
+    client.app.state.provider.run_namespace_inspection = sensitive_namespace_result
+    client.app.state.provider.run_pod_inspection = sensitive_result
+    responses = [
+        client.post("/api/v1/inspections/cluster/run"),
+        client.post(
+            "/api/v1/inspections/namespace/run",
+            json={"namespace": "demo"},
+        ),
+        client.post(
+            "/api/v1/inspections/namespaces/run",
+            json={"namespaces": ["demo"], "all_namespaces": False},
+        ),
+        client.post(
+            "/api/v1/inspections/pod/run",
+            json={"namespace": "demo", "pod_name": "sensitive-pod"},
+        ),
+        client.post(
+            "/api/v1/inspections/run",
+            json={
+                "target_type": "pod",
+                "namespace": "demo",
+                "pod_name": "sensitive-pod",
+            },
+        ),
+    ]
+
+    forbidden = {
+        "plain-password",
+        "passwd-value",
+        "token-value",
+        "secret-value",
+        "api-key-value",
+        "bearer-value",
+        "webhook-value",
+        "private-material",
+    }
+    for response in responses:
+        assert response.status_code == 200
+        serialized = str(response.json())
+        assert all(secret not in serialized for secret in forbidden)
+        assert "ERROR upstream unavailable" in serialized
+
+    public = inspection_service.sanitize_inspection_response(
+        {"container_log_summaries": {"demo-api": sensitive_text}}
+    )
+    assert "container_log_summaries" in public
+    assert "ERROR upstream unavailable" in public["container_log_summaries"]["demo-api"]
+    assert all(
+        secret not in str(public)
+        for secret in forbidden
+    )
+
+
+def test_cluster_response_model_does_not_filter_non_empty_v11_fields(client) -> None:
+    result = {
+        "health_status": "critical",
+        "executed_at": "2026-07-26T08:00:00Z",
+        "results": [],
+        "issues": [_v11_issue_payload()],
+        "coverage": [_v11_coverage_payload()],
+    }
+
+    with patch(
+        "app.api.routes.inspections.inspection_service.run_cluster_inspection",
+        return_value=result,
+    ):
+        response = client.post("/api/v1/inspections/cluster/run")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["issues"][0]["issue_code"] == "NODE_NOT_READY"
+    assert payload["coverage"][0]["check_code"] == "node.readiness"
 
 
 def test_run_namespace_inspection_returns_structured_pod_evidence(client) -> None:
@@ -272,7 +824,13 @@ def test_run_namespace_batch_inspection_for_all_namespaces(client) -> None:
         ],
     }
 
-    def run_namespace(namespace: str, label_selector: str | None) -> dict:
+    def run_namespace(
+        namespace: str,
+        label_selector: str | None,
+        *,
+        include_logs: bool = True,
+        limits=None,
+    ) -> dict:
         if namespace == "prod":
             pods = []
             health_status = "healthy"
@@ -340,7 +898,7 @@ def test_run_namespace_batch_inspection_for_all_namespaces(client) -> None:
 
 def test_run_namespace_batch_inspection_uses_current_inspection_for_summary(client) -> None:
     client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="warning",
         pods=[
             _inspected_pod(
@@ -369,7 +927,7 @@ def test_run_namespace_batch_inspection_uses_current_inspection_for_summary(clie
 
 def test_run_namespace_batch_inspection_returns_empty_categories_for_healthy_namespace(client) -> None:
     client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="healthy",
         pods=[_inspected_pod()],
     )
@@ -388,7 +946,7 @@ def test_run_namespace_batch_inspection_returns_empty_categories_for_healthy_nam
 
 def test_run_namespace_batch_inspection_treats_succeeded_completed_pod_as_healthy(client) -> None:
     client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="healthy",
         pods=[
             _inspected_pod(
@@ -407,7 +965,7 @@ def test_run_namespace_batch_inspection_treats_succeeded_completed_pod_as_health
 
 
 def test_namespace_inspection_keeps_completed_pod_evidence(client) -> None:
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="healthy",
         pods=[
             _inspected_pod(
@@ -430,7 +988,7 @@ def test_namespace_inspection_keeps_completed_pod_evidence(client) -> None:
 
 def test_run_namespace_batch_inspection_derives_all_abnormal_categories_in_stable_order(client) -> None:
     client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="warning",
         pods=[
             _inspected_pod(
@@ -461,7 +1019,7 @@ def test_run_namespace_batch_inspection_derives_all_abnormal_categories_in_stabl
 
 def test_run_namespace_batch_inspection_derives_related_object_from_namespace_objects(client) -> None:
     client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="warning",
         pods=[_inspected_pod()],
         services=[{"name": "demo-api", "status": "degraded", "summary": "selector mismatch"}],
@@ -482,7 +1040,7 @@ def test_run_namespace_batch_inspection_derives_related_object_from_namespace_ob
 
 def test_run_namespace_batch_inspection_ignores_whitelisted_log_hits_in_summary(client) -> None:
     client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="healthy",
         pods=[
             _inspected_pod(
@@ -515,7 +1073,7 @@ def test_run_namespace_batch_inspection_ignores_whitelisted_log_hits_in_summary(
 
 def test_run_namespace_batch_inspection_keeps_log_keyword_when_non_whitelisted_hit_exists(client) -> None:
     client.app.state.provider.list_namespaces = _namespace_batch_discovery_summary
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="warning",
         pods=[
             _inspected_pod(log_summary="mixed log hits")
@@ -559,7 +1117,7 @@ def test_run_namespace_batch_inspection_keeps_log_keyword_when_non_whitelisted_h
 
 
 def test_run_namespace_inspection_hides_whitelisted_log_hits_in_detail_response(client) -> None:
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="healthy",
         pods=[
             _inspected_pod(log_summary="connection refused")
@@ -592,7 +1150,7 @@ def test_run_namespace_inspection_hides_whitelisted_log_hits_in_detail_response(
 
 
 def test_run_namespace_inspection_matches_keywords_for_every_container(client) -> None:
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: _namespace_batch_inspection_payload(
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: _namespace_batch_inspection_payload(
         health_status="healthy",
         pods=[
             _inspected_pod(
@@ -670,7 +1228,13 @@ def test_run_namespace_batch_inspection_isolates_single_namespace_failure(client
         ],
     }
 
-    def run_namespace(namespace: str, label_selector: str | None) -> dict:
+    def run_namespace(
+        namespace: str,
+        label_selector: str | None,
+        *,
+        include_logs: bool = True,
+        limits=None,
+    ) -> dict:
         if namespace == "broken":
             raise RuntimeError("provider failed")
         return {
@@ -744,7 +1308,7 @@ def test_run_namespace_batch_inspection_sorts_explicit_namespaces_by_name(client
             },
         ],
     }
-    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector: {
+    client.app.state.provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: {
         "inspection_target": {
             "type": "namespace",
             "namespace": namespace,
@@ -780,7 +1344,7 @@ def test_mock_provider_pod_inspection_does_not_depend_on_namespace_inspection() 
     from app.providers.mock_provider import MockInspectionProvider
 
     provider = MockInspectionProvider()
-    provider.run_namespace_inspection = lambda namespace, label_selector: (_ for _ in ()).throw(
+    provider.run_namespace_inspection = lambda namespace, label_selector, *, include_logs=True, limits=None: (_ for _ in ()).throw(
         AssertionError("run_namespace_inspection should not be used for single pod inspection")
     )
 

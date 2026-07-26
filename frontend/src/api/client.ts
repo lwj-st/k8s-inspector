@@ -9,54 +9,256 @@ import type {
   KeywordRule,
   NamespaceLabelDiscoveryResponse,
   NamespaceDiscoveryResponse,
+  PodDiscoveryResponse,
   NamespaceInspectionResponse,
   OverviewResponse,
   PodInspectionResponse,
   SavedInspectionTarget,
   SettingsResponse,
-  SystemStatusResponse,
   Whitelist,
   WhitelistCreate,
   WhitelistIgnoreCreate,
   KeywordHitSeverity,
+  AdminSession,
+  ApiError,
+  Issue,
+  IssueEvent,
+  IssueListParams,
+  Page,
+  InspectionRun,
+  InspectionRunDetail,
+  InspectionPlan,
+  InspectionPlanCreate,
+  InspectionPlanUpdate,
+  NotificationChannel,
+  NotificationChannelCreate,
+  NotificationChannelUpdate,
+  NotificationTestResponse,
+  SettingsUpdate,
+  SystemStatus,
 } from "./types";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let currentCsrfToken: string | null = null;
+let unauthorizedHandler: (() => void) | null = null;
+
+export class ApiClientError extends Error {
+  status: number;
+  code: string;
+  requestId: string | null;
+  details: ApiError["details"];
+
+  constructor(status: number, payload: Partial<ApiError>) {
+    super(payload.message ?? `Request failed: ${status}`);
+    this.name = "ApiClientError";
+    this.status = status;
+    this.code = payload.code ?? `HTTP_${status}`;
+    this.requestId = payload.request_id ?? null;
+    this.details = payload.details ?? {};
+  }
+}
+
+export function configureApiSession(
+  csrfToken: string | null,
+  onUnauthorized: (() => void) | null = null,
+) {
+  currentCsrfToken = csrfToken;
+  unauthorizedHandler = onUnauthorized;
+}
+
+type InternalRequestInit = RequestInit & {
+  skipUnauthorizedHandler?: boolean;
+};
+
+async function responseError(response: Response): Promise<ApiClientError> {
+  let payload: Partial<ApiError> = {};
+  try {
+    const raw = await response.json() as Partial<ApiError>;
+    payload = {
+      code: raw.code,
+      message: raw.message ?? `Request failed: ${response.status}`,
+      request_id: raw.request_id ?? response.headers.get("x-request-id"),
+      details: raw.details ?? {},
+    };
+  } catch {
+    payload = {
+      message: `请求失败（${response.status}）`,
+      request_id: response.headers.get("x-request-id"),
+    };
+  }
+  return new ApiClientError(response.status, payload);
+}
+
+async function request<T>(path: string, init?: InternalRequestInit): Promise<T> {
+  const { skipUnauthorizedHandler = false, ...fetchInit } = init ?? {};
+  const headers = new Headers(fetchInit.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const method = (fetchInit.method ?? "GET").toUpperCase();
+  if (currentCsrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    headers.set("X-CSRF-Token", currentCsrfToken);
+  }
   const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
+    credentials: "same-origin",
+    ...fetchInit,
+    headers,
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    if (response.status === 401 && !skipUnauthorizedHandler) {
+      unauthorizedHandler?.();
+    }
+    throw await responseError(response);
   }
 
   return (await response.json()) as T;
 }
 
-async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+async function requestVoid(path: string, init?: InternalRequestInit): Promise<void> {
+  const { skipUnauthorizedHandler = false, ...fetchInit } = init ?? {};
+  const headers = new Headers(fetchInit.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const method = (fetchInit.method ?? "GET").toUpperCase();
+  if (currentCsrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    headers.set("X-CSRF-Token", currentCsrfToken);
+  }
   const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
+    credentials: "same-origin",
+    ...fetchInit,
+    headers,
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    if (response.status === 401 && !skipUnauthorizedHandler) {
+      unauthorizedHandler?.();
+    }
+    throw await responseError(response);
   }
+}
+
+function queryString(params: Record<string, string | number | boolean | null | undefined>) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, String(value));
+    }
+  }
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : "";
 }
 
 export function getOverview(): Promise<OverviewResponse> {
   return request("/overview");
 }
 
+export function getSession(): Promise<AdminSession> {
+  return request("/auth/session", { skipUnauthorizedHandler: true });
+}
+
+export function login(username: string, password: string): Promise<AdminSession> {
+  return request("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+    skipUnauthorizedHandler: true,
+  });
+}
+
+export function logout(): Promise<void> {
+  return requestVoid("/auth/logout", { method: "POST" });
+}
+
+export function listIssues(params: IssueListParams = {}): Promise<Page<Issue>> {
+  return request(`/issues${queryString(params)}`);
+}
+
+export function getIssue(issueId: number): Promise<Issue> {
+  return request(`/issues/${issueId}`);
+}
+
+export function listIssueEvents(issueId: number, page = 1, pageSize = 20): Promise<Page<IssueEvent>> {
+  return request(`/issues/${issueId}/events${queryString({ page, page_size: pageSize })}`);
+}
+
+export function acknowledgeIssue(issueId: number, note: string): Promise<Issue> {
+  return request(`/issues/${issueId}/acknowledge`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
+export function listInspectionRuns(params: {
+  status?: string;
+  trigger?: string;
+  plan_id?: number;
+  page?: number;
+  page_size?: number;
+} = {}): Promise<Page<InspectionRun>> {
+  return request(`/inspection-runs${queryString(params)}`);
+}
+
+export function getInspectionRun(runId: number): Promise<InspectionRunDetail> {
+  return request(`/inspection-runs/${runId}`);
+}
+
+export function listInspectionPlans(page = 1, pageSize = 100): Promise<Page<InspectionPlan>> {
+  return request(`/inspection-plans${queryString({ page, page_size: pageSize })}`);
+}
+
+export function createInspectionPlan(payload: InspectionPlanCreate): Promise<InspectionPlan> {
+  return request("/inspection-plans", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateInspectionPlan(planId: number, payload: InspectionPlanUpdate): Promise<InspectionPlan> {
+  return request(`/inspection-plans/${planId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteInspectionPlan(planId: number): Promise<void> {
+  return requestVoid(`/inspection-plans/${planId}`, { method: "DELETE" });
+}
+
+export function runInspectionPlan(planId: number): Promise<InspectionRun> {
+  return request(`/inspection-plans/${planId}/run`, { method: "POST" });
+}
+
+export function listNotificationChannels(page = 1, pageSize = 100): Promise<Page<NotificationChannel>> {
+  return request(`/notification-channels${queryString({ page, page_size: pageSize })}`);
+}
+
+export function createNotificationChannel(payload: NotificationChannelCreate): Promise<NotificationChannel> {
+  return request("/notification-channels", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateNotificationChannel(
+  channelId: number,
+  payload: NotificationChannelUpdate,
+): Promise<NotificationChannel> {
+  return request(`/notification-channels/${channelId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteNotificationChannel(channelId: number): Promise<void> {
+  return requestVoid(`/notification-channels/${channelId}`, { method: "DELETE" });
+}
+
+export function testNotificationChannel(channelId: number): Promise<NotificationTestResponse> {
+  return request(`/notification-channels/${channelId}/test`, { method: "POST" });
+}
+
 export function runClusterInspection(): Promise<ClusterInspectionResponse> {
-  return request("/inspections/cluster/run", {
+  return request("/inspections/cluster/run?include_logs=false", {
     method: "POST",
   });
 }
@@ -69,10 +271,29 @@ export function discoverNamespaceLabels(namespace: string): Promise<NamespaceLab
   return request(`/discovery/namespaces/${encodeURIComponent(namespace)}/labels`);
 }
 
-export function runNamespaceInspection(namespace: string, labelSelector: string | null): Promise<NamespaceInspectionResponse> {
+export function discoverNamespacePods(
+  namespace: string,
+  labelSelector: string | null = null,
+): Promise<PodDiscoveryResponse> {
+  return request(
+    `/discovery/namespaces/${encodeURIComponent(namespace)}/pods${queryString({
+      label_selector: labelSelector,
+    })}`,
+  );
+}
+
+export function runNamespaceInspection(
+  namespace: string,
+  labelSelector: string | null,
+  includeLogs: boolean,
+): Promise<NamespaceInspectionResponse> {
   return request("/inspections/namespace/run", {
     method: "POST",
-    body: JSON.stringify({ namespace, label_selector: labelSelector || null }),
+    body: JSON.stringify({
+      namespace,
+      label_selector: labelSelector || null,
+      include_logs: includeLogs,
+    }),
   });
 }
 
@@ -418,6 +639,13 @@ export function getSettings(): Promise<SettingsResponse> {
   return request("/settings");
 }
 
-export function getSystemStatus(): Promise<SystemStatusResponse> {
+export function updateSettings(payload: SettingsUpdate): Promise<SettingsResponse> {
+  return request("/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getSystemStatus(): Promise<SystemStatus> {
   return request("/system/status");
 }

@@ -5,8 +5,12 @@ metadata:
   labels:
     {{- include "k8s-inspector.labels" . | nindent 4 }}
 data:
+  APP_ENV: {{ .Values.env.appEnv | quote }}
+  APP_VERSION: {{ .Chart.AppVersion | quote }}
+  CLUSTER_ID: {{ .Values.env.clusterId | quote }}
   BASE_PATH: {{ .Values.basePath | quote }}
   DATABASE_URL: {{ .Values.env.databaseUrl | quote }}
+  AUTO_MIGRATE: {{ ternary "false" "true" .Values.persistence.enabled | quote }}
   K8S_PROVIDER_MODE: {{ .Values.env.providerMode | quote }}
   PREFER_INCLUSTER: {{ ternary "true" "false" .Values.env.preferIncluster | quote }}
   K8S_REQUEST_TIMEOUT: {{ .Values.env.k8sRequestTimeout | quote }}
@@ -14,3 +18,13 @@ data:
   LLM_PROVIDER: {{ .Values.env.llmProvider | quote }}
   MODEL_ENDPOINT: {{ .Values.env.modelEndpoint | quote }}
   KUBECONTEXT: {{ .Values.env.kubeContext | quote }}
+  AUTH_MODE: {{ .Values.env.authMode | quote }}
+  SESSION_COOKIE_NAME: {{ .Values.env.sessionCookieName | quote }}
+  SESSION_IDLE_MINUTES: {{ .Values.env.sessionIdleMinutes | quote }}
+  SESSION_ABSOLUTE_HOURS: {{ .Values.env.sessionAbsoluteHours | quote }}
+  SESSION_COOKIE_SECURE: {{ ternary "true" "false" .Values.env.sessionCookieSecure | quote }}
+  LOGIN_FAILURE_LIMIT: {{ .Values.env.loginFailureLimit | quote }}
+  LOGIN_FAILURE_WINDOW_MINUTES: {{ .Values.env.loginFailureWindowMinutes | quote }}
+  TRUSTED_DETAIL_BASE_URL: {{ .Values.env.trustedDetailBaseUrl | quote }}
+  WEBHOOK_ALLOWED_HOSTS: {{ join "," .Values.env.webhookAllowedHosts | quote }}
+  WEBHOOK_ALLOWED_CIDRS: {{ join "," .Values.env.webhookAllowedCidrs | quote }}

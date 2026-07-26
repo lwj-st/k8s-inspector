@@ -1,13 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { runClusterInspection } from "../api/client";
 import { PodInspectionPage } from "./PodInspectionPage";
 
 const fetchMock = vi.fn();
+let discoveredPodCount: number | null = 3;
+let configuredMaxLogPods = 120;
 
 describe("PodInspectionPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
+    discoveredPodCount = 3;
+    configuredMaxLogPods = 120;
     const savedTargets = [
       {
         id: 1,
@@ -36,6 +41,15 @@ describe("PodInspectionPage", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
+      if (url.endsWith("/settings")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ inspection_policy: { max_log_pods: configuredMaxLogPods } }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       if (url.endsWith("/discovery/namespaces")) {
         return Promise.resolve(
           new Response(
@@ -45,7 +59,7 @@ describe("PodInspectionPage", () => {
                 {
                   name: "demo",
                   status: "warning",
-                  pod_count: 3,
+                  pod_count: discoveredPodCount,
                   abnormal_pod_count: 1,
                   last_inspected_at: null,
                   labels: {},
@@ -80,6 +94,39 @@ describe("PodInspectionPage", () => {
               namespace: "demo",
               executed_at: "2026-07-19T10:00:00Z",
               labels: [{ key: "app", values: ["demo-api"], selector: "app=demo-api", pod_count: 1 }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/demo/pods")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              namespace: "demo",
+              label_selector: null,
+              executed_at: "2026-07-19T10:00:00Z",
+              pod_count: 2,
+              pods: [
+                { name: "demo-api-1", labels: { app: "demo-api" } },
+                { name: "demo-worker-1", labels: { app: "demo-worker" } },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/prod/pods")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              namespace: "prod",
+              label_selector: null,
+              executed_at: "2026-07-19T10:00:00Z",
+              pod_count: 1,
+              pods: [{ name: "prod-api-1", labels: { app: "prod-api" } }],
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -209,6 +256,16 @@ describe("PodInspectionPage", () => {
               ingresses: [],
               tls_secrets: [],
               daemonsets: [],
+              issues: [],
+              coverage: [{
+                check_code: "pod_runtime",
+                name: "Pod 运行状态",
+                status: "failed",
+                reason: "部分 Pod 读取超时",
+                checked_objects: 1,
+                duration_ms: 200,
+                issue_count: 0,
+              }],
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -257,6 +314,16 @@ describe("PodInspectionPage", () => {
                 related_resources: [],
               },
               evidence_bundle: null,
+              issues: [],
+              coverage: [{
+                check_code: "metrics",
+                name: "资源指标",
+                status: "skipped",
+                reason: "Metrics API 不可用",
+                checked_objects: 0,
+                duration_ms: 5,
+                issue_count: 0,
+              }],
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -312,6 +379,28 @@ describe("PodInspectionPage", () => {
     expect(screen.getByLabelText("导出内容")).toBeInTheDocument();
   });
 
+  it("runs the cluster status inspection with logs explicitly disabled", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          health_status: "unknown",
+          executed_at: "2026-07-26T10:00:00Z",
+          results: [],
+          issues: [],
+          coverage: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await runClusterInspection();
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
+      /\/inspections\/cluster\/run\?include_logs=false$/,
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+  });
+
   it("runs all pod mode without requiring pod name", async () => {
     render(<PodInspectionPage />);
 
@@ -321,6 +410,8 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
     expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
+    expect(screen.getByText("Pod 运行状态").closest(".coverage-row")).toHaveClass("coverage-failed");
+    expect(screen.getByText("本次有检查跳过或失败，不能据此确认全部正常。")).toBeInTheDocument();
     expect(screen.queryByText("最近一次巡检摘要")).not.toBeInTheDocument();
     expect(screen.getByText("命中关键字：connection refused")).toBeInTheDocument();
 
@@ -331,7 +422,54 @@ describe("PodInspectionPage", () => {
     expect(JSON.parse(String(request?.[1]?.body))).toEqual({
       namespace: "demo",
       label_selector: null,
+      include_logs: true,
     });
+  });
+
+  it("blocks a discovered range over the configured pod limit without sending an inspection request", async () => {
+    configuredMaxLogPods = 120;
+    discoveredPodCount = 121;
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "无法执行大范围日志巡检" });
+    expect(within(dialog).getByText("当前范围发现 121 个 Pod，超过当前日志采集上限 120 个，本次巡检已阻断。")).toBeInTheDocument();
+    expect(within(dialog).getByText("请使用 Label Selector 缩小到 120 个及以下 Pod 后重试。")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "仍要继续" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+    )).toHaveLength(0);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "返回缩小范围" }));
+    expect(screen.queryByRole("dialog", { name: "无法执行大范围日志巡检" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+    )).toHaveLength(0);
+  });
+
+  it("blocks a range with unknown pod count without sending an inspection request", async () => {
+    discoveredPodCount = null;
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "无法执行大范围日志巡检" });
+    expect(within(dialog).getByText("当前无法确认该范围的 Pod 数量，为避免读取过多日志，本次巡检已阻断。")).toBeInTheDocument();
+    expect(within(dialog).getByText("请先刷新发现数据、选择可确认 Pod 数量的范围，或使用 Label Selector 缩小范围后重试。")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "仍要继续" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+    )).toHaveLength(0);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "返回缩小范围" }));
+    expect(fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+    )).toHaveLength(0);
   });
 
   it("runs label selector mode through namespace inspection", async () => {
@@ -355,10 +493,11 @@ describe("PodInspectionPage", () => {
     expect(JSON.parse(String(request?.[1]?.body))).toEqual({
       namespace: "demo",
       label_selector: "app=demo-api",
+      include_logs: true,
     });
   });
 
-  it("runs single pod mode through pod inspection with dropdown pod selection", async () => {
+  it("loads a single Pod dropdown through lightweight discovery without running namespace inspection", async () => {
     render(<PodInspectionPage />);
 
     await screen.findByRole("option", { name: "demo" });
@@ -366,10 +505,19 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "single" } });
 
     expect(await screen.findByRole("option", { name: "demo-api-1" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(
+      ([input, init]) => String(input).endsWith("/discovery/namespaces/demo/pods") && !init?.method,
+    )).toBe(true);
+    expect(fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+    )).toHaveLength(0);
     fireEvent.change(screen.getByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
 
     expect(await screen.findByText("单 Pod 结果")).toBeInTheDocument();
+    expect(screen.getByText("资源指标").closest(".coverage-row")).toHaveClass("coverage-skipped");
+    expect(screen.getByText("本次有检查跳过或失败，不能据此确认全部正常。")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "确认大范围日志巡检" })).not.toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "level=error msg=database connection refused")).toBeInTheDocument();
 
     const request = fetchMock.mock.calls.find(
@@ -382,9 +530,33 @@ describe("PodInspectionPage", () => {
     });
   });
 
+  it("clears the Pod dropdown when switching namespaces and only shows the new discovery result", async () => {
+    render(<PodInspectionPage />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    expect(await screen.findByRole("option", { name: "demo-api-1" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "prod" } });
+    expect(screen.queryByRole("option", { name: "demo-api-1" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "prod-api-1" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).includes("/inspections/") && init?.method === "POST",
+    )).toHaveLength(0);
+  });
+
   it("prefers context_text when rendering log hit details", async () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+
+      if (url.endsWith("/settings")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ inspection_policy: { max_log_pods: 120 } }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
 
       if (url.endsWith("/discovery/namespaces")) {
         return Promise.resolve(
@@ -416,6 +588,21 @@ describe("PodInspectionPage", () => {
         return Promise.resolve(
           new Response(
             JSON.stringify({ namespace: "demo", executed_at: "2026-07-21T10:00:00Z", labels: [] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/demo/pods")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              namespace: "demo",
+              label_selector: null,
+              executed_at: "2026-07-21T10:00:00Z",
+              pod_count: 1,
+              pods: [{ name: "demo-api-1", labels: { app: "demo-api" } }],
+            }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
         );

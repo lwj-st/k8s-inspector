@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from fnmatch import fnmatchcase
 
@@ -5,9 +6,24 @@ from sqlalchemy.orm import Session
 
 from app.engine.matcher import describe_condition, match_template
 from app.models import DiagnosisRecord, FaultTemplate, SystemSetting
-from app.providers.base import InspectionProvider
+from app.providers.base import InspectionProvider, LogPodLimitExceededError
 from app.schemas.diagnosis import DiagnosisRequest
+from app.schemas.v1_1 import CollectionLimits, InspectionPolicySettings
 from app.services import keyword_service
+from app.services.payload_sanitizer import (
+    sanitize_persistence_payload,
+    sanitize_public_payload,
+)
+
+
+@dataclass
+class _DiagnosisLogBudget:
+    limits: CollectionLimits
+    collected_bytes: int = 0
+    targeted_pods: set[tuple[str, str]] = field(default_factory=set)
+    samples_by_namespace: dict[str, dict[str, dict[str, str]]] = field(
+        default_factory=dict
+    )
 
 
 def _normalize_condition_result(condition: dict, matched: bool, evidence: list[dict]) -> dict:
@@ -120,9 +136,27 @@ def _build_result_summary(matched: bool, matched_conditions: list[dict], unmatch
     return "未命中：没有满足模板条件。"
 
 
-def _build_target_context(session: Session, provider: InspectionProvider, template: FaultTemplate) -> dict:
+def _collection_limits(session: Session) -> CollectionLimits:
+    settings = session.get(SystemSetting, 1)
+    policy = InspectionPolicySettings.model_validate(
+        settings.inspection_policy if settings and settings.inspection_policy else {}
+    )
+    return CollectionLimits(
+        max_log_pods=policy.max_log_pods,
+        namespace_concurrency=policy.namespace_concurrency,
+    )
+
+
+def _build_target_context(
+    session: Session,
+    provider: InspectionProvider,
+    template: FaultTemplate,
+    log_budget: _DiagnosisLogBudget,
+) -> dict:
+    limits = log_budget.limits
     targets: dict[str, dict] = {}
     template_keywords_by_target = _template_log_keywords_by_target(template)
+    target_definitions: list[tuple[dict, str, str | None, list[dict]]] = []
     for target in template.target_groups:
         namespace = target["namespace"]
         label_selector = target.get("label_selector")
@@ -130,20 +164,16 @@ def _build_target_context(session: Session, provider: InspectionProvider, templa
             inspection = provider.run_namespace_inspection(namespace, label_selector)
         except Exception as error:
             raise RuntimeError(f"采集 {_scope_text(namespace, label_selector)} 失败，错误：{error}") from error
+        pods = [
+            dict(pod)
+            for pod in inspection["pods"]
+            if _pod_matches_target(pod, target)
+        ]
+        target_definitions.append((target, namespace, label_selector, pods))
         targets[target["target_ref"]] = {
             "namespace": namespace,
             "label_selector": label_selector,
-            "pods": [
-                _attach_log_hits(
-                    session,
-                    namespace,
-                    label_selector,
-                    pod,
-                    template_keywords_by_target.get(target["target_ref"], []),
-                )
-                for pod in inspection["pods"]
-                if _pod_matches_target(pod, target)
-            ],
+            "pods": pods,
             "related_objects": {
                 "services": inspection["services"],
                 "ingresses": inspection["ingresses"],
@@ -151,6 +181,79 @@ def _build_target_context(session: Session, provider: InspectionProvider, templa
                 "tls_secrets": inspection["tls_secrets"],
             },
         }
+
+    targeted_pods_by_namespace: dict[str, set[str]] = {}
+    for target, namespace, _, pods in target_definitions:
+        if target["target_ref"] not in template_keywords_by_target:
+            continue
+        targeted_pods_by_namespace.setdefault(namespace, set()).update(
+            str(pod.get("name") or "")
+            for pod in pods
+            if pod.get("name")
+        )
+    requested_targets = {
+        (namespace, pod_name)
+        for namespace, pod_names in targeted_pods_by_namespace.items()
+        for pod_name in pod_names
+    }
+    targeted_pod_count = len(log_budget.targeted_pods | requested_targets)
+    if targeted_pod_count > limits.max_log_pods:
+        raise LogPodLimitExceededError(
+            targeted_pod_count,
+            limits.max_log_pods,
+        )
+
+    for namespace, pod_names in targeted_pods_by_namespace.items():
+        new_pod_names = sorted(
+            pod_name
+            for pod_name in pod_names
+            if (namespace, pod_name) not in log_budget.targeted_pods
+        )
+        if not new_pod_names:
+            continue
+        remaining_bytes = (
+            limits.max_total_log_bytes - log_budget.collected_bytes
+        )
+        if remaining_bytes < 1024:
+            raise RuntimeError("日志采集总字节预算已用尽，请缩小范围")
+        namespace_limits = limits.model_copy(
+            update={"max_total_log_bytes": remaining_bytes}
+        )
+        log_collection = provider.collect_pod_log_samples(
+            namespace,
+            new_pod_names,
+            namespace_limits,
+        )
+        log_budget.collected_bytes += log_collection.collected_log_bytes
+        log_budget.targeted_pods.update(
+            (namespace, pod_name)
+            for pod_name in new_pod_names
+        )
+        log_budget.samples_by_namespace.setdefault(namespace, {}).update(
+            log_collection.container_samples
+        )
+
+    for target, namespace, label_selector, pods in target_definitions:
+        target_ref = target["target_ref"]
+        if target_ref not in template_keywords_by_target:
+            continue
+        namespace_samples = log_budget.samples_by_namespace.get(namespace, {})
+        targets[target_ref]["pods"] = [
+            _attach_log_hits(
+                session,
+                namespace,
+                label_selector,
+                {
+                    **pod,
+                    "container_log_summaries": namespace_samples.get(
+                        str(pod.get("name") or ""),
+                        {},
+                    ),
+                },
+                template_keywords_by_target[target_ref],
+            )
+            for pod in pods
+        ]
     return {"targets": targets}
 
 
@@ -192,6 +295,7 @@ def _list_enabled_templates(session: Session, payload: DiagnosisRequest) -> list
 
 def run_diagnosis(session: Session, provider: InspectionProvider, payload: DiagnosisRequest) -> dict:
     templates = _list_enabled_templates(session, payload)
+    log_budget = _DiagnosisLogBudget(_collection_limits(session))
     matches: list[dict] = []
     template_match_results: list[dict] = []
     evidence_summary: list[dict] = []
@@ -205,7 +309,12 @@ def run_diagnosis(session: Session, provider: InspectionProvider, payload: Diagn
                     "joint_rule": template.joint_rule,
                     "reason": template.reason,
                 },
-                _build_target_context(session, provider, template),
+                _build_target_context(
+                    session,
+                    provider,
+                    template,
+                    log_budget,
+                ),
             )
             template_match_results.append(
                 {
@@ -300,18 +409,28 @@ def run_diagnosis(session: Session, provider: InspectionProvider, payload: Diagn
         "evidence_summary": evidence_summary,
         "llm_supplement": llm_supplement,
     }
+    persisted_matches = [
+        sanitize_persistence_payload(item)
+        for item in matches
+    ]
+    persisted_evidence = [
+        sanitize_persistence_payload(item)
+        for item in evidence_summary
+    ]
     session.add(
         DiagnosisRecord(
             direction=payload.direction,
-            request_payload=payload.model_dump(),
-            matched_templates=matches,
-            evidence_summary=evidence_summary,
+            request_payload=sanitize_persistence_payload(payload.model_dump()),
+            matched_templates=persisted_matches,
+            evidence_summary=persisted_evidence,
             status=status,
-            llm_result=llm_supplement,
+            llm_result=sanitize_persistence_payload(llm_supplement)
+            if llm_supplement
+            else None,
         )
     )
     session.commit()
-    return result
+    return sanitize_public_payload(result)
 
 
 def list_history(session: Session) -> list[DiagnosisRecord]:

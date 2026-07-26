@@ -11,6 +11,15 @@ describe("NamespaceInspectionPage", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
+      if (url.endsWith("/settings")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ inspection_policy: { max_log_pods: 200 } }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       if (url.endsWith("/discovery/namespaces")) {
         return Promise.resolve(
           new Response(

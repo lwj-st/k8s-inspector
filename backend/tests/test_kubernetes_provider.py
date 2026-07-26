@@ -1,7 +1,12 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
+import pytest
+
+from app.providers.base import LogPodLimitExceededError
 from app.providers.kubernetes_provider import KubernetesInspectionProvider
 from app.providers.mock_provider import MockInspectionProvider
+from app.schemas.v1_1 import CollectionLimits
 
 
 def _make_provider() -> KubernetesInspectionProvider:
@@ -9,7 +14,12 @@ def _make_provider() -> KubernetesInspectionProvider:
     provider.settings = SimpleNamespace(k8s_request_timeout=5, k8s_log_tail_lines=1000, k8s_log_summary_lines=5)
     provider.core = SimpleNamespace()
     provider.apps = SimpleNamespace()
+    provider.batch = SimpleNamespace()
     provider.networking = SimpleNamespace()
+    provider.discovery = SimpleNamespace()
+    provider.storage = SimpleNamespace()
+    provider.custom = SimpleNamespace()
+    provider.version_api = SimpleNamespace()
     return provider
 
 
@@ -72,6 +82,7 @@ def test_run_pod_inspection_reads_single_pod_directly() -> None:
         ),
         status=SimpleNamespace(
             phase="Running",
+            conditions=[SimpleNamespace(type="Ready", status="True")],
             container_statuses=[
                 SimpleNamespace(
                     name="demo-api",
@@ -107,6 +118,7 @@ def test_run_pod_inspection_reads_logs_for_every_container_even_when_pod_is_runn
         ),
         status=SimpleNamespace(
             phase="Running",
+            conditions=[SimpleNamespace(type="Ready", status="True")],
             container_statuses=[
                 SimpleNamespace(
                     name="demo-api",
@@ -154,8 +166,8 @@ def test_run_pod_inspection_reads_logs_for_every_container_even_when_pod_is_runn
     ]
     assert result["pod"]["status"] == "Running"
     assert result["pod"]["container_log_summaries"] == {
-        "demo-api": "demo-api-line1\ndemo-api-line2\ndemo-api-line3\ndemo-api-line4\ndemo-api-line5\ndemo-api-line6",
-        "sidecar": "sidecar-line1\nsidecar-line2\nsidecar-line3\nsidecar-line4\nsidecar-line5\nsidecar-line6",
+        "demo-api": "demo-api-line1\ndemo-api-line2\ndemo-api-line3\ndemo-api-line4\ndemo-api-line5",
+        "sidecar": "sidecar-line1\nsidecar-line2\nsidecar-line3\nsidecar-line4\nsidecar-line5",
     }
     assert result["pod"]["log_summary"] == (
         "[demo-api]\n"
@@ -427,21 +439,68 @@ def _configure_namespace_inspection_provider(
     ingress_load_balancer: object | None,
     daemonset_unavailable: int,
 ) -> None:
-    provider.core.list_namespaced_pod = lambda namespace, label_selector, _request_timeout: SimpleNamespace(items=[object()])
-    provider.core.list_namespaced_service = lambda namespace, label_selector, _request_timeout: SimpleNamespace(
+    provider.core.list_namespaced_pod = lambda namespace, label_selector, _request_timeout: SimpleNamespace(
         items=[
             SimpleNamespace(
-                metadata=SimpleNamespace(name="demo-api"),
-                spec=SimpleNamespace(type="ClusterIP"),
+                metadata=SimpleNamespace(
+                    name="demo-api-0",
+                    namespace=namespace,
+                    uid="pod-1",
+                    labels={"app": "demo-api"},
+                )
+            )
+        ]
+    )
+    provider.core.list_namespaced_service = lambda namespace, _request_timeout: SimpleNamespace(
+        items=[
+            SimpleNamespace(
+                metadata=SimpleNamespace(
+                    name="demo-api",
+                    namespace=namespace,
+                    uid="service-1",
+                ),
+                spec=SimpleNamespace(
+                    type="ClusterIP",
+                    selector={"app": "demo-api"},
+                    ports=[],
+                    cluster_ip="10.0.0.1",
+                ),
             )
         ]
     )
     provider.networking.list_namespaced_ingress = lambda namespace, _request_timeout: SimpleNamespace(
         items=[
             SimpleNamespace(
-                metadata=SimpleNamespace(name="demo"),
+                metadata=SimpleNamespace(
+                    name="demo",
+                    namespace=namespace,
+                    uid="ingress-1",
+                ),
                 status=SimpleNamespace(load_balancer=ingress_load_balancer),
-                spec=SimpleNamespace(rules=[]),
+                spec=SimpleNamespace(
+                    rules=[],
+                    default_backend=None,
+                    ingress_class_name=None,
+                    tls=[],
+                ),
+            )
+        ]
+    )
+    provider.networking.list_ingress_class = lambda _request_timeout: SimpleNamespace(items=[])
+    provider.discovery.list_namespaced_endpoint_slice = lambda namespace, _request_timeout: SimpleNamespace(
+        items=[
+            SimpleNamespace(
+                metadata=SimpleNamespace(
+                    name="demo-api-1",
+                    namespace=namespace,
+                    labels={"kubernetes.io/service-name": "demo-api"},
+                ),
+                endpoints=[
+                    SimpleNamespace(
+                        conditions=SimpleNamespace(ready=True),
+                        target_ref=None,
+                    )
+                ],
             )
         ]
     )
@@ -469,7 +528,7 @@ def _configure_namespace_inspection_provider(
     }
 
 
-def test_run_namespace_inspection_warns_when_ingress_is_unknown() -> None:
+def test_run_namespace_inspection_does_not_use_load_balancer_as_health_signal() -> None:
     provider = _make_provider()
     _configure_namespace_inspection_provider(
         provider,
@@ -480,8 +539,8 @@ def test_run_namespace_inspection_warns_when_ingress_is_unknown() -> None:
     result = provider.run_namespace_inspection("demo", None)
 
     assert result["pods"][0]["status"] == "Running"
-    assert result["ingresses"][0]["status"] == "unknown"
-    assert result["health_status"] == "warning"
+    assert result["ingresses"][0]["status"] == "healthy"
+    assert result["health_status"] == "healthy"
 
 
 def test_run_namespace_inspection_warns_when_daemonset_is_degraded() -> None:
@@ -510,6 +569,128 @@ def test_run_namespace_inspection_is_healthy_when_all_resources_are_healthy() ->
     result = provider.run_namespace_inspection("demo", None)
 
     assert result["health_status"] == "healthy"
+
+
+def test_status_pod_result_does_not_read_events_or_logs() -> None:
+    provider = _make_provider()
+    provider.core.read_namespaced_pod_log = Mock(
+        side_effect=AssertionError("status collection must not read logs")
+    )
+    provider.core.list_namespaced_event = Mock(
+        side_effect=AssertionError("status collection must not read events")
+    )
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(
+            name="demo-api-0",
+            namespace="demo",
+            labels={"app": "api"},
+        ),
+        spec=SimpleNamespace(
+            node_name="node-a",
+            containers=[SimpleNamespace(name="api")],
+        ),
+        status=SimpleNamespace(
+            phase="Running",
+            container_statuses=[],
+            conditions=[SimpleNamespace(type="Ready", status="True")],
+        ),
+    )
+
+    result = provider._build_pod_result("demo", pod, [])
+
+    assert result["events"] == []
+    assert result["log_summary"] is None
+    assert result["previous_log_summary"] is None
+    assert result["container_log_summaries"] == {}
+    provider.core.read_namespaced_pod_log.assert_not_called()
+    provider.core.list_namespaced_event.assert_not_called()
+
+
+def test_lightweight_pod_discovery_reads_only_pod_metadata() -> None:
+    provider = _make_provider()
+    provider.core.list_namespaced_pod = Mock(
+        return_value=SimpleNamespace(
+            items=[
+                SimpleNamespace(
+                    metadata=SimpleNamespace(
+                        name="demo-api-0",
+                        labels={"app": "api"},
+                    )
+                )
+            ]
+        )
+    )
+    provider.core.read_namespaced_pod_log = Mock(
+        side_effect=AssertionError("discovery must not read logs")
+    )
+    provider.core.list_namespaced_event = Mock(
+        side_effect=AssertionError("discovery must not read events")
+    )
+
+    result = provider.list_namespace_pods("demo", "app=api")
+
+    assert result["pod_count"] == 1
+    assert result["pods"] == [
+        {"name": "demo-api-0", "labels": {"app": "api"}}
+    ]
+    provider.core.list_namespaced_pod.assert_called_once_with(
+        namespace="demo",
+        label_selector="app=api",
+        _request_timeout=5,
+    )
+    provider.core.read_namespaced_pod_log.assert_not_called()
+    provider.core.list_namespaced_event.assert_not_called()
+
+
+def test_targeted_log_collection_reads_only_explicit_pods() -> None:
+    provider = _make_provider()
+    provider.core.read_namespaced_pod = Mock(
+        return_value=SimpleNamespace(
+            spec=SimpleNamespace(
+                containers=[SimpleNamespace(name="api")]
+            ),
+            status=SimpleNamespace(container_statuses=[]),
+        )
+    )
+    provider.core.read_namespaced_pod_log = Mock(
+        return_value="ERROR target only"
+    )
+
+    result = provider.collect_pod_log_samples(
+        "demo",
+        ["target-api-0"],
+        CollectionLimits(),
+    )
+
+    assert result.container_samples == {
+        "target-api-0": {"api": "ERROR target only"}
+    }
+    assert result.log_pods_read == 1
+    provider.core.read_namespaced_pod.assert_called_once_with(
+        name="target-api-0",
+        namespace="demo",
+        _request_timeout=5,
+    )
+    assert {
+        call.kwargs["name"]
+        for call in provider.core.read_namespaced_pod_log.call_args_list
+    } == {"target-api-0"}
+
+
+def test_log_pod_limit_rejects_before_any_log_or_pod_read() -> None:
+    provider = _make_provider()
+    provider.core.read_namespaced_pod = Mock()
+    provider.core.read_namespaced_pod_log = Mock()
+
+    with pytest.raises(LogPodLimitExceededError, match="请缩小范围"):
+        provider.collect_pod_log_samples(
+            "demo",
+            ["api-0", "api-1"],
+            CollectionLimits(max_log_pods=1),
+        )
+
+    provider.core.read_namespaced_pod.assert_not_called()
+    provider.core.read_namespaced_pod_log.assert_not_called()
 
 
 def test_mock_provider_list_namespaces_returns_multiple_statuses() -> None:

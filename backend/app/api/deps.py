@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.providers.mock_provider import MockInspectionProvider
@@ -16,4 +16,10 @@ def get_db_session(request: Request) -> Iterator[Session]:
 
 
 def get_provider(request: Request) -> MockInspectionProvider:
-    return request.app.state.provider
+    provider = request.app.state.provider
+    if provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Provider 尚未就绪",
+        )
+    return provider

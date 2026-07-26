@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import get_provider
 from app.providers.base import InspectionProvider
-from app.schemas.inspection import NamespaceDiscoveryResponse, NamespaceLabelDiscoveryResponse
+from app.schemas.inspection import (
+    NamespaceDiscoveryResponse,
+    NamespaceLabelDiscoveryResponse,
+    PodDiscoveryResponse,
+)
 from app.services import discovery_service
 
 router = APIRouter(tags=["discovery"])
@@ -25,3 +29,23 @@ def discover_namespace_labels(
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return NamespaceLabelDiscoveryResponse.model_validate(result)
+
+
+@router.get(
+    "/discovery/namespaces/{namespace}/pods",
+    response_model=PodDiscoveryResponse,
+)
+def discover_namespace_pods(
+    namespace: str,
+    label_selector: str | None = None,
+    provider: InspectionProvider = Depends(get_provider),
+) -> PodDiscoveryResponse:
+    try:
+        result = discovery_service.discover_namespace_pods(
+            provider,
+            namespace,
+            label_selector,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return PodDiscoveryResponse.model_validate(result)

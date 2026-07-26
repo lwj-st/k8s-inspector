@@ -9,6 +9,9 @@ from kubernetes.client.exceptions import ApiException
 from kubernetes.config.config_exception import ConfigException
 
 from app.core.config import Settings
+from app.providers.base import LogPodLimitExceededError, TemporaryPodLogCollection
+from app.providers.kubernetes_collection import KubernetesResourceCollector
+from app.schemas.v1_1 import CollectionLimits, ProviderCollectionRequest, ProviderCollectionResult
 from app.services.pod_health import is_abnormal_container, is_abnormal_pod, is_normal_pod_status
 
 
@@ -26,8 +29,40 @@ class KubernetesInspectionProvider:
         self._load_config()
         self.core = client.CoreV1Api()
         self.apps = client.AppsV1Api()
+        self.batch = client.BatchV1Api()
         self.networking = client.NetworkingV1Api()
+        self.discovery = client.DiscoveryV1Api()
+        self.storage = client.StorageV1Api()
+        self.custom = client.CustomObjectsApi()
+        self.version_api = client.VersionApi()
         self.api_client = ApiClient()
+        self._resource_collector = self._build_resource_collector()
+
+    def _build_resource_collector(self) -> KubernetesResourceCollector:
+        return KubernetesResourceCollector(
+            settings=self.settings,
+            core=self.core,
+            apps=self.apps,
+            batch=self.batch,
+            networking=self.networking,
+            discovery=self.discovery,
+            storage=self.storage,
+            custom=self.custom,
+            version_api=self.version_api,
+        )
+
+    def collect_resources(
+        self,
+        request: ProviderCollectionRequest,
+    ) -> ProviderCollectionResult:
+        return self._get_resource_collector().collect(request)
+
+    def _get_resource_collector(self) -> KubernetesResourceCollector:
+        collector = getattr(self, "_resource_collector", None)
+        if collector is None:
+            collector = self._build_resource_collector()
+            self._resource_collector = collector
+        return collector
 
     def _load_config(self) -> None:
         if self.settings.kubeconfig_path:
@@ -53,7 +88,21 @@ class KubernetesInspectionProvider:
         phase = pod.status.phase or "Unknown"
         if not is_normal_pod_status(phase):
             return True
-        for status in getattr(pod.status, "container_statuses", None) or []:
+        if phase == "Running":
+            ready = next(
+                (
+                    condition
+                    for condition in getattr(pod.status, "conditions", None) or []
+                    if condition.type == "Ready"
+                ),
+                None,
+            )
+            if ready is not None and ready.status != "True":
+                return True
+        for status in (
+            list(getattr(pod.status, "init_container_statuses", None) or [])
+            + list(getattr(pod.status, "container_statuses", None) or [])
+        ):
             state = status.state
             if state and state.waiting:
                 container_state = "waiting"
@@ -134,6 +183,37 @@ class KubernetesInspectionProvider:
             "labels": labels,
         }
 
+    def list_namespace_pods(
+        self,
+        namespace: str,
+        label_selector: str | None = None,
+    ) -> dict:
+        try:
+            pods = self.core.list_namespaced_pod(
+                namespace=namespace,
+                label_selector=label_selector,
+                _request_timeout=self.settings.k8s_request_timeout,
+            ).items
+        except ApiException as exc:
+            reason = exc.reason or str(exc)
+            raise RuntimeError(
+                f"无法读取名称空间 {namespace} 的 Pod 名单：{reason}"
+            ) from exc
+        summaries = [
+            {
+                "name": pod.metadata.name,
+                "labels": dict(pod.metadata.labels or {}),
+            }
+            for pod in pods
+        ]
+        return {
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "executed_at": now_iso(),
+            "pod_count": len(summaries),
+            "pods": summaries,
+        }
+
     def _pod_issue_summary(self, pod: client.V1Pod, include_logs: bool = True) -> tuple[str, str | None]:
         phase = pod.status.phase or "Unknown"
         container_statuses = pod.status.container_statuses or []
@@ -175,7 +255,9 @@ class KubernetesInspectionProvider:
             except ApiException:
                 continue
             if log_summary:
-                container_logs[container_name] = self._coerce_log_text(log_summary)
+                container_logs[container_name] = self._summarize_log_text(
+                    log_summary
+                )
         return container_logs
 
     def _combine_container_log_summaries(self, container_logs: dict[str, str]) -> str | None:
@@ -201,6 +283,131 @@ class KubernetesInspectionProvider:
             if isinstance(parsed, bytes):
                 return parsed.decode("utf-8", errors="replace")
         return str(log_text)
+
+    def _bounded_log_sample(
+        self,
+        log_text: str | bytes,
+        allowed_bytes: int,
+    ) -> tuple[str, int, bool]:
+        encoded = self._coerce_log_text(log_text).encode("utf-8")
+        accepted = encoded[: max(0, allowed_bytes)]
+        return (
+            accepted.decode("utf-8", errors="ignore"),
+            len(accepted),
+            len(encoded) > len(accepted),
+        )
+
+    def collect_pod_log_samples(
+        self,
+        namespace: str,
+        pod_names: list[str],
+        limits: CollectionLimits,
+    ) -> TemporaryPodLogCollection:
+        unique_names = list(dict.fromkeys(name for name in pod_names if name))
+        if len(unique_names) > limits.max_log_pods:
+            raise LogPodLimitExceededError(len(unique_names), limits.max_log_pods)
+
+        container_samples: dict[str, dict[str, str]] = {}
+        previous_samples: dict[str, str] = {}
+        collected_total = 0
+        log_pods_read = 0
+        truncated = False
+
+        for pod_name in unique_names:
+            if collected_total >= limits.max_total_log_bytes:
+                truncated = True
+                break
+            try:
+                pod = self.core.read_namespaced_pod(
+                    name=pod_name,
+                    namespace=namespace,
+                    _request_timeout=self.settings.k8s_request_timeout,
+                )
+            except ApiException:
+                continue
+
+            per_pod_bytes = 0
+            read_any = False
+            samples: dict[str, str] = {}
+            containers = list(pod.spec.containers if pod.spec else [])
+            for container in containers:
+                allowed = min(
+                    limits.max_log_bytes_per_pod - per_pod_bytes,
+                    limits.max_total_log_bytes - collected_total,
+                )
+                if allowed <= 0:
+                    truncated = True
+                    break
+                try:
+                    raw_log = self.core.read_namespaced_pod_log(
+                        name=pod_name,
+                        namespace=namespace,
+                        container=container.name,
+                        tail_lines=limits.max_container_log_lines,
+                        _request_timeout=self.settings.k8s_request_timeout,
+                    )
+                except ApiException:
+                    continue
+                sample, accepted, sample_truncated = self._bounded_log_sample(
+                    raw_log,
+                    allowed,
+                )
+                raw_log = ""
+                if sample:
+                    samples[container.name] = sample
+                per_pod_bytes += accepted
+                collected_total += accepted
+                read_any = True
+                truncated = truncated or sample_truncated
+
+            restart_total = sum(
+                status.restart_count or 0
+                for status in (pod.status.container_statuses or [])
+            )
+            if restart_total > 0 and containers:
+                allowed = min(
+                    limits.max_log_bytes_per_pod - per_pod_bytes,
+                    limits.max_total_log_bytes - collected_total,
+                )
+                if allowed > 0:
+                    try:
+                        raw_previous = self.core.read_namespaced_pod_log(
+                            name=pod_name,
+                            namespace=namespace,
+                            container=containers[0].name,
+                            previous=True,
+                            tail_lines=limits.max_container_log_lines,
+                            _request_timeout=self.settings.k8s_request_timeout,
+                        )
+                    except ApiException:
+                        raw_previous = ""
+                    if raw_previous:
+                        sample, accepted, sample_truncated = self._bounded_log_sample(
+                            raw_previous,
+                            allowed,
+                        )
+                        raw_previous = ""
+                        if sample:
+                            previous_samples[pod_name] = sample
+                        per_pod_bytes += accepted
+                        collected_total += accepted
+                        read_any = True
+                        truncated = truncated or sample_truncated
+                else:
+                    truncated = True
+
+            if samples:
+                container_samples[pod_name] = samples
+            if read_any:
+                log_pods_read += 1
+
+        return TemporaryPodLogCollection(
+            container_samples=container_samples,
+            previous_samples=previous_samples,
+            log_pods_read=log_pods_read,
+            collected_log_bytes=collected_total,
+            truncated=truncated,
+        )
 
     def _pod_previous_log_summary(self, pod: client.V1Pod) -> str | None:
         container_statuses = pod.status.container_statuses or []
@@ -262,9 +469,28 @@ class KubernetesInspectionProvider:
                 related.append({"kind": "Service", "name": service.metadata.name, "status": "healthy"})
         return related
 
-    def _build_pod_result(self, namespace: str, pod: client.V1Pod, services: list[client.V1Service]) -> dict:
+    def _build_pod_result(
+        self,
+        namespace: str,
+        pod: client.V1Pod,
+        services: list[client.V1Service],
+        *,
+        include_logs: bool = False,
+        log_collection: TemporaryPodLogCollection | None = None,
+    ) -> dict:
         describe_summary, _ = self._pod_issue_summary(pod, include_logs=False)
-        container_log_summaries = self._pod_container_log_summaries(pod)
+        if include_logs and log_collection is not None:
+            container_log_summaries = {
+                container_name: self._summarize_log_text(sample)
+                for container_name, sample in log_collection.container_samples.get(
+                    pod.metadata.name,
+                    {},
+                ).items()
+            }
+        elif include_logs:
+            container_log_summaries = self._pod_container_log_summaries(pod)
+        else:
+            container_log_summaries = {}
         log_summary = self._combine_container_log_summaries(container_log_summaries)
         statuses = pod.status.container_statuses or []
         restarts = sum(item.restart_count or 0 for item in statuses)
@@ -276,18 +502,51 @@ class KubernetesInspectionProvider:
             ),
             None,
         )
+        ready_condition = next(
+            (
+                condition
+                for condition in getattr(pod.status, "conditions", None) or []
+                if condition.type == "Ready"
+            ),
+            None,
+        )
+        ready = (
+            True
+            if pod.status.phase == "Succeeded"
+            else bool(ready_condition and ready_condition.status == "True")
+        )
         return {
             "name": pod.metadata.name,
             "labels": pod.metadata.labels or {},
-            "status": waiting_reason or pod.status.phase or "Unknown",
+            "status": (
+                waiting_reason
+                or ("NotReady" if pod.status.phase == "Running" and not ready else None)
+                or pod.status.phase
+                or "Unknown"
+            ),
+            "ready": ready,
             "node_name": pod.spec.node_name,
             "restarts": restarts,
             "containers": self._pod_containers(pod),
-            "events": self._pod_events(namespace, pod.metadata.name),
+            "events": (
+                self._pod_events(namespace, pod.metadata.name)
+                if include_logs
+                else []
+            ),
             "describe_summary": describe_summary,
             "log_summary": log_summary,
             "container_log_summaries": container_log_summaries,
-            "previous_log_summary": self._pod_previous_log_summary(pod),
+            "previous_log_summary": (
+                self._summarize_log_text(
+                    log_collection.previous_samples[pod.metadata.name]
+                )
+                if include_logs
+                and log_collection is not None
+                and pod.metadata.name in log_collection.previous_samples
+                else self._pod_previous_log_summary(pod)
+                if include_logs and log_collection is None
+                else None
+            ),
             "resource_usage": {"cpu": "n/a", "memory": "n/a"},
             "related_resources": self._related_services(pod, services),
         }
@@ -421,7 +680,11 @@ class KubernetesInspectionProvider:
             "recent_summary": f"共检查 {len(nodes)} 个节点，发现 {len(issues)} 个异常对象。",
         }
 
-    def run_cluster_inspection(self) -> dict:
+    def run_cluster_inspection(
+        self,
+        *,
+        include_logs: bool = False,
+    ) -> dict:
         results: list[dict] = []
 
         for node in self.core.list_node(_request_timeout=self.settings.k8s_request_timeout).items:
@@ -443,7 +706,10 @@ class KubernetesInspectionProvider:
             for pod in pods:
                 if self._is_abnormal_pod(pod):
                     phase = pod.status.phase or "Unknown"
-                    describe_summary, log_summary = self._pod_issue_summary(pod)
+                    describe_summary, log_summary = self._pod_issue_summary(
+                        pod,
+                        include_logs=include_logs,
+                    )
                     results.append(
                         {
                             "component": self._classify_component(namespace, pod.metadata.name),
@@ -461,7 +727,14 @@ class KubernetesInspectionProvider:
             "results": results,
         }
 
-    def run_namespace_inspection(self, namespace: str, label_selector: str | None) -> dict:
+    def run_namespace_inspection(
+        self,
+        namespace: str,
+        label_selector: str | None,
+        *,
+        include_logs: bool = False,
+        limits: CollectionLimits | None = None,
+    ) -> dict:
         pods = self.core.list_namespaced_pod(
             namespace=namespace,
             label_selector=label_selector,
@@ -469,7 +742,6 @@ class KubernetesInspectionProvider:
         ).items
         services = self.core.list_namespaced_service(
             namespace=namespace,
-            label_selector=label_selector,
             _request_timeout=self.settings.k8s_request_timeout,
         ).items
         ingresses = self.networking.list_namespaced_ingress(
@@ -480,28 +752,116 @@ class KubernetesInspectionProvider:
             namespace=namespace,
             _request_timeout=self.settings.k8s_request_timeout,
         ).items
-        secrets = self.core.list_namespaced_secret(
+        endpoint_slices = self.discovery.list_namespaced_endpoint_slice(
             namespace=namespace,
             _request_timeout=self.settings.k8s_request_timeout,
         ).items
 
-        pod_results = [self._build_pod_result(namespace, pod, services) for pod in pods]
+        resource_collector = self._get_resource_collector()
+        resource_collector._now = datetime.now(timezone.utc)
+        if label_selector:
+            related = resource_collector._filter_collections_for_target_pods(
+                {
+                    "pods": pods,
+                    "services": services,
+                    "deployments": [],
+                    "statefulsets": [],
+                    "daemonsets": daemonsets,
+                    "replicasets": [],
+                    "jobs": [],
+                    "cronjobs": [],
+                    "ingresses": ingresses,
+                    "slices": endpoint_slices,
+                    "pvcs": [],
+                }
+            )
+            services = related["services"]
+            ingresses = related["ingresses"]
+            daemonsets = related["daemonsets"]
+            endpoint_slices = related["slices"]
 
+        log_collection = (
+            self.collect_pod_log_samples(
+                namespace,
+                [pod.metadata.name for pod in pods],
+                limits or CollectionLimits(),
+            )
+            if include_logs
+            else None
+        )
+        pod_results = (
+            [
+                self._build_pod_result(
+                    namespace,
+                    pod,
+                    services,
+                    include_logs=True,
+                    log_collection=log_collection,
+                )
+                for pod in pods
+            ]
+            if include_logs
+            else [
+                self._build_pod_result(namespace, pod, services)
+                for pod in pods
+            ]
+        )
+
+        service_observations = resource_collector._service_observations(
+            services,
+            pods,
+            endpoint_slices,
+            ingress_service_names=resource_collector._ingress_service_names(ingresses),
+        )
         service_results = [
             {
-                "name": service.metadata.name,
-                "status": "healthy",
-                "summary": f"type={service.spec.type or 'ClusterIP'}",
+                "name": observation.resource.name,
+                "status": (
+                    "skipped"
+                    if str(observation.facts.get("service_type")).casefold() == "externalname"
+                    else "healthy"
+                    if int(observation.facts.get("ready_endpoints") or 0) > 0
+                    else "warning"
+                ),
+                "summary": (
+                    f"type={observation.facts.get('service_type')}; "
+                    f"ready_endpoints={observation.facts.get('ready_endpoints', 0)}"
+                ),
             }
-            for service in services
+            for observation in service_observations
         ]
+        try:
+            ingress_classes = {
+                item.metadata.name
+                for item in self.networking.list_ingress_class(
+                    _request_timeout=self.settings.k8s_request_timeout,
+                ).items
+            }
+        except ApiException:
+            ingress_classes = set()
+        ingress_observations = resource_collector._ingress_observations(
+            ingresses,
+            services,
+            service_observations,
+            ingress_classes,
+        )
         ingress_results = [
             {
-                "name": ingress.metadata.name,
-                "status": "healthy" if ingress.status and ingress.status.load_balancer is not None else "unknown",
-                "summary": f"rules={len(ingress.spec.rules or []) if ingress.spec else 0}",
+                "name": observation.resource.name,
+                "status": (
+                    "warning"
+                    if observation.facts.get("missing_backend_services")
+                    or observation.facts.get("invalid_backend_ports")
+                    or observation.facts.get("services_without_ready_endpoints")
+                    or observation.facts.get("missing_ingress_class")
+                    else "skipped"
+                    if int(observation.facts.get("service_backends") or 0) == 0
+                    and int(observation.facts.get("resource_backends") or 0) > 0
+                    else "healthy"
+                ),
+                "summary": "仅验证 Ingress 配置链路，不代表集群外访问正常",
             }
-            for ingress in ingresses
+            for observation in ingress_observations
         ]
         daemonset_results = [
             {
@@ -511,14 +871,28 @@ class KubernetesInspectionProvider:
             }
             for daemonset in daemonsets
         ]
+        tls_collection = ProviderCollectionResult(layer="status")
+        tls_observations = resource_collector._tls_observations(
+            ingresses,
+            tls_collection,
+        )
         secret_results = [
             {
-                "name": secret.metadata.name,
-                "status": "healthy",
-                "summary": f"type={secret.type or 'Opaque'}",
+                "name": observation.resource.name,
+                "status": (
+                    "critical"
+                    if observation.facts.get("exists") is False
+                    or observation.facts.get("parse_ok") is False
+                    or observation.facts.get("key_match") is False
+                    or observation.facts.get("host_match") is False
+                    or float(observation.facts.get("days_until_expiry") or 0) <= 7
+                    else "warning"
+                    if float(observation.facts.get("days_until_expiry") or 0) <= 30
+                    else "healthy"
+                ),
+                "summary": "已检查证书有效期、SAN 和密钥匹配",
             }
-            for secret in secrets
-            if secret.type and "tls" in secret.type.lower()
+            for observation in tls_observations
         ]
 
         health_status = (
@@ -567,7 +941,12 @@ class KubernetesInspectionProvider:
             namespace=namespace,
             _request_timeout=self.settings.k8s_request_timeout,
         ).items
-        pod = self._build_pod_result(namespace, pod_obj, services)
+        pod = self._build_pod_result(
+            namespace,
+            pod_obj,
+            services,
+            include_logs=True,
+        )
 
         return {
             "inspection_target": {

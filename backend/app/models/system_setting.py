@@ -21,6 +21,9 @@ class SystemSetting(Base):
     llm_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     llm_provider: Mapped[str] = mapped_column(String(64), default="qwen")
     model_endpoint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # v1.0.0 rollback compatibility only. v1.1.0 writes this column as NULL.
     api_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    api_key_encrypted: Mapped[str | None] = mapped_column(String(4096), nullable=True)
     default_inspection_strategy: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    inspection_policy: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

@@ -1,8 +1,26 @@
 from sqlalchemy.orm import Session
 
-from app.models import InspectionRecord
-from app.providers.base import InspectionProvider
+from app.core.config import get_settings as get_app_settings
+from app.models import InspectionRecord, Issue as IssueModel, SystemSetting
+from app.providers.base import (
+    InspectionProvider,
+    LogPodLimitExceededError as ProviderLogPodLimitExceededError,
+)
+from app.schemas.v1_1 import (
+    CollectionLimits,
+    InspectionPolicySettings,
+    InspectionScope,
+    InspectionScopeType,
+    InspectionTrigger,
+)
 from app.services import discovery_service
+from app.services.inspection_run_service import execute_inspection
+from app.services.issue_query import issue_from_model
+from app.services.payload_sanitizer import (
+    sanitize_persistence_payload as _shared_sanitize_persistence_payload,
+    sanitize_public_payload,
+)
+from app.security.component_status import ComponentStatusRegistry
 from app.services.keyword_service import match_log_text
 from app.services.pod_health import is_abnormal_container, is_abnormal_pod, is_normal_pod_status
 from app.schemas.inspection import (
@@ -14,35 +32,139 @@ from app.schemas.inspection import (
 )
 
 
-def _save_record(session: Session, inspection_type: str, request_payload: dict, result: dict) -> None:
-    session.add(
-        InspectionRecord(
-            inspection_type=inspection_type,
-            request_payload=request_payload,
-            result_payload=result,
-            summary_status=result["health_status"],
+class LogInspectionScopeTooLargeError(ValueError):
+    def __init__(self, estimated_pods: int, limit: int):
+        self.estimated_pods = estimated_pods
+        self.limit = limit
+        super().__init__(
+            f"本次预计读取 {estimated_pods} 个 Pod 日志，超过上限 "
+            f"{self.limit}，请缩小范围"
         )
+
+
+def sanitize_persistence_payload(payload):
+    """Keep the v1.0 metadata contract while using the shared sanitizer."""
+
+    sanitized = _shared_sanitize_persistence_payload(payload)
+    metadata = (
+        sanitized.get("_persistence_sanitization")
+        if isinstance(sanitized, dict)
+        else None
     )
+    if isinstance(metadata, dict):
+        sanitized["_persistence_sanitization"] = {
+            "raw_logs_removed": bool(metadata.get("raw_logs_removed")),
+            "truncated": bool(
+                metadata.get("truncated")
+                or metadata.get("sensitive_values_redacted")
+            ),
+        }
+    return sanitized
+
+
+def _save_record(session: Session, inspection_type: str, request_payload: dict, result: dict) -> InspectionRecord:
+    record = InspectionRecord(
+        inspection_type=inspection_type,
+        request_payload=sanitize_persistence_payload(request_payload),
+        result_payload=sanitize_persistence_payload(result),
+        summary_status=result["health_status"],
+    )
+    session.add(record)
     session.commit()
+    session.refresh(record)
+    return record
 
 
-def run_cluster_inspection(session: Session, provider: InspectionProvider) -> dict:
-    result = provider.run_cluster_inspection()
-    _save_record(session, "cluster", {}, result)
-    return result
+def sanitize_inspection_response(payload: dict) -> dict:
+    """Redact public DTO text while preserving its complete field structure."""
+
+    return sanitize_public_payload(payload)
 
 
-def run_namespace_inspection(session: Session, provider: InspectionProvider, payload: NamespaceInspectionRequest) -> dict:
-    result = provider.run_namespace_inspection(payload.namespace, payload.label_selector)
+def run_cluster_inspection(
+    session: Session,
+    provider: InspectionProvider,
+    registry: ComponentStatusRegistry | None = None,
+    *,
+    include_logs: bool = True,
+) -> dict:
+    policy = _load_inspection_policy(session)
+    if include_logs:
+        discovery = discovery_service.discover_namespaces(provider)
+        _enforce_log_inspection_limit(
+            sum(
+                int(item.get("abnormal_pod_count") or 0)
+                for item in discovery.get("namespaces", [])
+            ),
+            policy.max_log_pods,
+        )
+    result = provider.run_cluster_inspection(include_logs=include_logs)
+    record = _save_record(session, "cluster", {}, result)
+    _attach_v11_extension(
+        session,
+        provider,
+        result,
+        scope=InspectionScope(type=InspectionScopeType.cluster),
+        inspection_record=record,
+        registry=registry,
+    )
+    return sanitize_inspection_response(result)
+
+
+def run_namespace_inspection(
+    session: Session,
+    provider: InspectionProvider,
+    payload: NamespaceInspectionRequest,
+    registry: ComponentStatusRegistry | None = None,
+) -> dict:
+    policy = _load_inspection_policy(session)
+    limits = CollectionLimits(
+        max_log_pods=policy.max_log_pods,
+        namespace_concurrency=policy.namespace_concurrency,
+    )
+    if payload.include_logs:
+        _enforce_log_inspection_limit(
+            _estimate_namespace_log_pods(
+                provider,
+                payload.namespace,
+                payload.label_selector,
+            ),
+            policy.max_log_pods,
+        )
+    try:
+        result = provider.run_namespace_inspection(
+            payload.namespace,
+            payload.label_selector,
+            include_logs=payload.include_logs,
+            limits=limits,
+        )
+    except ProviderLogPodLimitExceededError as exc:
+        raise LogInspectionScopeTooLargeError(
+            exc.requested_pods,
+            exc.limit,
+        ) from exc
     _attach_namespace_evidence(session, result, payload.namespace, payload.label_selector)
-    _save_record(session, "namespace", payload.model_dump(), result)
-    return result
+    record = _save_record(session, "namespace", payload.model_dump(), result)
+    _attach_v11_extension(
+        session,
+        provider,
+        result,
+        scope=InspectionScope(
+            type=InspectionScopeType.namespace,
+            namespace=payload.namespace,
+            label_selector=payload.label_selector,
+        ),
+        inspection_record=record,
+        registry=registry,
+    )
+    return sanitize_inspection_response(result)
 
 
 def run_namespace_batch_inspection(
     session: Session,
     provider: InspectionProvider,
     payload: NamespaceBatchInspectionRequest,
+    registry: ComponentStatusRegistry | None = None,
 ) -> dict:
     discovery = discovery_service.discover_namespaces(provider)
     summaries_by_name = {item["name"]: item for item in discovery.get("namespaces", [])}
@@ -52,11 +174,14 @@ def run_namespace_batch_inspection(
         else payload.namespaces
     )
     sorted_namespaces = sorted(requested_namespaces)
-
     results: list[dict] = []
     for namespace in sorted_namespaces:
         try:
-            inspection = provider.run_namespace_inspection(namespace, None)
+            inspection = provider.run_namespace_inspection(
+                namespace,
+                None,
+                include_logs=False,
+            )
             _attach_namespace_evidence(session, inspection, namespace, None)
             summary = _build_namespace_batch_summary(
                 namespace=namespace,
@@ -110,12 +235,33 @@ def run_namespace_batch_inspection(
         if any(item["health_status"] == "error" for item in results)
         else "warning" if any(item["health_status"] != "healthy" for item in results) else "healthy"
     )
-    _save_record(session, "namespaces", payload.model_dump(), result | {"health_status": overall_health_status})
+    persisted = result | {"health_status": overall_health_status}
+    record = _save_record(session, "namespaces", payload.model_dump(), persisted)
+    _attach_v11_extension(
+        session,
+        provider,
+        result,
+        scope=InspectionScope(
+            type=InspectionScopeType.namespace,
+            namespaces=requested_namespaces,
+        ),
+        inspection_record=record,
+        registry=registry,
+    )
     result.pop("health_status", None)
-    return result
+    return sanitize_inspection_response(result)
 
 
-def run_pod_inspection(session: Session, provider: InspectionProvider, payload: PodInspectionRequest) -> dict:
+def run_pod_inspection(
+    session: Session,
+    provider: InspectionProvider,
+    payload: PodInspectionRequest,
+    registry: ComponentStatusRegistry | None = None,
+) -> dict:
+    _enforce_log_inspection_limit(
+        1,
+        _load_inspection_policy(session).max_log_pods,
+    )
     result = provider.run_pod_inspection(payload.namespace, payload.pod_name)
     pod = _attach_log_hits(session, payload.namespace, None, result["pod"])
     result["pod"] = pod
@@ -129,15 +275,32 @@ def run_pod_inspection(session: Session, provider: InspectionProvider, payload: 
         "resource_scope": ["pods"],
     }
     result["evidence_bundle"] = _build_evidence_bundle(payload.namespace, pod)
-    _save_record(session, "pod", payload.model_dump(), result)
-    return result
+    record = _save_record(session, "pod", payload.model_dump(), result)
+    _attach_v11_extension(
+        session,
+        provider,
+        result,
+        scope=InspectionScope(
+            type=InspectionScopeType.pod,
+            namespace=payload.namespace,
+            pod_name=payload.pod_name,
+        ),
+        inspection_record=record,
+        registry=registry,
+    )
+    return sanitize_inspection_response(result)
 
 
-def run_inspection(session: Session, provider: InspectionProvider, payload: InspectionRunRequest) -> dict:
+def run_inspection(
+    session: Session,
+    provider: InspectionProvider,
+    payload: InspectionRunRequest,
+    registry: ComponentStatusRegistry | None = None,
+) -> dict:
     if payload.target_type == InspectionTargetType.cluster:
         return {
             "target_type": payload.target_type,
-            "cluster_result": run_cluster_inspection(session, provider),
+            "cluster_result": run_cluster_inspection(session, provider, registry),
             "namespace_result": None,
             "pod_result": None,
         }
@@ -147,6 +310,7 @@ def run_inspection(session: Session, provider: InspectionProvider, payload: Insp
             session,
             provider,
             NamespaceInspectionRequest(namespace=payload.namespace or "", label_selector=payload.label_selector),
+            registry,
         )
         return {
             "target_type": payload.target_type,
@@ -159,6 +323,7 @@ def run_inspection(session: Session, provider: InspectionProvider, payload: Insp
         session,
         provider,
         PodInspectionRequest(namespace=payload.namespace or "", pod_name=payload.pod_name or ""),
+        registry,
     )
     return {
         "target_type": payload.target_type,
@@ -173,6 +338,63 @@ def list_history(session: Session, inspection_type: str | None = None) -> list[I
     if inspection_type is not None:
         query = query.filter(InspectionRecord.inspection_type == inspection_type)
     return query.order_by(InspectionRecord.executed_at.desc()).all()
+
+
+def _estimate_namespace_log_pods(
+    provider: InspectionProvider,
+    namespace: str,
+    label_selector: str | None,
+) -> int:
+    discovery = discovery_service.discover_namespace_pods(
+        provider,
+        namespace,
+        label_selector,
+    )
+    return int(discovery.get("pod_count") or 0)
+
+
+def _load_inspection_policy(session: Session) -> InspectionPolicySettings:
+    settings = session.get(SystemSetting, 1)
+    return InspectionPolicySettings.model_validate(
+        settings.inspection_policy if settings and settings.inspection_policy else {}
+    )
+
+
+def _enforce_log_inspection_limit(
+    estimated_pods: int,
+    limit: int,
+) -> None:
+    if estimated_pods > limit:
+        raise LogInspectionScopeTooLargeError(estimated_pods, limit)
+
+
+def _attach_v11_extension(
+    session: Session,
+    provider: InspectionProvider,
+    result: dict,
+    *,
+    scope: InspectionScope,
+    inspection_record: InspectionRecord,
+    registry: ComponentStatusRegistry | None = None,
+) -> None:
+    run, _ = execute_inspection(
+        session,
+        provider=provider,
+        cluster_id=get_app_settings().cluster_id,
+        scope=scope,
+        trigger=InspectionTrigger.manual,
+        inspection_record_id=inspection_record.id,
+        registry=registry,
+    )
+    issues = [
+        issue_from_model(row).model_dump(mode="json")
+        for issue_id in run.issue_ids
+        if (row := session.get(IssueModel, issue_id)) is not None
+    ]
+    result["issues"] = issues
+    result["coverage"] = [item.model_dump(mode="json") for item in run.coverage]
+    inspection_record.result_payload = sanitize_persistence_payload(result)
+    session.commit()
 
 
 def _attach_namespace_evidence(

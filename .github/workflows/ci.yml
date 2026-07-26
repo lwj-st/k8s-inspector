@@ -55,6 +55,12 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     needs: test-and-lint
+    strategy:
+      fail-fast: false
+      matrix:
+        kubernetes:
+          - v1.34.9
+          - v1.36.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,7 +74,7 @@ jobs:
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
         with:
-          version: v1.31.11
+          version: ${{ matrix.kubernetes }}
 
       - name: Build e2e image
         run: docker build -t k8s-inspector:e2e .
@@ -85,13 +91,17 @@ jobs:
         run: curl -sfL https://get-kk.kubesphere.io | sh -
 
       - name: Generate KubeKey CI config
+        env:
+          KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           chmod +x ./kk
-          ./kk create config --with-kubernetes v1.31.11 -o /tmp
+          ./kk version --show-supported-k8s | grep -F "$KUBERNETES_VERSION"
+          ./kk create config --with-kubernetes "$KUBERNETES_VERSION" -o /tmp
           ruby <<'RUBY'
           require "yaml"
 
-          path = "/tmp/config-v1.31.11.yaml"
+          version = ENV.fetch("KUBERNETES_VERSION")
+          path = "/tmp/config-#{version}.yaml"
           config = YAML.load_file(path)
           spec = config.fetch("spec")
           spec["native"] ||= {}
@@ -128,18 +138,22 @@ jobs:
           RUBY
 
       - name: Show KubeKey CI inputs
+        env:
+          KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           ./kk version
           cat ./deploy/kk/ci-inventory.yaml
-          cat /tmp/config-v1.31.11.yaml
+          cat "/tmp/config-${KUBERNETES_VERSION}.yaml"
 
       - name: Create single-node cluster with kk
+        env:
+          KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           set -o pipefail
           sudo install -d -m 700 /root/.kube
           if ! (echo yes | sudo env HOME=/root KUBECONFIG=/etc/kubernetes/admin.conf ./kk create cluster \
             -i ./deploy/kk/ci-inventory.yaml \
-            -c /tmp/config-v1.31.11.yaml \
+            -c "/tmp/config-${KUBERNETES_VERSION}.yaml" \
             -v=4 \
             2>&1 | tee /tmp/kk-create.log); then
             tail -n 50 /tmp/kk-create.log | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g' | while IFS= read -r line; do
@@ -149,11 +163,16 @@ jobs:
           fi
 
       - name: Prepare kubeconfig
+        env:
+          KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           mkdir -p "$HOME/.kube"
           sudo cp /etc/kubernetes/admin.conf "$HOME/.kube/config"
           sudo chown "$USER":"$USER" "$HOME/.kube/config"
           kubectl get nodes -o wide
+          kubectl version -o json | jq -e \
+            --arg expected "$KUBERNETES_VERSION" \
+            '.serverVersion.gitVersion == $expected'
 
       - name: Import image into cluster runtime
         run: sudo ctr -n k8s.io images import /tmp/k8s-inspector-e2e.tar
@@ -163,22 +182,40 @@ jobs:
           helm upgrade --install e2e ./deploy/helm/k8s-inspector \
             --namespace k8s-inspector \
             --create-namespace \
-            -f ./deploy/helm/k8s-inspector/e2e-values.yaml
+            -f ./deploy/helm/k8s-inspector/e2e-values.yaml \
+            --set env.appEnv=test \
+            --set env.authMode=disabled \
+            --set env.sessionCookieSecure=false
           kubectl rollout status deployment/e2e-k8s-inspector --namespace k8s-inspector --timeout=10m
 
       - name: Verify service endpoints
+        env:
+          KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           kubectl get pods -n k8s-inspector
           kubectl get svc -n k8s-inspector
           kubectl port-forward -n k8s-inspector svc/e2e-k8s-inspector 18080:80 >/tmp/k8s-inspector-port-forward.log 2>&1 &
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:18080/api/v1/system/status >/tmp/system-status.json; then
+            if curl -fsS http://127.0.0.1:18080/health/ready >/tmp/ready.json; then
               break
             fi
             sleep 2
           done
+          curl -fsS -X POST \
+            http://127.0.0.1:18080/api/v1/inspections/cluster/run \
+            >/tmp/cluster-inspection.json
+          curl -fsS http://127.0.0.1:18080/api/v1/system/status >/tmp/system-status.json
           curl -fsS http://127.0.0.1:18080/ >/tmp/index.html
-          grep -q '"status":"ready"' /tmp/system-status.json
+          grep -q '"status":"ready"' /tmp/ready.json
+          jq -e \
+            --arg expected "$KUBERNETES_VERSION" \
+            '.kubernetes_api.state == "ok"
+              and .kubernetes_server_version == $expected
+              and .kubernetes_version_supported == true' \
+            /tmp/system-status.json
+          jq -e \
+            '.coverage | type == "array"' \
+            /tmp/cluster-inspection.json
           grep -q 'K8s Inspector' /tmp/index.html
 
       - name: Run helm test

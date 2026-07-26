@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from app.schemas.v1_1 import InspectionPolicySettings
 
 
 class SettingsResponse(BaseModel):
@@ -13,6 +15,7 @@ class SettingsResponse(BaseModel):
     model_endpoint: str | None = None
     api_key: str | None = None
     default_inspection_strategy: dict
+    inspection_policy: InspectionPolicySettings
 
 
 class SettingsUpdate(BaseModel):
@@ -25,6 +28,13 @@ class SettingsUpdate(BaseModel):
     model_endpoint: str | None = None
     api_key: str | None = None
     default_inspection_strategy: dict
+    inspection_policy: InspectionPolicySettings | None = None
+
+    @model_validator(mode="after")
+    def reject_explicit_null_policy(self) -> "SettingsUpdate":
+        if "inspection_policy" in self.model_fields_set and self.inspection_policy is None:
+            raise ValueError("inspection_policy must be omitted or contain a complete policy")
+        return self
 
 
 class SystemStatusResponse(BaseModel):

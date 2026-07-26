@@ -1,3 +1,6 @@
+{{- if ne (int .Values.replicaCount) 1 }}
+{{- fail "k8s-inspector v1.1.0 only supports replicaCount=1 because SQLite and the in-process scheduler are single-writer" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,6 +31,23 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.persistence.enabled }}
+      initContainers:
+        - name: database-migration
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.db.migrate", "upgrade"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "k8s-inspector.fullname" . }}
+            - secretRef:
+                name: {{ include "k8s-inspector.fullname" . }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+      {{- end }}
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -43,11 +63,11 @@ spec:
                 name: {{ include "k8s-inspector.fullname" . }}
           readinessProbe:
             {{- $readinessProbe := deepCopy .Values.readinessProbe -}}
-            {{- $_ := set $readinessProbe.httpGet "path" (include "k8s-inspector.systemStatusPath" .) -}}
+            {{- $_ := set $readinessProbe.httpGet "path" (printf "%s/health/ready" (include "k8s-inspector.basePath" .)) -}}
             {{- toYaml $readinessProbe | nindent 12 }}
           livenessProbe:
             {{- $livenessProbe := deepCopy .Values.livenessProbe -}}
-            {{- $_ := set $livenessProbe.httpGet "path" (include "k8s-inspector.systemStatusPath" .) -}}
+            {{- $_ := set $livenessProbe.httpGet "path" (printf "%s/health/live" (include "k8s-inspector.basePath" .)) -}}
             {{- toYaml $livenessProbe | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}

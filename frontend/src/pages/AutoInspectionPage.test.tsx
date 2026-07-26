@@ -519,7 +519,7 @@ describe("AutoInspectionPage", () => {
 
     expect(screen.getByText("总数 3")).toBeInTheDocument();
     expect(screen.getByText("告警 1")).toBeInTheDocument();
-    expect(screen.getByText("失败 1")).toBeInTheDocument();
+    expect(screen.getByText("严重/失败 1")).toBeInTheDocument();
     expect(screen.getByText("正常 1")).toBeInTheDocument();
 
     expect(screen.getByText("Pod 状态")).toBeInTheDocument();
@@ -534,6 +534,66 @@ describe("AutoInspectionPage", () => {
     expect(rows[0]).toHaveAttribute("aria-label", "批量结果 error-ns");
     expect(rows[1]).toHaveAttribute("aria-label", "批量结果 warning-ns");
     expect(rows[2]).toHaveAttribute("aria-label", "批量结果 healthy-ns");
+  });
+
+  it("never presents unknown health or failed coverage as healthy", async () => {
+    fetchMock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.endsWith("/api/v1/discovery/namespaces")) {
+        return new Response(JSON.stringify({
+          executed_at: "2026-07-26T10:00:00Z",
+          namespaces: [{
+            name: "unknown-ns",
+            status: "unknown",
+            pod_count: 0,
+            abnormal_pod_count: 0,
+            last_inspected_at: null,
+            labels: {},
+            abnormal_categories: [],
+          }],
+        }), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/inspections/namespaces/run") && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          executed_at: "2026-07-26T10:01:00Z",
+          all_namespaces: true,
+          requested_namespaces: [],
+          results: [{
+            summary: {
+              name: "unknown-ns",
+              status: "unknown",
+              pod_count: 0,
+              abnormal_pod_count: 0,
+              last_inspected_at: "2026-07-26T10:01:00Z",
+              labels: {},
+              abnormal_categories: [],
+            },
+            health_status: "unknown",
+            detail_target: { type: "namespace", namespace: "unknown-ns", resource_scope: ["pods"] },
+          }],
+          issues: [],
+          coverage: [{
+            check_code: "pod_runtime",
+            name: "Pod 运行状态",
+            status: "failed",
+            reason: "Kubernetes API 超时",
+            checked_objects: 0,
+            duration_ms: 1000,
+            issue_count: 0,
+          }],
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    const { container } = render(<AutoInspectionPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "巡检全部名称空间" }));
+
+    const row = await screen.findByRole("row", { name: "批量结果 unknown-ns" });
+    expect(within(row).getByText("无法判断")).toBeInTheDocument();
+    expect(within(row).queryByText("巡检正常")).not.toBeInTheDocument();
+    expect(screen.getByText("Pod 运行状态").closest(".coverage-row")).toHaveClass("coverage-failed");
+    expect(container).toHaveTextContent("本次有检查跳过或失败，不能据此确认全部正常");
   });
 
   it("shows global error when batch request fails", async () => {
@@ -996,7 +1056,11 @@ describe("AutoInspectionPage", () => {
         }), { status: 200 });
       }
       if (url.endsWith("/api/v1/inspections/namespace/run")) {
-        expect(JSON.parse(String(init?.body))).toEqual({ namespace: "detail-name", label_selector: "app=api" });
+        expect(JSON.parse(String(init?.body))).toEqual({
+          namespace: "detail-name",
+          label_selector: "app=api",
+          include_logs: false,
+        });
         return new Response(JSON.stringify({
           inspection_target: { type: "namespace", namespace: "detail-name", label_selector: "app=api", resource_scope: ["pods"] },
           namespace: "detail-name", label_selector: "app=api", health_status: "warning", executed_at: "2026-07-14T10:01:30Z",
@@ -1298,7 +1362,11 @@ describe("AutoInspectionPage", () => {
         }), { status: 200 });
       }
       if (url.endsWith("/api/v1/inspections/namespace/run")) {
-        expect(JSON.parse(String(init?.body))).toEqual({ namespace: "edge-core", label_selector: null });
+        expect(JSON.parse(String(init?.body))).toEqual({
+          namespace: "edge-core",
+          label_selector: null,
+          include_logs: false,
+        });
         return new Response(JSON.stringify({
           inspection_target: { type: "namespace", namespace: "edge-core", resource_scope: ["pods"] },
           namespace: "edge-core", label_selector: null, health_status: "warning", executed_at: "2026-07-17T10:01:30Z",
