@@ -226,6 +226,7 @@ def test_namespace_log_api_collects_only_pod_logs(client) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["inspection_target"]["resource_scope"] == ["pod_logs"]
+    assert body["health_status"] == "warning"
     assert body["services"] == []
     assert body["ingresses"] == []
     assert body["tls_secrets"] == []
@@ -233,6 +234,7 @@ def test_namespace_log_api_collects_only_pod_logs(client) -> None:
     assert body["issues"] == []
     assert body["coverage"] == []
     assert body["pods"][0]["log_summary"] == "[app] database connection refused"
+    assert body["pods"][0]["log_hits"][0]["keyword"] == "connection refused"
     provider.list_namespace_pods.assert_called_once_with("demo", "app=demo")
     provider.collect_pod_log_samples.assert_called_once()
     provider.run_namespace_inspection.assert_not_called()

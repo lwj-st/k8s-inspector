@@ -3,12 +3,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { discoverNamespacePods, getSettings, ignoreWhitelistLogHit, runNamespaceLogInspection } from "../api/client";
 import type { InspectedPod, KeywordHit, SavedInspectionTarget } from "../api/types";
 import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
-import { InspectionOutcomePanel } from "../components/InspectionOutcomePanel";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
 import { useDiscoverNamespaceLabels } from "../features/inspections/useDiscoverNamespaceLabels";
 import { useDiscoverNamespaces } from "../features/inspections/useDiscoverNamespaces";
-import { isHealthyPod } from "../features/inspections/podHealth";
 import { labelSelectorOptionsForPod } from "../features/inspections/podLabels";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 import { useRunPodInspection } from "../features/inspections/useRunPodInspection";
@@ -31,19 +29,6 @@ type IgnoreDraft = {
   keyword: string;
   note: string;
 };
-
-function sortPods(pods: InspectedPod[]) {
-  return [...pods].sort((left, right) => {
-    const leftRank = isHealthyPod(left) ? 1 : 0;
-    const rightRank = isHealthyPod(right) ? 1 : 0;
-
-    if (leftRank !== rightRank) {
-      return leftRank - rightRank;
-    }
-
-    return right.restarts - left.restarts;
-  });
-}
 
 function logHitContext(hit: KeywordHit) {
   return hit.context_text?.trim() || hit.matched_text;
@@ -170,15 +155,23 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     return items.filter((item) => item.name.toLowerCase().includes(keyword));
   }, [namespaceDiscovery, namespaceSearch]);
 
-  const sortedRangePods = namespaceInspection.data ? sortPods(namespaceInspection.data.pods) : [];
+  const rangePods = namespaceInspection.data?.pods ?? [];
+  const getActiveLogHits = (pod: InspectedPod) =>
+    pod.log_hits.filter((hit) => !hit.whitelisted && !ignoredLogKeys.includes(`${pod.name}:${hit.keyword}:${hit.matched_text}`));
+  const sortedRangePods = useMemo(
+    () => [...rangePods].sort((left, right) => getActiveLogHits(right).length - getActiveLogHits(left).length),
+    [rangePods, ignoredLogKeys],
+  );
   const selectedRangePod =
     sortedRangePods.find((pod) => pod.name === selectedRangePodName) ??
     sortedRangePods[0] ??
     null;
-  const getActiveLogHits = (pod: InspectedPod) =>
-    pod.log_hits.filter((hit) => !hit.whitelisted && !ignoredLogKeys.includes(`${pod.name}:${hit.keyword}:${hit.matched_text}`));
   const currentPod = scopeMode === "single" ? podInspection.data?.pod ?? null : selectedRangePod;
   const currentLogHits = currentPod ? getActiveLogHits(currentPod) : [];
+  const inspectedLogPods = scopeMode === "single"
+    ? (podInspection.data?.pod ? [podInspection.data.pod] : [])
+    : rangePods;
+  const activeLogHitCount = inspectedLogPods.reduce((total, pod) => total + getActiveLogHits(pod).length, 0);
   const currentScopeText =
     !namespace.trim()
       ? "未选择名称空间"
@@ -192,14 +185,14 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     [targets],
   );
   const defaultInspectionPointName = namespace.trim() && labelSelector.trim() ? `${namespace.trim()} / ${labelSelector.trim()}` : "";
-  const getPodResultStatus = (pod: InspectedPod) => (!isHealthyPod(pod) || getActiveLogHits(pod).length > 0 ? "error" : "healthy");
+  const getPodResultStatus = (pod: InspectedPod) => (getActiveLogHits(pod).length > 0 ? "error" : "unknown");
   const getPodResultSummary = (pod: InspectedPod) => {
     const activeHits = getActiveLogHits(pod);
     if (activeHits.length > 0) {
       const keywords = Array.from(new Set(activeHits.map((hit) => hit.keyword))).slice(0, 3);
       return `命中关键字：${keywords.join("、")}`;
     }
-    return isHealthyPod(pod) ? "正常" : "异常";
+    return "未命中日志关键字";
   };
 
   useEffect(() => {
@@ -736,49 +729,39 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       {namespaceInspection.error ? <p>巡检失败：{namespaceInspection.error}</p> : null}
       {ignoreMessage ? <p className="inline-note">{ignoreMessage}</p> : null}
 
-      {scopeMode === "single" && podInspection.data ? (
-        <InspectionOutcomePanel
-          healthStatus={podInspection.data.health_status}
-          issues={podInspection.data.issues}
-          coverage={podInspection.data.coverage}
-        />
+      {inspectedLogPods.length > 0 ? (
+        <section className="panel">
+          <div className="section-header">
+            <h3>日志巡检结果</h3>
+            <StatusBadge status={activeLogHitCount > 0 ? "warning" : "unknown"} />
+          </div>
+          <p>
+            已检查 {inspectedLogPods.length} 个 Pod，发现 {activeLogHitCount} 个日志命中。
+            {activeLogHitCount === 0 ? " 未命中日志关键字；这不代表 Pod 或服务状态正常。" : ""}
+          </p>
+        </section>
       ) : null}
+
       {scopeMode === "single" && podInspection.data ? (
         <>
           {currentPod ? (
             <div className="inspection-layout">
               <div className="panel">
                 <div className="section-header">
-                  <h3>单 Pod 结果</h3>
+                  <h3>单 Pod 日志</h3>
                   <StatusBadge status={getPodResultStatus(currentPod)} />
                 </div>
                 <KeyValueList
                   items={[
                     { label: "Pod", value: currentPod.name },
-                    { label: "状态", value: currentPod.status },
-                    {
-                      label: "资源使用",
-                      value: `CPU ${currentPod.resource_usage.cpu ?? "n/a"} / MEM ${currentPod.resource_usage.memory ?? "n/a"}`,
-                    },
+                    { label: "日志命中", value: String(currentLogHits.length) },
                   ]}
                 />
-                <article className="card">
-                  <strong>Describe 摘要</strong>
-                  <pre className="log-block code-block-scroll">{currentPod.describe_summary}</pre>
-                </article>
               </div>
               <div className="panel">
                 <div className="section-header">
-                  <h3>证据详情</h3>
+                  <h3>日志详情</h3>
                 </div>
-                <article className="card">
-                  <strong>事件</strong>
-                  {currentPod.events.length > 0 ? (
-                    <pre className="log-block code-block-scroll">{currentPod.events.join("\n")}</pre>
-                  ) : (
-                    <p>无事件</p>
-                  )}
-                </article>
                 <article className="card">
                   <strong>{currentLogHits.length > 0 ? "日志命中" : "原始日志摘要"}</strong>
                   {currentLogHits.length > 0 ? (
@@ -834,7 +817,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                         <strong title={pod.name}>{pod.name}</strong>
                         <StatusBadge status={getPodResultStatus(pod)} />
                       </div>
-                      <p>重启次数：{pod.restarts}</p>
                       <small title={getPodResultSummary(pod)}>{getPodResultSummary(pod)}</small>
                     </button>
                   );
@@ -843,7 +825,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             </div>
             <div className="panel">
               <div className="section-header">
-                <h3>证据详情</h3>
+                <h3>日志详情</h3>
                 {currentPod ? <StatusBadge status={getPodResultStatus(currentPod)} /> : null}
               </div>
               {currentPod ? (
@@ -851,26 +833,9 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                   <KeyValueList
                     items={[
                       { label: "Pod", value: currentPod.name },
-                      { label: "状态", value: currentPod.status },
-                      { label: "重启次数", value: String(currentPod.restarts) },
-                      {
-                        label: "资源使用",
-                        value: `CPU ${currentPod.resource_usage.cpu ?? "n/a"} / MEM ${currentPod.resource_usage.memory ?? "n/a"}`,
-                      },
+                      { label: "日志命中", value: String(currentLogHits.length) },
                     ]}
                   />
-                  <article className="card">
-                    <strong>Describe 摘要</strong>
-                    <pre className="log-block code-block-scroll">{currentPod.describe_summary}</pre>
-                  </article>
-                  <article className="card">
-                    <strong>事件</strong>
-                    {currentPod.events.length > 0 ? (
-                      <pre className="log-block code-block-scroll">{currentPod.events.join("\n")}</pre>
-                    ) : (
-                      <p>无事件</p>
-                    )}
-                  </article>
                   <article className="card">
                     <strong>{currentLogHits.length > 0 ? "日志命中" : "原始日志摘要"}</strong>
                     {currentLogHits.length > 0 ? (

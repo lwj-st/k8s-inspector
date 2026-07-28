@@ -402,6 +402,8 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
     expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
+    expect(screen.getByText("日志巡检结果")).toBeInTheDocument();
+    expect(screen.getByText(/已检查 2 个 Pod，发现 1 个日志命中/)).toBeInTheDocument();
     expect(screen.queryByText("本次巡检结论")).not.toBeInTheDocument();
     expect(screen.queryByText("本次巡检覆盖")).not.toBeInTheDocument();
     expect(screen.queryByText("Pod 运行状态")).not.toBeInTheDocument();
@@ -506,9 +508,13 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
 
-    expect(await screen.findByText("单 Pod 结果")).toBeInTheDocument();
-    expect(screen.getByText("资源指标").closest(".coverage-row")).toHaveClass("coverage-skipped");
-    expect(screen.getByText("本次有检查跳过或失败，不能据此确认全部正常。")).toBeInTheDocument();
+    expect(await screen.findByText("单 Pod 日志")).toBeInTheDocument();
+    expect(screen.getByText("日志巡检结果")).toBeInTheDocument();
+    expect(screen.getByText(/已检查 1 个 Pod，发现 1 个日志命中/)).toBeInTheDocument();
+    expect(screen.queryByText("本次巡检结论")).not.toBeInTheDocument();
+    expect(screen.queryByText("本次巡检覆盖")).not.toBeInTheDocument();
+    expect(screen.queryByText("资源指标")).not.toBeInTheDocument();
+    expect(screen.queryByText("本次有检查跳过或失败，不能据此确认全部正常。")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "确认大范围日志巡检" })).not.toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "level=error msg=database connection refused")).toBeInTheDocument();
 
