@@ -97,6 +97,17 @@ export type IssueListParams = {
   page_size?: number;
 };
 
+export type IssueFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type IssueFilterOptions = {
+  namespaces: IssueFilterOption[];
+  resource_kinds: IssueFilterOption[];
+  source_checks: IssueFilterOption[];
+};
+
 export type Coverage = {
   check_code: string;
   name: string;

@@ -303,6 +303,12 @@ def tls_candidates(
                 )
             )
         if facts.get("host_match") is False:
+            mismatched_hosts = list(
+                facts.get("mismatched_hosts") or facts.get("hosts") or []
+            )[:50]
+            mismatch_label = mismatched_hosts[0] if mismatched_hosts else "Ingress 域名"
+            if len(mismatched_hosts) > 1:
+                mismatch_label += f" 等 {len(mismatched_hosts)} 个域名"
             issues.append(
                 candidate(
                     item,
@@ -310,15 +316,19 @@ def tls_candidates(
                     issue_code=IssueCode.TLS_HOST_MISMATCH,
                     severity=IssueSeverity.critical,
                     scope=IssueScope.ingress,
-                    summary="TLS 证书与 Ingress 域名不匹配",
-                    reason="证书 SAN 不覆盖 Ingress host。",
+                    summary=f"TLS 证书未覆盖域名 {mismatch_label}",
+                    reason=f"证书 SAN 未覆盖：{mismatch_label}。",
                     suggestion="签发覆盖目标域名的证书并更新 TLS Secret。",
                     evidence_items=[
                         evidence(
                             item,
                             code="tls_host_mismatch",
                             summary="证书 SAN 不匹配",
-                            facts={"hosts": list(facts.get("hosts") or [])[:50]},
+                            facts={
+                                "hosts": list(facts.get("hosts") or [])[:50],
+                                "mismatched_hosts": mismatched_hosts,
+                                "sans": list(facts.get("sans") or [])[:50],
+                            },
                         )
                     ],
                     correlation_key=correlation,

@@ -6,6 +6,7 @@ from app.schemas.v1_1 import (
     Issue,
     IssueAcknowledgeRequest,
     IssueEvent,
+    IssueFilterOptions,
     IssueListFilter,
     IssueSeverity,
     IssueSortMode,
@@ -43,6 +44,13 @@ def list_issues(
             page_size=page_size,
         ),
     )
+
+
+@router.get("/filter-options", response_model=IssueFilterOptions)
+def list_issue_filter_options(
+    session: Session = Depends(get_db_session),
+) -> IssueFilterOptions:
+    return issue_query.list_issue_filter_options(session)
 
 
 @router.get("/{issue_id}", response_model=Issue)

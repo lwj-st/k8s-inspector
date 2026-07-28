@@ -1,0 +1,15 @@
+K8s Inspector 已部署。
+
+升级后请确认巡检 ServiceAccount 的关键只读权限：
+
+  kubectl auth can-i list endpointslices.discovery.k8s.io \
+    --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "k8s-inspector.serviceAccountName" . }} \
+    -n <目标名称空间>
+
+  kubectl auth can-i get pods \
+    --subresource=log \
+    --as=system:serviceaccount:{{ .Release.Namespace }}:{{ include "k8s-inspector.serviceAccountName" . }} \
+    -n <目标名称空间>
+
+两条命令都应返回 yes。若返回 no，请确认本次 Helm upgrade 已更新
+ClusterRole/{{ include "k8s-inspector.fullname" . }} 和对应的 ClusterRoleBinding。

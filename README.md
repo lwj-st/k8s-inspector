@@ -71,6 +71,10 @@ CI 还配置了 Kubernetes 1.34 和 1.36 的 KubeKey 单节点 E2E。支持范�
 
 v1.1.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart 会拒绝 `replicaCount` 不等于 `1` 的部署。
 
+> 必须使用与镜像相同版本的完整 Helm Chart 部署。禁止只修改 Deployment
+> 镜像而不执行 Helm upgrade，否则应用能力与 ServiceAccount RBAC 可能不一致，
+> 巡检会出现 `Forbidden`。
+
 部署前至少准备：
 
 - Argon2 管理员密码哈希。
@@ -79,6 +83,15 @@ v1.1.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart
 - HTTPS 访问地址和可信详情页基础地址。
 - Webhook 目标主机或 CIDR 允许列表。
 - 生产可用的 PVC、镜像标签和只读 ServiceAccount/RBAC。
+
+部署前先确认 Kubernetes 服务端版本：
+
+```bash
+kubectl version
+```
+
+v1.1.0 当前经过验证的 Kubernetes 范围是 1.34 至 1.36。目标集群不在该范围时，
+不能直接作为商用环境部署，应先完成该版本的兼容性验证。
 
 可用以下命令生成随机密钥：
 
@@ -119,10 +132,15 @@ secretEnv:
 部署：
 
 ```bash
+helm lint ./deploy/helm/k8s-inspector \
+  -f /secure/path/values-production.yaml
+
 helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
-  -f /secure/path/values-production.yaml
+  -f /secure/path/values-production.yaml \
+  --atomic \
+  --timeout 15m
 ```
 
 Chart 默认：
@@ -142,6 +160,62 @@ kubectl -n k8s-inspector logs deployment/k8s-inspector -c database-migration
 ```
 
 如果 Helm release 名称不是 `k8s-inspector`，Deployment 名称以 `helm status` 和 `kubectl get deployment` 的结果为准。
+
+### 部署后 RBAC 验收
+
+以下命令按默认 release、namespace 和 ServiceAccount 名称编写。若部署时修改了名称，
+应替换 `AUTH_AS`：
+
+```bash
+AUTH_AS=system:serviceaccount:k8s-inspector:k8s-inspector-k8s-inspector
+TARGET_NAMESPACE=platform
+
+kubectl auth can-i list pods \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list deployments.apps \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list ingresses.networking.k8s.io \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list endpointslices.discovery.k8s.io \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list persistentvolumeclaims \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i get pods \
+  --subresource=log \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+```
+
+这些命令必须全部返回 `yes`。Metrics API 是可选项；安装 Metrics Server 后，还应检查：
+
+```bash
+kubectl auth can-i list pods.metrics.k8s.io \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+```
+
+如果出现 `Forbidden`，先确认 Helm 中保存的清单包含完整 RBAC：
+
+```bash
+helm get manifest k8s-inspector -n k8s-inspector
+kubectl get clusterrole k8s-inspector-k8s-inspector -o yaml
+kubectl get clusterrolebinding k8s-inspector-k8s-inspector -o yaml
+```
+
+不得把采集失败解释为资源健康，也不应通过增加管理员权限解决。使用当前版本 Chart
+重新执行 `helm upgrade`，确保只授予 Chart 中声明的只读权限。
+
+### 部署后 TLS 验收
+
+Ingress 引用的 TLS Secret 必须覆盖实际访问域名。能在浏览器访问不代表 Kubernetes
+Secret 一定正确，因为外部负载均衡或网关可能使用另一张证书。
+
+```bash
+kubectl get secret TLS_SECRET -n INGRESS_NAMESPACE \
+  -o jsonpath='{.data.tls\.crt}' \
+  | base64 -d \
+  | openssl x509 -noout -subject -ext subjectAltName
+```
+
+确认 SAN 包含 Ingress host 或合法的单级通配符域名。
 
 ## 子路径部署
 

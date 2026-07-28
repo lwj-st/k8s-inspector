@@ -85,6 +85,16 @@ describe("ProblemWorkbenchPage", () => {
     fetchMock.mockImplementation(async (input: string | URL | Request) => {
       const url = String(input);
       requestedUrls.push(url);
+      if (url.endsWith("/issues/filter-options")) {
+        return new Response(JSON.stringify({
+          namespaces: [{ value: "prod", label: "prod" }],
+          resource_kinds: [
+            { value: "Ingress", label: "访问入口（Ingress）" },
+            { value: "Pod", label: "容器实例（Pod）" },
+          ],
+          source_checks: [{ value: "ingress_chain", label: "Ingress 配置链路" }],
+        }), { status: 200 });
+      }
       if (url.includes("/issues?")) {
         const query = new URL(url, "http://localhost").searchParams;
         if (query.get("page_size") === "1") {
@@ -143,6 +153,15 @@ describe("ProblemWorkbenchPage", () => {
     expect(screen.getByText("存储检查").closest(".coverage-row")).toHaveClass("coverage-failed");
     expect(screen.getAllByText("部分完成").length).toBeGreaterThan(0);
     expect(screen.getByTestId("issue-mobile-list")).toBeInTheDocument();
+    expect(screen.getByText("汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "最近一次定时巡检覆盖（全集群）" })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("名称空间"), "prod");
+    expect(requestedUrls.some((url) => url.includes("namespace=prod"))).toBe(true);
+    await userEvent.selectOptions(screen.getByLabelText("资源类型"), "Pod");
+    expect(requestedUrls.some((url) => url.includes("resource_kind=Pod"))).toBe(true);
+    await userEvent.selectOptions(screen.getByLabelText("巡检项"), "ingress_chain");
+    expect(requestedUrls.some((url) => url.includes("source_check=ingress_chain"))).toBe(true);
 
     await userEvent.selectOptions(screen.getByLabelText("排序"), "duration");
     expect(await screen.findByDisplayValue("持续最久")).toBeInTheDocument();

@@ -28,6 +28,13 @@ describe("App", () => {
       if (url.includes("/api/v1/issues?")) {
         return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: url.includes("page_size=1") ? 1 : 20 }), { status: 200 });
       }
+      if (url.endsWith("/api/v1/issues/filter-options")) {
+        return new Response(JSON.stringify({
+          namespaces: [],
+          resource_kinds: [],
+          source_checks: [],
+        }), { status: 200 });
+      }
       if (url.includes("/api/v1/inspection-runs?")) {
         return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: 1 }), { status: 200 });
       }

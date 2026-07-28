@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from kubernetes.client.exceptions import ApiException
 
 
 def register_api_error_handlers(app: FastAPI) -> None:
@@ -14,6 +15,27 @@ def register_api_error_handlers(app: FastAPI) -> None:
     async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
         code, message = _safe_http_error(exc.status_code)
         return _response(request, exc.status_code, code, message, headers=exc.headers)
+
+    @app.exception_handler(ApiException)
+    async def kubernetes_api_error(request: Request, exc: ApiException) -> JSONResponse:
+        if exc.status == 403:
+            return _response(
+                request,
+                503,
+                "KUBERNETES_RBAC_FORBIDDEN",
+                "Kubernetes 巡检权限不足，请检查 ServiceAccount 的只读 RBAC 权限",
+                details={"upstream_status": 403, "reason": "Forbidden"},
+            )
+        return _response(
+            request,
+            503,
+            "KUBERNETES_API_UNAVAILABLE",
+            "Kubernetes API 暂时不可用，请稍后重试",
+            details={
+                "upstream_status": int(exc.status) if exc.status else None,
+                "reason": str(exc.reason or "Kubernetes API request failed")[:200],
+            },
+        )
 
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
@@ -42,6 +64,7 @@ def _response(
     message: str,
     *,
     headers: dict[str, str] | None = None,
+    details: dict[str, object] | None = None,
 ) -> JSONResponse:
     request_id = getattr(request.state, "request_id", None)
     response_headers = dict(headers or {})
@@ -53,7 +76,7 @@ def _response(
             "code": code,
             "message": message,
             "request_id": request_id,
-            "details": {},
+            "details": details or {},
         },
         headers=response_headers,
     )

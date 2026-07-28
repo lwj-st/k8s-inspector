@@ -218,3 +218,18 @@ def test_issue_priority_sort_is_stable_across_pages(client):
     assert first["items"][0]["id"] != second["items"][0]["id"]
     severity_rank = {"critical": 0, "warning": 1, "info": 2}
     assert severity_rank[first["items"][0]["severity"]] <= severity_rank[second["items"][0]["severity"]]
+
+
+def test_issue_filter_options_are_generated_from_existing_issues(client):
+    client.post("/api/v1/inspections/namespace/run", json={"namespace": "demo"})
+
+    response = client.get("/api/v1/issues/filter-options")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert {"value": "demo", "label": "demo"} in body["namespaces"]
+    assert any(option["value"] == "Pod" for option in body["resource_kinds"])
+    assert any(
+        option["value"] == "pod.runtime" and option["label"] == "Pod 运行状态"
+        for option in body["source_checks"]
+    )

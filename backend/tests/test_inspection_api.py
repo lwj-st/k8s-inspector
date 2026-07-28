@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+from kubernetes.client.exceptions import ApiException
 
 from app.models import InspectionRecord, SystemSetting
 from app.models import InspectionRun as InspectionRunModel
@@ -1351,3 +1352,21 @@ def test_mock_provider_pod_inspection_does_not_depend_on_namespace_inspection() 
     result = provider.run_pod_inspection("demo", "demo-api-7c8f6f7c6b-fh2ns")
 
     assert result["pod"]["name"] == "demo-api-7c8f6f7c6b-fh2ns"
+
+
+def test_kubernetes_rbac_failure_returns_actionable_api_error(client) -> None:
+    client.app.state.provider.run_namespace_inspection = (
+        lambda namespace, label_selector, *, include_logs=True, limits=None: (
+            _ for _ in ()
+        ).throw(ApiException(status=403, reason="Forbidden"))
+    )
+
+    response = client.post(
+        "/api/v1/inspections/namespace/run",
+        json={"namespace": "demo", "include_logs": False},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "KUBERNETES_RBAC_FORBIDDEN"
+    assert "ServiceAccount" in response.json()["message"]
+    assert "HTTP response headers" not in response.text

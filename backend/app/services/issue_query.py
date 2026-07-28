@@ -13,6 +13,8 @@ from app.schemas.v1_1 import (
     Issue,
     IssueEvent,
     IssueEventType,
+    IssueFilterOption,
+    IssueFilterOptions,
     IssueListFilter,
     IssueScope,
     IssueSeverity,
@@ -22,6 +24,35 @@ from app.schemas.v1_1 import (
     ResourceRef,
 )
 from app.services.payload_sanitizer import sanitize_public_payload
+
+
+_RESOURCE_KIND_LABELS = {
+    "CronJob": "定时任务（CronJob）",
+    "DaemonSet": "守护进程（DaemonSet）",
+    "Deployment": "应用部署（Deployment）",
+    "Ingress": "访问入口（Ingress）",
+    "Job": "任务（Job）",
+    "Node": "节点（Node）",
+    "PersistentVolume": "持久卷（PV）",
+    "PersistentVolumeClaim": "持久卷声明（PVC）",
+    "Pod": "容器实例（Pod）",
+    "Service": "服务（Service）",
+    "StatefulSet": "有状态应用（StatefulSet）",
+    "TLSSecret": "TLS 证书 Secret",
+}
+
+_SOURCE_CHECK_LABELS = {
+    "ingress.config_chain": "Ingress 配置链路",
+    "kubernetes.version": "Kubernetes 版本",
+    "metrics.resource": "CPU 与内存指标",
+    "node.health": "节点健康",
+    "pod.runtime": "Pod 运行状态",
+    "required_components": "必需组件",
+    "service.endpoints": "Service 后端",
+    "storage.status": "存储状态",
+    "tls.certificate": "TLS 证书",
+    "workload.status": "工作负载状态",
+}
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -82,6 +113,44 @@ def issue_event_from_model(row: IssueEventModel) -> IssueEvent:
 
 def get_issue(session: Session, issue_id: int) -> IssueModel | None:
     return session.get(IssueModel, issue_id)
+
+
+def list_issue_filter_options(session: Session) -> IssueFilterOptions:
+    namespaces = session.scalars(
+        select(IssueModel.resource_namespace)
+        .where(IssueModel.resource_namespace.is_not(None))
+        .distinct()
+        .order_by(IssueModel.resource_namespace)
+    ).all()
+    resource_kinds = session.scalars(
+        select(IssueModel.resource_kind).distinct().order_by(IssueModel.resource_kind)
+    ).all()
+    source_checks = session.scalars(
+        select(IssueModel.source_check).distinct().order_by(IssueModel.source_check)
+    ).all()
+    return IssueFilterOptions(
+        namespaces=[
+            IssueFilterOption(value=value, label=value)
+            for value in namespaces
+            if value
+        ],
+        resource_kinds=[
+            IssueFilterOption(
+                value=value,
+                label=_RESOURCE_KIND_LABELS.get(value, value),
+            )
+            for value in resource_kinds
+            if value
+        ],
+        source_checks=[
+            IssueFilterOption(
+                value=value,
+                label=_SOURCE_CHECK_LABELS.get(value, value),
+            )
+            for value in source_checks
+            if value
+        ],
+    )
 
 
 def list_issues(session: Session, filters: IssueListFilter) -> Page[Issue]:

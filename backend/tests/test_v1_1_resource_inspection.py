@@ -279,6 +279,8 @@ def test_tls_expiring_host_mismatch_and_key_mismatch_are_independent() -> None:
                         "host_match": False,
                         "key_match": False,
                         "hosts": ["api.example.com"],
+                        "mismatched_hosts": ["api.example.com"],
+                        "sans": ["other.example.com"],
                     },
                 )
             ]
@@ -292,6 +294,13 @@ def test_tls_expiring_host_mismatch_and_key_mismatch_are_independent() -> None:
         "TLS_KEY_MISMATCH",
     }
     assert all("tls_key" not in evidence.facts for item in result.issue_candidates for evidence in item.evidence)
+    mismatch = next(
+        item for item in result.issue_candidates
+        if item.issue_code.value == "TLS_HOST_MISMATCH"
+    )
+    assert "api.example.com" in mismatch.summary
+    assert mismatch.evidence[0].facts["mismatched_hosts"] == ["api.example.com"]
+    assert mismatch.evidence[0].facts["sans"] == ["other.example.com"]
 
 
 def test_wait_for_first_consumer_without_consumer_is_expected() -> None:

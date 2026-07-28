@@ -2,12 +2,54 @@
 
 ## 安装
 
+必须使用与应用镜像相同版本的 Chart 完整安装或升级，不能只替换 Deployment
+中的镜像。Chart 同时管理 ServiceAccount、ClusterRole 和 ClusterRoleBinding。
+
 ```bash
+helm lint ./deploy/helm/k8s-inspector \
+  -f ./deploy/helm/k8s-inspector/values-prod.yaml
+
 helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
-  -f ./deploy/helm/k8s-inspector/values-prod.yaml
+  -f ./deploy/helm/k8s-inspector/values-prod.yaml \
+  --atomic \
+  --timeout 15m
 ```
+
+## 安装后权限验收
+
+默认部署完成后，在一个实际巡检的名称空间执行：
+
+```bash
+AUTH_AS=system:serviceaccount:k8s-inspector:k8s-inspector-k8s-inspector
+TARGET_NAMESPACE=platform
+
+kubectl auth can-i list pods \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list deployments.apps \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list ingresses.networking.k8s.io \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list endpointslices.discovery.k8s.io \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i list persistentvolumeclaims \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+kubectl auth can-i get pods \
+  --subresource=log \
+  --as="${AUTH_AS}" -n "${TARGET_NAMESPACE}"
+```
+
+所有命令都必须返回 `yes`。返回 `no` 时不要继续做巡检验收，应先确认：
+
+```bash
+helm get manifest k8s-inspector -n k8s-inspector
+kubectl get clusterrole k8s-inspector-k8s-inspector -o yaml
+kubectl get clusterrolebinding k8s-inspector-k8s-inspector -o yaml
+```
+
+Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会显示未检查，
+不应影响基础资源巡检。
 
 ## 关键参数
 
@@ -27,7 +69,7 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
 
 ## 生产 values 示例
 
-仓库自带 [values-prod.yaml](/Users/liwenjian1.vendor/Documents/Codex/k8s-inspector/deploy/helm/k8s-inspector/values-prod.yaml:1)，默认配置：
+仓库自带 [values-prod.yaml](values-prod.yaml)，默认配置：
 
 - 域名 `dev-inspector.sensecore.com`
 - 根路径 `/`

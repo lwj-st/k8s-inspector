@@ -1,6 +1,8 @@
 import json
 from unittest.mock import Mock
 
+from kubernetes.client.exceptions import ApiException
+
 from app.models import DiagnosisRecord, SystemSetting
 from app.providers.base import TemporaryPodLogCollection
 
@@ -660,10 +662,61 @@ def test_run_diagnosis_isolates_single_template_collection_failure(client) -> No
     result_by_name = {item["template_name"]: item for item in body["template_match_results"]}
     assert result_by_name["Healthy collection template"]["matched"] is True
     assert result_by_name["Broken collection template"]["matched"] is False
-    assert result_by_name["Broken collection template"]["summary"] == "无法判断：采集 broken/app=broken 失败，错误：provider failed。"
-    assert result_by_name["Broken collection template"]["reason"] == (
-        "模板范围采集失败，暂时无法判断是否命中：采集 broken/app=broken 失败，错误：provider failed"
+    assert result_by_name["Broken collection template"]["summary"] == (
+        "无法判断：采集 broken/app=broken 失败："
+        "Kubernetes 采集异常（RuntimeError）。"
     )
+    assert result_by_name["Broken collection template"]["reason"] == (
+        "模板范围采集失败，暂时无法判断是否命中："
+        "采集 broken/app=broken 失败：Kubernetes 采集异常（RuntimeError）"
+    )
+
+
+def test_run_diagnosis_reports_safe_rbac_error_without_raw_http_response(client) -> None:
+    template = client.post(
+        "/api/v1/templates",
+        json={
+            "name": "RBAC failure template",
+            "scenario": "targeted_diagnosis",
+            "target_groups": [
+                {"ref": "api", "namespace": "platform", "label_selector": "app=worker"}
+            ],
+            "match_conditions": [
+                {
+                    "target_ref": "api",
+                    "type": "pod_status",
+                    "operator": "in",
+                    "value": ["Running"],
+                }
+            ],
+            "joint_rule": {"operator": "AND"},
+            "reason": "Test",
+            "suggestion": "Check RBAC",
+            "enabled": True,
+        },
+    )
+    assert template.status_code == 201
+    error = ApiException(status=403, reason="Forbidden")
+    error.body = json.dumps(
+        {
+            "details": {
+                "group": "discovery.k8s.io",
+                "kind": "endpointslices",
+            }
+        }
+    )
+    client.app.state.provider.run_namespace_inspection = (
+        lambda namespace, label_selector: (_ for _ in ()).throw(error)
+    )
+
+    response = client.post("/api/v1/diagnoses/run", json={})
+
+    assert response.status_code == 200
+    text = json.dumps(response.json(), ensure_ascii=False)
+    assert "Kubernetes RBAC 权限不足" in text
+    assert "discovery.k8s.io/endpointslices" in text
+    assert "HTTP response headers" not in text
+    assert "Audit-Id" not in text
 
 
 def test_run_diagnosis_ignore_whitelist_prevents_log_keyword_template_match(client) -> None:

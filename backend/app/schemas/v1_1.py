@@ -265,6 +265,17 @@ class Issue(ContractModel):
         return self
 
 
+class IssueFilterOption(ContractModel):
+    value: str = Field(min_length=1, max_length=253)
+    label: str = Field(min_length=1, max_length=253)
+
+
+class IssueFilterOptions(ContractModel):
+    namespaces: list[IssueFilterOption] = Field(default_factory=list)
+    resource_kinds: list[IssueFilterOption] = Field(default_factory=list)
+    source_checks: list[IssueFilterOption] = Field(default_factory=list)
+
+
 class IssueCandidate(ContractModel):
     issue_code: IssueCode
     severity: IssueSeverity

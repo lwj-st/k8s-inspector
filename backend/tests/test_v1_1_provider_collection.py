@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from kubernetes.client.exceptions import ApiException
 
+from app.providers.kubernetes_tls import dns_name_matches
 from app.providers.kubernetes_collection import (
     KubernetesResourceCollector,
     _latest_cron_schedule,
@@ -262,6 +263,56 @@ def test_tls_secret_is_parsed_in_memory_without_exposing_key_material() -> None:
     assert "tls.key" not in serialized
 
 
+def test_tls_wildcard_matches_one_subdomain_level() -> None:
+    assert dns_name_matches("dev-grafana.sensecore.com", "*.sensecore.com") is True
+    assert dns_name_matches("deep.dev-grafana.sensecore.com", "*.sensecore.com") is False
+
+
+def test_tls_secret_reports_only_the_hosts_not_covered_by_san() -> None:
+    item = collector()
+    now = datetime.now(timezone.utc)
+    item._now = now
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "*.sensecore.com")]))
+        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "*.sensecore.com")]))
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=20))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("*.sensecore.com")]),
+            critical=False,
+        )
+        .sign(private_key, hashes.SHA256())
+    )
+    secret = ns(
+        type="kubernetes.io/tls",
+        data={
+            "tls.crt": base64.b64encode(
+                certificate.public_bytes(serialization.Encoding.PEM)
+            ).decode(),
+            "tls.key": base64.b64encode(
+                private_key.private_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PrivateFormat.PKCS8,
+                    serialization.NoEncryption(),
+                )
+            ).decode(),
+        },
+    )
+
+    facts = item._parse_tls_secret(
+        secret,
+        {"dev-grafana.sensecore.com", "grafana.internal.example.com"},
+    )
+
+    assert facts["host_match"] is False
+    assert facts["matched_hosts"] == ["dev-grafana.sensecore.com"]
+    assert facts["mismatched_hosts"] == ["grafana.internal.example.com"]
+
+
 def test_old_warning_event_only_survives_window_for_current_fault() -> None:
     item = collector()
     item._now = datetime.now(timezone.utc)
@@ -465,6 +516,12 @@ def test_clusterrole_keeps_secret_and_configmap_as_targeted_get_only() -> None:
     ).read_text()
 
     assert 'resources: ["secrets", "configmaps"]\n    verbs: ["get"]' in clusterrole
+    assert 'resources: ["pods/log"]\n    verbs: ["get"]' in clusterrole
+    assert (
+        'apiGroups: ["discovery.k8s.io"]\n'
+        '    resources: ["endpointslices"]\n'
+        '    verbs: ["get", "list"]'
+    ) in clusterrole
     for forbidden in ("create", "update", "patch", "delete"):
         assert f'"{forbidden}"' not in clusterrole
 

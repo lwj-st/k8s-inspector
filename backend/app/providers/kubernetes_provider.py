@@ -752,10 +752,19 @@ class KubernetesInspectionProvider:
             namespace=namespace,
             _request_timeout=self.settings.k8s_request_timeout,
         ).items
-        endpoint_slices = self.discovery.list_namespaced_endpoint_slice(
-            namespace=namespace,
-            _request_timeout=self.settings.k8s_request_timeout,
-        ).items
+        endpoint_slices_unavailable = False
+        try:
+            endpoint_slices = self.discovery.list_namespaced_endpoint_slice(
+                namespace=namespace,
+                _request_timeout=self.settings.k8s_request_timeout,
+            ).items
+        except ApiException as exc:
+            # 日志读取只依赖 Pod。EndpointSlice 权限不足时允许日志巡检继续，
+            # 但 Service/Ingress 必须标为 unknown，不能根据空列表误报异常。
+            if not include_logs or exc.status != 403:
+                raise
+            endpoint_slices = []
+            endpoint_slices_unavailable = True
 
         resource_collector = self._get_resource_collector()
         resource_collector._now = datetime.now(timezone.utc)
@@ -819,13 +828,19 @@ class KubernetesInspectionProvider:
                 "status": (
                     "skipped"
                     if str(observation.facts.get("service_type")).casefold() == "externalname"
+                    else "unknown"
+                    if endpoint_slices_unavailable
                     else "healthy"
                     if int(observation.facts.get("ready_endpoints") or 0) > 0
                     else "warning"
                 ),
                 "summary": (
-                    f"type={observation.facts.get('service_type')}; "
-                    f"ready_endpoints={observation.facts.get('ready_endpoints', 0)}"
+                    "EndpointSlice 无读取权限，暂时无法判断 Service 后端"
+                    if endpoint_slices_unavailable
+                    else (
+                        f"type={observation.facts.get('service_type')}; "
+                        f"ready_endpoints={observation.facts.get('ready_endpoints', 0)}"
+                    )
                 ),
             }
             for observation in service_observations
@@ -849,7 +864,9 @@ class KubernetesInspectionProvider:
             {
                 "name": observation.resource.name,
                 "status": (
-                    "warning"
+                    "unknown"
+                    if endpoint_slices_unavailable
+                    else "warning"
                     if observation.facts.get("missing_backend_services")
                     or observation.facts.get("invalid_backend_ports")
                     or observation.facts.get("services_without_ready_endpoints")
@@ -859,7 +876,11 @@ class KubernetesInspectionProvider:
                     and int(observation.facts.get("resource_backends") or 0) > 0
                     else "healthy"
                 ),
-                "summary": "仅验证 Ingress 配置链路，不代表集群外访问正常",
+                "summary": (
+                    "EndpointSlice 无读取权限，Ingress 后端链路暂时无法完整判断"
+                    if endpoint_slices_unavailable
+                    else "仅验证 Ingress 配置链路，不代表集群外访问正常"
+                ),
             }
             for observation in ingress_observations
         ]

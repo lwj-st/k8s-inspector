@@ -23,6 +23,7 @@ import type {
   ApiError,
   Issue,
   IssueEvent,
+  IssueFilterOptions,
   IssueListParams,
   Page,
   InspectionRun,
@@ -171,6 +172,10 @@ export function logout(): Promise<void> {
 
 export function listIssues(params: IssueListParams = {}): Promise<Page<Issue>> {
   return request(`/issues${queryString(params)}`);
+}
+
+export function getIssueFilterOptions(): Promise<IssueFilterOptions> {
+  return request("/issues/filter-options");
 }
 
 export function getIssue(issueId: number): Promise<Issue> {

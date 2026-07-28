@@ -166,6 +166,35 @@ migration 失败时主容器不得启动。注意：`helm --atomic` 能回退 Ku
 
 ## 6. 升级后验收
 
+### 6.0 RBAC 权限预检
+
+v1.1.0 的 Service 和 Ingress 链路巡检需要读取 EndpointSlice，日志巡检需要读取
+Pod 日志。升级镜像时必须同步升级 Helm Chart，不能只替换 Deployment 镜像。
+
+```bash
+SERVICE_ACCOUNT=system:serviceaccount:k8s-inspector:k8s-inspector-k8s-inspector
+TARGET_NAMESPACE=platform
+
+kubectl auth can-i list endpointslices.discovery.k8s.io \
+  --as="${SERVICE_ACCOUNT}" \
+  -n "${TARGET_NAMESPACE}"
+
+kubectl auth can-i get pods \
+  --subresource=log \
+  --as="${SERVICE_ACCOUNT}" \
+  -n "${TARGET_NAMESPACE}"
+```
+
+两条命令都必须返回 `yes`。若 EndpointSlice 返回 `no`，重新执行 5.2 节的
+`helm upgrade`，并确认使用的是本版本仓库中的 Chart。仓库默认 ClusterRole
+已经包含：
+
+```yaml
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["get", "list"]
+```
+
 ### 6.1 Pod 与 migration
 
 ```bash

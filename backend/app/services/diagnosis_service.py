@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from fnmatch import fnmatchcase
@@ -163,7 +164,10 @@ def _build_target_context(
         try:
             inspection = provider.run_namespace_inspection(namespace, label_selector)
         except Exception as error:
-            raise RuntimeError(f"采集 {_scope_text(namespace, label_selector)} 失败，错误：{error}") from error
+            raise RuntimeError(
+                f"采集 {_scope_text(namespace, label_selector)} 失败："
+                f"{_safe_collection_error(error)}"
+            ) from error
         pods = [
             dict(pod)
             for pod in inspection["pods"]
@@ -255,6 +259,23 @@ def _build_target_context(
             for pod in pods
         ]
     return {"targets": targets}
+
+
+def _safe_collection_error(error: Exception) -> str:
+    if getattr(error, "status", None) == 403:
+        group = ""
+        kind = ""
+        try:
+            payload = json.loads(str(getattr(error, "body", "") or "{}"))
+            details = payload.get("details") or {}
+            group = str(details.get("group") or "")
+            kind = str(details.get("kind") or "")
+        except (TypeError, ValueError):
+            pass
+        resource = "/".join(part for part in (group, kind) if part)
+        suffix = f"（{resource}）" if resource else ""
+        return f"Kubernetes RBAC 权限不足{suffix}，请补充只读 get/list 权限"
+    return f"Kubernetes 采集异常（{type(error).__name__}）"
 
 
 def _build_template_failure_result(template: FaultTemplate, error: Exception) -> dict:

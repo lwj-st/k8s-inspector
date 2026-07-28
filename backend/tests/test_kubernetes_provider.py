@@ -2,8 +2,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from kubernetes.client.exceptions import ApiException
 
-from app.providers.base import LogPodLimitExceededError
+from app.providers.base import LogPodLimitExceededError, TemporaryPodLogCollection
 from app.providers.kubernetes_provider import KubernetesInspectionProvider
 from app.providers.mock_provider import MockInspectionProvider
 from app.schemas.v1_1 import CollectionLimits
@@ -569,6 +570,42 @@ def test_run_namespace_inspection_is_healthy_when_all_resources_are_healthy() ->
     result = provider.run_namespace_inspection("demo", None)
 
     assert result["health_status"] == "healthy"
+
+
+def test_log_inspection_continues_when_endpoint_slice_rbac_is_missing() -> None:
+    provider = _make_provider()
+    _configure_namespace_inspection_provider(
+        provider,
+        ingress_load_balancer=None,
+        daemonset_unavailable=0,
+    )
+    provider.discovery.list_namespaced_endpoint_slice = (
+        lambda namespace, _request_timeout: (_ for _ in ()).throw(
+            ApiException(status=403, reason="Forbidden")
+        )
+    )
+    provider.collect_pod_log_samples = (
+        lambda namespace, pod_names, limits: TemporaryPodLogCollection()
+    )
+    original_build = provider._build_pod_result
+    provider._build_pod_result = (
+        lambda namespace, pod, services, **kwargs: original_build(
+            namespace,
+            pod,
+            services,
+        )
+    )
+
+    result = provider.run_namespace_inspection(
+        "demo",
+        None,
+        include_logs=True,
+    )
+
+    assert result["pods"][0]["status"] == "Running"
+    assert result["services"][0]["status"] == "unknown"
+    assert result["ingresses"][0]["status"] == "unknown"
+    assert result["health_status"] == "warning"
 
 
 def test_status_pod_result_does_not_read_events_or_logs() -> None:

@@ -19,8 +19,8 @@ def _aware(value: datetime | None) -> datetime | None:
 
 
 def dns_name_matches(host: str, pattern: str) -> bool:
-    normalized_host = host.casefold().rstrip(".")
-    normalized_pattern = pattern.casefold().rstrip(".")
+    normalized_host = host.strip().casefold().rstrip(".")
+    normalized_pattern = pattern.strip().casefold().rstrip(".")
     if normalized_host == normalized_pattern:
         return True
     if not normalized_pattern.startswith("*."):
@@ -75,6 +75,12 @@ def parse_tls_secret(
             ).value.get_values_for_type(x509.DNSName)
         except x509.ExtensionNotFound:
             sans = []
+        matched_hosts = sorted(
+            host
+            for host in hosts
+            if any(dns_name_matches(host, san) for san in sans)
+        )
+        mismatched_hosts = sorted(set(hosts) - set(matched_hosts))
         not_after = getattr(certificate, "not_valid_after_utc", None) or _aware(
             certificate.not_valid_after
         )
@@ -85,10 +91,9 @@ def parse_tls_secret(
             **base,
             "parse_ok": True,
             "key_match": public_cert == public_key,
-            "host_match": all(
-                any(dns_name_matches(host, san) for san in sans)
-                for host in hosts
-            ),
+            "host_match": not mismatched_hosts,
+            "matched_hosts": matched_hosts[:50],
+            "mismatched_hosts": mismatched_hosts[:50],
             "sans": sans[:50],
             "not_before": not_before.isoformat() if not_before else "",
             "not_after": not_after.isoformat() if not_after else "",

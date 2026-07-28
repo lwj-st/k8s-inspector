@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 
-import { ApiClientError, listInspectionRuns, listIssues } from "../api/client";
+import { ApiClientError, getIssueFilterOptions, listInspectionRuns, listIssues } from "../api/client";
 import type {
   InspectionRun,
   Issue,
+  IssueFilterOption,
+  IssueFilterOptions,
   IssueListParams,
   IssueSeverity,
   IssueSortMode,
@@ -55,6 +57,23 @@ function resourceLabel(issue: Issue) {
   return `${issue.resource.kind}/${issue.resource.name}`;
 }
 
+function inspectionScopeLabel(run: InspectionRun) {
+  if (run.scope.type === "pod") {
+    return `${run.scope.namespace ?? "--"}/${run.scope.pod_name ?? "--"}`;
+  }
+  if (run.scope.type === "namespace") {
+    return run.scope.namespaces.join("、") || run.scope.namespace || "名称空间";
+  }
+  return "全集群";
+}
+
+function selectableOptions(options: IssueFilterOption[], selected: string) {
+  if (!selected || options.some((option) => option.value === selected)) {
+    return options;
+  }
+  return [{ value: selected, label: selected }, ...options];
+}
+
 type SummaryState = {
   open: number | null;
   critical: number | null;
@@ -70,6 +89,11 @@ export function ProblemWorkbenchPage() {
   const [issues, setIssues] = useState<Page<Issue> | null>(null);
   const [issuesLoading, setIssuesLoading] = useState(true);
   const [issuesError, setIssuesError] = useState<string | null>(null);
+  const [filterOptions, setFilterOptions] = useState<IssueFilterOptions>({
+    namespaces: [],
+    resource_kinds: [],
+    source_checks: [],
+  });
   const [summary, setSummary] = useState<SummaryState>({
     open: null,
     critical: null,
@@ -134,6 +158,14 @@ export function ProblemWorkbenchPage() {
     void loadIssues();
   }, [loadIssues]);
 
+  useEffect(() => {
+    void getIssueFilterOptions()
+      .then(setFilterOptions)
+      .catch(() => {
+        // 问题列表仍可使用；保留 URL 中的已有筛选值。
+      });
+  }, []);
+
   const loadSummary = useCallback(async () => {
     setSummary((current) => ({ ...current, loading: true, error: null }));
     const [openResult, criticalResult, warningResult, runResult] = await Promise.allSettled([
@@ -167,6 +199,12 @@ export function ProblemWorkbenchPage() {
     (item) => item.status === "skipped" || item.status === "failed",
   ) ?? false;
   const totalPages = issues ? Math.max(1, Math.ceil(issues.total / issues.page_size)) : 1;
+  const namespaceOptions = selectableOptions(filterOptions.namespaces, namespace);
+  const resourceKindOptions = selectableOptions(filterOptions.resource_kinds, resourceKind);
+  const sourceCheckOptions = selectableOptions(filterOptions.source_checks, sourceCheck);
+  const sourceCheckLabels = new Map(
+    filterOptions.source_checks.map((option) => [option.value, option.label]),
+  );
 
   const summaryCards = [
     { label: "开放问题", value: summary.open, filterKey: "status", filterValue: "open" },
@@ -183,7 +221,7 @@ export function ProblemWorkbenchPage() {
         <div>
           <p className="eyebrow">可信巡检与主动发现</p>
           <h1>问题工作台</h1>
-          <p>先看异常、证据和下一步；检查未完成时不会显示“全部正常”。</p>
+          <p>汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。</p>
         </div>
         {summary.latestRun ? <StatusBadge status={summary.latestRun.status} /> : null}
       </header>
@@ -224,7 +262,7 @@ export function ProblemWorkbenchPage() {
         <div className="section-header">
           <div>
             <h2 id="issue-list-title">{status === "open" ? "开放问题" : "已恢复问题"}</h2>
-            <p className="inline-note">排序由服务端在完整结果上完成。</p>
+            <p className="inline-note">结果来自所有已完成的巡检，排序由服务端在完整结果上完成。</p>
           </div>
           <span className="section-tip">共 {issues?.total ?? "--"} 项</span>
         </div>
@@ -248,15 +286,30 @@ export function ProblemWorkbenchPage() {
           </label>
           <label>
             名称空间
-            <input value={namespace} onChange={(event) => updateFilter("namespace", event.target.value)} placeholder="例如 prod" />
+            <select value={namespace} onChange={(event) => updateFilter("namespace", event.target.value)}>
+              <option value="">全部名称空间</option>
+              {namespaceOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
           </label>
           <label>
             资源类型
-            <input value={resourceKind} onChange={(event) => updateFilter("resource_kind", event.target.value)} placeholder="例如 Pod" />
+            <select value={resourceKind} onChange={(event) => updateFilter("resource_kind", event.target.value)}>
+              <option value="">全部资源类型</option>
+              {resourceKindOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
           </label>
           <label>
-            检查来源
-            <input value={sourceCheck} onChange={(event) => updateFilter("source_check", event.target.value)} placeholder="check_code" />
+            巡检项
+            <select value={sourceCheck} onChange={(event) => updateFilter("source_check", event.target.value)}>
+              <option value="">全部巡检项</option>
+              {sourceCheckOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
           </label>
           <label>
             排序
@@ -295,6 +348,7 @@ export function ProblemWorkbenchPage() {
                     <th>结论</th>
                     <th>资源</th>
                     <th>名称空间</th>
+                    <th>巡检项</th>
                     <th>状态</th>
                     <th>持续时间</th>
                     <th>最后发现</th>
@@ -309,6 +363,7 @@ export function ProblemWorkbenchPage() {
                       <td>{issue.summary}</td>
                       <td>{resourceLabel(issue)}</td>
                       <td>{issue.resource.namespace ?? "集群级"}</td>
+                      <td>{sourceCheckLabels.get(issue.source_check) ?? issue.source_check}</td>
                       <td><StatusBadge status={issue.status} /></td>
                       <td>{durationLabel(issue)}</td>
                       <td>{displayTime(issue.last_seen_at)}</td>
@@ -336,6 +391,7 @@ export function ProblemWorkbenchPage() {
                   </div>
                   <strong>{issue.summary}</strong>
                   <p>{resourceLabel(issue)} · {issue.resource.namespace ?? "集群级"}</p>
+                  <small>巡检项：{sourceCheckLabels.get(issue.source_check) ?? issue.source_check}</small>
                   <small>持续 {durationLabel(issue)} · {issue.acknowledged_at ? "已确认" : "未确认"}</small>
                   <Link
                     to={`/issues/${issue.id}`}
@@ -357,7 +413,12 @@ export function ProblemWorkbenchPage() {
       </section>
 
       <div id="latest-coverage">
-        <CoveragePanel coverage={summary.latestRun?.coverage ?? []} title="最近一次巡检覆盖" />
+        <CoveragePanel
+          coverage={summary.latestRun?.coverage ?? []}
+          title={summary.latestRun
+            ? `最近一次${summary.latestRun.trigger === "scheduled" ? "定时" : "手动"}巡检覆盖（${inspectionScopeLabel(summary.latestRun)}）`
+            : "最近一次巡检覆盖"}
+        />
       </div>
     </section>
   );
