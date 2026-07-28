@@ -21,6 +21,16 @@ import { labelSelectorOptionsForPod } from "../features/inspections/podLabels";
 import { useRunNamespaceInspection } from "../features/inspections/useRunNamespaceInspection";
 import { normalizeTerminalLogText } from "../features/logs/logText";
 
+const problemWorkbenchRefreshKey = "k8s-inspector:problem-workbench-refresh";
+
+function notifyProblemWorkbenchRefresh() {
+  try {
+    window.localStorage?.setItem?.(problemWorkbenchRefreshKey, String(Date.now()));
+  } catch {
+    // 刷新通知失败不应影响巡检结果。
+  }
+}
+
 const ABNORMAL_CATEGORY_LABELS = {
   pod_status: "Pod 状态",
   container_status: "容器状态",
@@ -510,6 +520,7 @@ export function AutoInspectionPage() {
     try {
       const result = await runNamespaceBatchInspection(payload);
       setBatchResult(result);
+      notifyProblemWorkbenchRefresh();
       return result;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "未知错误";

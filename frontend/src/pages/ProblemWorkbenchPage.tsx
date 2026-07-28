@@ -19,6 +19,15 @@ import { StatusBadge } from "../components/StatusBadge";
 const allowedSeverities = new Set<IssueSeverity>(["critical", "warning", "info"]);
 const allowedStatuses = new Set<IssueStatus>(["open", "recovered"]);
 const allowedSorts = new Set<IssueSortMode>(["priority", "duration", "last_changed"]);
+const problemWorkbenchRefreshKey = "k8s-inspector:problem-workbench-refresh";
+
+function getProblemWorkbenchRefreshMarker() {
+  try {
+    return window.localStorage?.getItem?.(problemWorkbenchRefreshKey) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function displayError(reason: unknown) {
   if (reason instanceof ApiClientError) {
@@ -190,6 +199,36 @@ export function ProblemWorkbenchPage() {
     void loadSummary();
   }, [loadSummary]);
 
+  const refreshWorkbench = useCallback(() => {
+    void loadIssues();
+    void loadSummary();
+    void getIssueFilterOptions()
+      .then(setFilterOptions)
+      .catch(() => undefined);
+  }, [loadIssues, loadSummary]);
+
+  useEffect(() => {
+    let lastRefreshMarker = getProblemWorkbenchRefreshMarker();
+    function refreshIfMarkerChanged() {
+      const marker = getProblemWorkbenchRefreshMarker();
+      if (marker && marker !== lastRefreshMarker) {
+        lastRefreshMarker = marker;
+        refreshWorkbench();
+      }
+    }
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        refreshIfMarkerChanged();
+      }
+    }
+    window.addEventListener("focus", refreshIfMarkerChanged);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refreshIfMarkerChanged);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshWorkbench]);
+
   const completedCoverage = summary.latestRun?.coverage.filter(
     (item) => item.status === "passed" || item.status === "abnormal",
   ).length ?? 0;
@@ -223,7 +262,12 @@ export function ProblemWorkbenchPage() {
           <h1>问题工作台</h1>
           <p>汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。</p>
         </div>
-        {summary.latestRun ? <StatusBadge status={summary.latestRun.status} /> : null}
+        <div className="status-pair">
+          {summary.latestRun ? <StatusBadge status={summary.latestRun.status} /> : null}
+          <button type="button" onClick={refreshWorkbench} disabled={issuesLoading || summary.loading}>
+            刷新
+          </button>
+        </div>
       </header>
 
       {summary.error ? (

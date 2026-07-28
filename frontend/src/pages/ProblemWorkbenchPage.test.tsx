@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -155,6 +155,11 @@ describe("ProblemWorkbenchPage", () => {
     expect(screen.getByTestId("issue-mobile-list")).toBeInTheDocument();
     expect(screen.getByText("汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "最近一次定时巡检覆盖（全集群）" })).toBeInTheDocument();
+    const requestCountBeforeRefresh = requestedUrls.length;
+    await userEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => {
+      expect(requestedUrls.length).toBeGreaterThan(requestCountBeforeRefresh);
+    });
 
     await userEvent.selectOptions(screen.getByLabelText("名称空间"), "prod");
     expect(requestedUrls.some((url) => url.includes("namespace=prod"))).toBe(true);
@@ -170,6 +175,53 @@ describe("ProblemWorkbenchPage", () => {
     await userEvent.selectOptions(screen.getByLabelText("状态"), "recovered");
     expect(await screen.findAllByText("结算入口已恢复")).toHaveLength(2);
     expect(screen.getAllByText("已恢复").length).toBeGreaterThan(0);
+  });
+
+  it("reloads workbench data when a completed status inspection marks it stale", async () => {
+    const requestedUrls: string[] = [];
+    let refreshMarker: string | null = null;
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => refreshMarker),
+      setItem: vi.fn((_: string, value: string) => {
+        refreshMarker = value;
+      }),
+    });
+
+    fetchMock.mockImplementation(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("/issues/filter-options")) {
+        return new Response(JSON.stringify({
+          namespaces: [],
+          resource_kinds: [],
+          source_checks: [],
+        }), { status: 200 });
+      }
+      if (url.includes("/issues?")) {
+        return new Response(JSON.stringify(page([], 0)), { status: 200 });
+      }
+      if (url.includes("/inspection-runs?")) {
+        return new Response(JSON.stringify({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 1,
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<MemoryRouter><ProblemWorkbenchPage /></MemoryRouter>);
+
+    expect(await screen.findByText("当前没有开放问题")).toBeInTheDocument();
+    const requestCountBeforeStatusInspection = requestedUrls.length;
+
+    refreshMarker = "status-inspection-finished";
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => {
+      expect(requestedUrls.length).toBeGreaterThan(requestCountBeforeStatusInspection);
+    });
   });
 
   it("renders the evidence chain and paged timeline, and keeps the note after a 403", async () => {

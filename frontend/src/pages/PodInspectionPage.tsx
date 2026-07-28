@@ -743,14 +743,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           coverage={podInspection.data.coverage}
         />
       ) : null}
-      {scopeMode !== "single" && namespaceInspection.data ? (
-        <InspectionOutcomePanel
-          healthStatus={namespaceInspection.data.health_status}
-          issues={namespaceInspection.data.issues}
-          coverage={namespaceInspection.data.coverage}
-        />
-      ) : null}
-
       {scopeMode === "single" && podInspection.data ? (
         <>
           {currentPod ? (

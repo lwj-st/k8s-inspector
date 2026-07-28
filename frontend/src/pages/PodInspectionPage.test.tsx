@@ -402,6 +402,8 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
     expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
+    expect(screen.queryByText("本次巡检结论")).not.toBeInTheDocument();
+    expect(screen.queryByText("本次巡检覆盖")).not.toBeInTheDocument();
     expect(screen.queryByText("Pod 运行状态")).not.toBeInTheDocument();
     expect(screen.queryByText("本次有检查跳过或失败，不能据此确认全部正常。")).not.toBeInTheDocument();
     expect(screen.queryByText("最近一次巡检摘要")).not.toBeInTheDocument();
