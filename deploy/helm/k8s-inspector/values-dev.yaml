@@ -1,0 +1,32 @@
+image:
+  repository: ghcr.io/lwj-st/k8s-inspector
+  pullPolicy: Always
+  tag: main-ca12526
+
+ingress:
+  enabled: true
+  hosts:
+    - host: dev-inspector.sensecore.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: sensecore-tls
+      hosts:
+        - dev-inspector.sensecore.com
+
+env:
+  appEnv: development
+  clusterId: dev-cluster
+  providerMode: kubernetes
+  authMode: local
+  sessionCookieSecure: true
+  trustedDetailBaseUrl: https://dev-inspector.sensecore.com
+  webhookAllowedHosts:
+    - open.feishu.cn
+
+secretEnv:
+  adminUsername: admin
+  adminPasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$Jb0hNmwmv+B+3VVP8NYBbg$UnGg3V5iFn7ca8R71tbBwiZn2b89YIiEw59b2hGcH/E"
+  sessionSecret: ef290594e450efb6052b1332d5d1ac6f40dd9bd454ee6f2e0362c1871919200f
+  configEncryptionKey: "rw_KxtU3BNzmkmrT1TNQN4p7EWKzrYQQvGeBlutaNhU="

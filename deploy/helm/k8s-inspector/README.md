@@ -7,12 +7,12 @@
 
 ```bash
 helm lint ./deploy/helm/k8s-inspector \
-  -f ./deploy/helm/k8s-inspector/values-prod.yaml
+  -f ./deploy/helm/k8s-inspector/values-dev.yaml
 
 helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
-  -f ./deploy/helm/k8s-inspector/values-prod.yaml \
+  -f ./deploy/helm/k8s-inspector/values-dev.yaml \
   --atomic \
   --timeout 15m
 ```
@@ -67,16 +67,20 @@ Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会�
 
 默认数据库文件位于 `/data/k8s_inspector.db`，通过 `ReadWriteOnce` PVC 持久化。SQLite 部署应保持 `replicaCount: 1`，不支持多个 Pod 同时写入同一数据库文件。
 
-## 生产 values 示例
+## 开发环境 values
 
-仓库自带 [values-prod.yaml](values-prod.yaml)，默认配置：
+仓库自带 [values-dev.yaml](values-dev.yaml)，仅用于 test/dev，默认配置：
 
 - 域名 `dev-inspector.sensecore.com`
 - 根路径 `/`
 - TLS Secret `sensecore-tls`
 - IngressClass `nginx`
+- 本地管理员账号 `admin`
+- 固定的开发环境 Session Secret 和配置加密密钥
 
-CI 不使用这个文件，CI 仍然只使用 `ci-values.yaml` 和 `e2e-values.yaml`。
+此文件中的账号和密钥已经公开，严禁用于生产环境。生产环境必须新建受访问控制的
+私有 values 文件并重新生成全部密钥。CI 不使用此文件，CI 仍然只使用
+`ci-values.yaml` 和 `e2e-values.yaml`。
 
 ## Kong strip-path 示例
 
