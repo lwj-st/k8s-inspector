@@ -51,7 +51,7 @@ describe("StatusBadge", () => {
     expect(screen.getByText("已恢复")).toBeInTheDocument();
     expect(screen.getByText("已检查，无异常")).toBeInTheDocument();
     expect(screen.getByText("已检查，发现异常")).toBeInTheDocument();
-    expect(screen.getByText("未检查/不适用")).toBeInTheDocument();
+    expect(screen.getByText("未采集/已跳过")).toBeInTheDocument();
     expect(screen.getByText("部分完成")).toBeInTheDocument();
     expect(screen.getByText("未就绪")).toBeInTheDocument();
     expect(screen.getByText("CrashLoopBackOff")).toBeInTheDocument();

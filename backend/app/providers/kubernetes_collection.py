@@ -269,8 +269,8 @@ class KubernetesResourceCollector:
             facts={
                 "major": major,
                 "minor": minor,
-                "supported": major == 1 and 34 <= minor <= 36,
-                "supported_range": "1.34-1.36",
+                "supported": major == 1 and 31 <= minor <= 36,
+                "supported_range": "1.31-1.36",
             },
         )
 

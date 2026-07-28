@@ -421,6 +421,112 @@ describe("PodInspectionPage", () => {
     });
   });
 
+  it("presents log inspection as healthy when no log keyword is hit", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/settings")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ inspection_policy: { max_log_pods: 120 } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              executed_at: "2026-07-19T10:00:00Z",
+              namespaces: [{ name: "demo", status: "healthy", pod_count: 1, abnormal_pod_count: 0, last_inspected_at: null, labels: {}, abnormal_categories: [] }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/inspection-targets") && (!init || init.method === undefined)) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/discovery/namespaces/demo/labels")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ namespace: "demo", executed_at: "2026-07-19T10:00:00Z", labels: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+
+      if (url.endsWith("/discovery/namespaces/demo/pods")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              namespace: "demo",
+              label_selector: null,
+              executed_at: "2026-07-19T10:00:00Z",
+              pod_count: 1,
+              pods: [{ name: "demo-worker-1", labels: { app: "demo-worker" } }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/inspections/logs/namespace/run") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              inspection_target: { type: "namespace", namespace: "demo", label_selector: null, saved_target_id: null, resource_scope: ["pod_logs"] },
+              namespace: "demo",
+              label_selector: null,
+              health_status: "healthy",
+              executed_at: "2026-07-19T10:30:00Z",
+              evidence_bundles: [],
+              pods: [{
+                name: "demo-worker-1",
+                status: "unknown",
+                restarts: 0,
+                node_name: null,
+                containers: [],
+                events: [],
+                describe_summary: "日志巡检未采集 Pod 运行状态、事件、Service 或 Ingress。",
+                log_summary: "worker started",
+                previous_log_summary: null,
+                log_hits: [],
+                resource_usage: {},
+                related_resources: [],
+              }],
+              services: [],
+              ingresses: [],
+              tls_secrets: [],
+              daemonsets: [],
+              issues: [],
+              coverage: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
+
+    expect(await screen.findByText(/已检查 1 个 Pod，发现 0 个日志命中/)).toBeInTheDocument();
+    const resultPanel = screen.getByText("日志巡检结果").closest(".panel");
+    expect(resultPanel).not.toBeNull();
+    expect(within(resultPanel as HTMLElement).getByText("正常")).toBeInTheDocument();
+    const podRow = screen.getByRole("button", { name: /demo-worker-1/ });
+    expect(within(podRow).getByText("正常")).toBeInTheDocument();
+  });
+
   it("blocks a discovered range over the configured pod limit without sending an inspection request", async () => {
     configuredMaxLogPods = 120;
     discoveredPodCount = 121;

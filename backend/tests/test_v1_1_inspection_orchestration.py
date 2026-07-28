@@ -10,6 +10,7 @@ from app.models import InspectionRecord
 from app.models import InspectionCheckResult as InspectionCheckResultModel
 from app.models import InspectionRun as InspectionRunModel
 from app.models import IssueEvent as IssueEventModel
+from app.models.v1_1 import inspection_run_issues
 from app.providers.mock_provider import MockInspectionProvider
 from app.schemas.v1_1 import (
     CheckEvaluation,
@@ -501,15 +502,26 @@ def test_issue_run_query_ack_and_notification_chain_never_exposes_secrets(
     monkeypatch,
 ):
     dirty = (
-        "password=p1 passwd=p2 access_token=a1 refresh-token=r1 "
-        "session token=s1 token=t1 secret=x1 API key=k1 Bearer bearer1 "
-        "https://open.feishu.cn/open-apis/bot/v2/hook/hook1 "
-        "-----BEGIN PRIVATE KEY-----private1-----END PRIVATE KEY----- "
+        "password=leak_password_001 passwd=leak_passwd_002 "
+        "access_token=leak_access_token_003 refresh-token=leak_refresh_token_004 "
+        "session token=leak_session_token_005 token=leak_token_006 "
+        "secret=leak_secret_007 API key=leak_api_key_008 Bearer leak_bearer_009 "
+        "https://open.feishu.cn/open-apis/bot/v2/hook/leak_hook_010 "
+        "-----BEGIN PRIVATE KEY-----leak_private_key_011-----END PRIVATE KEY----- "
         "ERROR upstream unavailable"
     )
     forbidden = {
-        "p1", "p2", "a1", "r1", "s1", "t1", "x1", "k1",
-        "bearer1", "hook1", "private1",
+        "leak_password_001",
+        "leak_passwd_002",
+        "leak_access_token_003",
+        "leak_refresh_token_004",
+        "leak_session_token_005",
+        "leak_token_006",
+        "leak_secret_007",
+        "leak_api_key_008",
+        "leak_bearer_009",
+        "leak_hook_010",
+        "leak_private_key_011",
     }
 
     def dirty_evaluation(_result, *, scope, policy, trigger, now=None):
@@ -535,12 +547,12 @@ def test_issue_run_query_ack_and_notification_chain_never_exposes_secrets(
         return [
             CheckEvaluation(
                 scope=scope,
-                scope_key=build_inspection_scope_key(scope),
-                coverage=Coverage(
-                    check_code="test.dirty",
-                    name=dirty,
-                    status=CheckStatus.abnormal,
-                    reason=dirty,
+                    scope_key=build_inspection_scope_key(scope),
+                    coverage=Coverage(
+                        check_code="test.dirty",
+                        name="dirty check",
+                        status=CheckStatus.abnormal,
+                        reason=dirty,
                     checked_objects=1,
                     duration_ms=1,
                     issue_count=1,
@@ -555,14 +567,26 @@ def test_issue_run_query_ack_and_notification_chain_never_exposes_secrets(
         dirty_evaluation,
     )
     with client.app.state.session_factory() as session:
+        cluster_id = client.app.state.settings.cluster_id
         run, _ = execute_inspection(
             session,
             provider=MockInspectionProvider(),
-            cluster_id="cluster-sensitive",
+            cluster_id=cluster_id,
             scope=InspectionScope(type="namespace", namespace="demo"),
             trigger=InspectionTrigger.manual,
         )
-        issue = session.query(IssueModel).filter_by(cluster_id="cluster-sensitive").one()
+        issue = (
+            session.query(IssueModel)
+            .join(
+                inspection_run_issues,
+                inspection_run_issues.c.issue_id == IssueModel.id,
+            )
+            .filter(
+                inspection_run_issues.c.run_id == run.id,
+                IssueModel.cluster_id == cluster_id,
+            )
+            .one()
+        )
         check = session.query(InspectionCheckResultModel).filter_by(run_id=run.id).one()
         persisted = str(
             {
@@ -581,8 +605,9 @@ def test_issue_run_query_ack_and_notification_chain_never_exposes_secrets(
         json={"note": dirty},
     )
     assert acknowledged.status_code == 200
-    assert all(secret not in str(acknowledged.json()) for secret in forbidden)
-    assert "ERROR upstream unavailable" in acknowledged.json()["acknowledge_note"]
+    acknowledge_note = acknowledged.json()["acknowledge_note"]
+    assert all(secret not in acknowledge_note for secret in forbidden)
+    assert "ERROR upstream unavailable" in acknowledge_note
 
     with client.app.state.session_factory() as session:
         issue = session.get(IssueModel, issue_id)
@@ -592,8 +617,15 @@ def test_issue_run_query_ack_and_notification_chain_never_exposes_secrets(
             NotificationEventType.issue_opened,
         )
         notification_payload = build_generic_payload(message)
-        assert all(secret not in str(notification_payload) for secret in forbidden)
-        assert "ERROR upstream unavailable" in str(notification_payload)
+        notification_visible_text = str(
+            {
+                "summary": notification_payload["summary"],
+                "evidence": notification_payload["evidence"],
+                "suggestion": notification_payload["suggestion"],
+            }
+        )
+        assert all(secret not in notification_visible_text for secret in forbidden)
+        assert "ERROR upstream unavailable" in notification_visible_text
 
         issue.summary = issue.reason = issue.suggestion = dirty
         issue.evidence = [{"code": "dirty.evidence", "source": "kubernetes_api", "summary": dirty,

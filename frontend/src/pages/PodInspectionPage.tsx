@@ -185,7 +185,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     [targets],
   );
   const defaultInspectionPointName = namespace.trim() && labelSelector.trim() ? `${namespace.trim()} / ${labelSelector.trim()}` : "";
-  const getPodResultStatus = (pod: InspectedPod) => (getActiveLogHits(pod).length > 0 ? "error" : "unknown");
+  const getPodResultStatus = (pod: InspectedPod) => (getActiveLogHits(pod).length > 0 ? "error" : "healthy");
   const getPodResultSummary = (pod: InspectedPod) => {
     const activeHits = getActiveLogHits(pod);
     if (activeHits.length > 0) {
@@ -733,7 +733,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         <section className="panel">
           <div className="section-header">
             <h3>日志巡检结果</h3>
-            <StatusBadge status={activeLogHitCount > 0 ? "warning" : "unknown"} />
+            <StatusBadge status={activeLogHitCount > 0 ? "warning" : "healthy"} />
           </div>
           <p>
             已检查 {inspectedLogPods.length} 个 Pod，发现 {activeLogHitCount} 个日志命中。

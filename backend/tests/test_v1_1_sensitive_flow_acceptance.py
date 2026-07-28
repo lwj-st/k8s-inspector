@@ -97,9 +97,10 @@ def test_issue_create_get_list_timeline_notification_and_sqlite_are_safe(
         )
         session.add(run)
         session.commit()
+        cluster_id = client.app.state.settings.cluster_id
         lifecycle = apply_evaluations(
             session,
-            cluster_id="cluster-sensitive",
+            cluster_id=cluster_id,
             run_id=run.id,
             trigger=InspectionTrigger.manual,
             evaluations=[evaluation],

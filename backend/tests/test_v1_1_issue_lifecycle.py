@@ -295,3 +295,51 @@ def test_issue_filter_options_are_generated_from_existing_issues(client):
         option["value"] == "pod.runtime" and option["label"] == "Pod 运行状态"
         for option in body["source_checks"]
     )
+
+
+def test_issue_workbench_hides_open_issues_from_previous_cluster_id(client):
+    session_factory = client.app.state.session_factory
+    now = datetime.now(timezone.utc)
+    with session_factory() as session:
+        stale = IssueModel(
+            cluster_id="previous-cluster-id",
+            issue_code=IssueCode.SERVICE_NO_READY_ENDPOINT.value,
+            fingerprint="f" * 64,
+            severity=IssueSeverity.critical.value,
+            status="open",
+            scope=IssueScope.service.value,
+            resource_api_version=None,
+            resource_kind="Service",
+            resource_namespace="platform",
+            resource_name="helloworld",
+            resource_uid=None,
+            summary="Service helloworld 没有 Ready Endpoint",
+            reason="Ready Endpoint 数量为 0。",
+            suggestion="检查 Service selector、Pod Ready 和 EndpointSlice。",
+            evidence=[],
+            first_seen_at=now,
+            last_seen_at=now,
+            recovered_at=None,
+            occurrence_count=1,
+            source_check="service.endpoints",
+            correlation_key="service:platform/helloworld",
+        )
+        session.add(stale)
+        session.commit()
+        stale_id = stale.id
+
+    issues = client.get("/api/v1/issues?status=open")
+    assert issues.status_code == 200
+    assert all(item["cluster_id"] != "previous-cluster-id" for item in issues.json()["items"])
+    assert all(item["resource"]["name"] != "helloworld" for item in issues.json()["items"])
+
+    filters = client.get("/api/v1/issues/filter-options")
+    assert filters.status_code == 200
+    assert {"value": "platform", "label": "platform"} not in filters.json()["namespaces"]
+
+    assert client.get(f"/api/v1/issues/{stale_id}").status_code == 404
+    assert client.get(f"/api/v1/issues/{stale_id}/events").status_code == 404
+    assert client.post(
+        f"/api/v1/issues/{stale_id}/acknowledge",
+        json={"note": "旧集群问题不能在当前集群确认"},
+    ).status_code == 404

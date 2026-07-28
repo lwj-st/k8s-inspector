@@ -128,7 +128,7 @@ def test_endpoint_slice_merges_all_slices_and_ready_null_counts_as_ready() -> No
 
 @pytest.mark.parametrize(
     ("git_version", "supported"),
-    [("v1.34.7", True), ("v1.36.0", True), ("v1.33.9", False)],
+    [("v1.31.14", True), ("v1.34.7", True), ("v1.36.0", True), ("v1.30.9", False)],
 )
 def test_server_version_support_range_is_explicit(git_version: str, supported: bool) -> None:
     item = collector()
@@ -137,7 +137,7 @@ def test_server_version_support_range_is_explicit(git_version: str, supported: b
     observation = item.collect_server_version()
 
     assert observation.facts["supported"] is supported
-    assert observation.facts["supported_range"] == "1.34-1.36"
+    assert observation.facts["supported_range"] == "1.31-1.36"
 
 
 def test_evidence_collection_requires_explicit_targets_and_honors_log_budget() -> None:

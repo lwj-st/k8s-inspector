@@ -111,22 +111,33 @@ def issue_event_from_model(row: IssueEventModel) -> IssueEvent:
     return IssueEvent.model_validate(sanitize_public_payload(payload))
 
 
-def get_issue(session: Session, issue_id: int) -> IssueModel | None:
-    return session.get(IssueModel, issue_id)
+def get_issue(session: Session, issue_id: int, *, cluster_id: str | None = None) -> IssueModel | None:
+    row = session.get(IssueModel, issue_id)
+    if row is None:
+        return None
+    if cluster_id is not None and row.cluster_id != cluster_id:
+        return None
+    return row
 
 
-def list_issue_filter_options(session: Session) -> IssueFilterOptions:
+def list_issue_filter_options(session: Session, *, cluster_id: str | None = None) -> IssueFilterOptions:
+    namespace_query = select(IssueModel.resource_namespace).where(IssueModel.resource_namespace.is_not(None))
+    resource_kind_query = select(IssueModel.resource_kind)
+    source_check_query = select(IssueModel.source_check)
+    if cluster_id is not None:
+        namespace_query = namespace_query.where(IssueModel.cluster_id == cluster_id)
+        resource_kind_query = resource_kind_query.where(IssueModel.cluster_id == cluster_id)
+        source_check_query = source_check_query.where(IssueModel.cluster_id == cluster_id)
     namespaces = session.scalars(
-        select(IssueModel.resource_namespace)
-        .where(IssueModel.resource_namespace.is_not(None))
+        namespace_query
         .distinct()
         .order_by(IssueModel.resource_namespace)
     ).all()
     resource_kinds = session.scalars(
-        select(IssueModel.resource_kind).distinct().order_by(IssueModel.resource_kind)
+        resource_kind_query.distinct().order_by(IssueModel.resource_kind)
     ).all()
     source_checks = session.scalars(
-        select(IssueModel.source_check).distinct().order_by(IssueModel.source_check)
+        source_check_query.distinct().order_by(IssueModel.source_check)
     ).all()
     return IssueFilterOptions(
         namespaces=[
@@ -153,8 +164,10 @@ def list_issue_filter_options(session: Session) -> IssueFilterOptions:
     )
 
 
-def list_issues(session: Session, filters: IssueListFilter) -> Page[Issue]:
+def list_issues(session: Session, filters: IssueListFilter, *, cluster_id: str | None = None) -> Page[Issue]:
     query = select(IssueModel)
+    if cluster_id is not None:
+        query = query.where(IssueModel.cluster_id == cluster_id)
     if filters.status is not None:
         query = query.where(IssueModel.status == filters.status.value)
     if filters.severity is not None:
@@ -211,8 +224,9 @@ def list_issue_events(
     issue_id: int,
     page: int,
     page_size: int,
+    cluster_id: str | None = None,
 ) -> Page[IssueEvent] | None:
-    if session.get(IssueModel, issue_id) is None:
+    if get_issue(session, issue_id, cluster_id=cluster_id) is None:
         return None
     base = select(IssueEventModel).where(IssueEventModel.issue_id == issue_id)
     total = int(session.scalar(select(func.count()).select_from(base.subquery())) or 0)

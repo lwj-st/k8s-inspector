@@ -24,7 +24,7 @@ const statusLabels: Record<string, string> = {
   recovered: "已恢复",
   passed: "已检查，无异常",
   abnormal: "已检查，发现异常",
-  skipped: "未检查/不适用",
+  skipped: "未采集/已跳过",
   partial: "部分完成",
   queued: "等待执行",
   delivering: "发送中",
