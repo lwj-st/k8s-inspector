@@ -184,7 +184,7 @@ describe("PodInspectionPage", () => {
         );
       }
 
-      if (url.endsWith("/inspections/namespace/run") && init?.method === "POST") {
+      if (url.endsWith("/inspections/logs/namespace/run") && init?.method === "POST") {
         const payload = JSON.parse(String(init.body));
         return Promise.resolve(
           new Response(
@@ -257,15 +257,7 @@ describe("PodInspectionPage", () => {
               tls_secrets: [],
               daemonsets: [],
               issues: [],
-              coverage: [{
-                check_code: "pod_runtime",
-                name: "Pod 运行状态",
-                status: "failed",
-                reason: "部分 Pod 读取超时",
-                checked_objects: 1,
-                duration_ms: 200,
-                issue_count: 0,
-              }],
+              coverage: [],
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -410,19 +402,18 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
     expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
-    expect(screen.getByText("Pod 运行状态").closest(".coverage-row")).toHaveClass("coverage-failed");
-    expect(screen.getByText("本次有检查跳过或失败，不能据此确认全部正常。")).toBeInTheDocument();
+    expect(screen.queryByText("Pod 运行状态")).not.toBeInTheDocument();
+    expect(screen.queryByText("本次有检查跳过或失败，不能据此确认全部正常。")).not.toBeInTheDocument();
     expect(screen.queryByText("最近一次巡检摘要")).not.toBeInTheDocument();
     expect(screen.getByText("命中关键字：connection refused")).toBeInTheDocument();
 
     const request = fetchMock.mock.calls.find(
-      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+      ([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST",
     );
     expect(request).toBeDefined();
     expect(JSON.parse(String(request?.[1]?.body))).toEqual({
       namespace: "demo",
       label_selector: null,
-      include_logs: true,
     });
   });
 
@@ -440,13 +431,13 @@ describe("PodInspectionPage", () => {
     expect(within(dialog).getByText("请使用 Label Selector 缩小到 120 个及以下 Pod 后重试。")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "仍要继续" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+      ([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST",
     )).toHaveLength(0);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "返回缩小范围" }));
     expect(screen.queryByRole("dialog", { name: "无法执行大范围日志巡检" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+      ([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST",
     )).toHaveLength(0);
   });
 
@@ -463,12 +454,12 @@ describe("PodInspectionPage", () => {
     expect(within(dialog).getByText("请先刷新发现数据、选择可确认 Pod 数量的范围，或使用 Label Selector 缩小范围后重试。")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "仍要继续" })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+      ([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST",
     )).toHaveLength(0);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "返回缩小范围" }));
     expect(fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+      ([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST",
     )).toHaveLength(0);
   });
 
@@ -487,13 +478,12 @@ describe("PodInspectionPage", () => {
     expect(await screen.findByRole("button", { name: /demo-api-1/ })).toBeInTheDocument();
 
     const request = fetchMock.mock.calls
-      .filter(([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST")
+      .filter(([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST")
       .at(-1);
     expect(request).toBeDefined();
     expect(JSON.parse(String(request?.[1]?.body))).toEqual({
       namespace: "demo",
       label_selector: "app=demo-api",
-      include_logs: true,
     });
   });
 
@@ -509,7 +499,7 @@ describe("PodInspectionPage", () => {
       ([input, init]) => String(input).endsWith("/discovery/namespaces/demo/pods") && !init?.method,
     )).toBe(true);
     expect(fetchMock.mock.calls.filter(
-      ([input, init]) => String(input).endsWith("/inspections/namespace/run") && init?.method === "POST",
+      ([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST",
     )).toHaveLength(0);
     fireEvent.change(screen.getByLabelText("Pod 名称"), { target: { value: "demo-api-1" } });
     fireEvent.click(screen.getByRole("button", { name: "巡检单个 Pod" }));
@@ -608,7 +598,7 @@ describe("PodInspectionPage", () => {
         );
       }
 
-      if (url.endsWith("/inspections/namespace/run") && init?.method === "POST") {
+      if (url.endsWith("/inspections/logs/namespace/run") && init?.method === "POST") {
         return Promise.resolve(
           new Response(
             JSON.stringify({

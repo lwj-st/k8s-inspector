@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings as get_app_settings
@@ -156,6 +158,108 @@ def run_namespace_inspection(
         ),
         inspection_record=record,
         registry=registry,
+    )
+    return sanitize_inspection_response(result)
+
+
+def run_namespace_log_inspection(
+    session: Session,
+    provider: InspectionProvider,
+    payload: NamespaceInspectionRequest,
+) -> dict:
+    policy = _load_inspection_policy(session)
+    limits = CollectionLimits(
+        max_log_pods=policy.max_log_pods,
+        namespace_concurrency=policy.namespace_concurrency,
+    )
+    discovery = discovery_service.discover_namespace_pods(
+        provider,
+        payload.namespace,
+        payload.label_selector,
+    )
+    pod_summaries = discovery.get("pods", [])
+    _enforce_log_inspection_limit(len(pod_summaries), policy.max_log_pods)
+    try:
+        log_collection = provider.collect_pod_log_samples(
+            payload.namespace,
+            [str(item.get("name") or "") for item in pod_summaries],
+            limits,
+        )
+    except ProviderLogPodLimitExceededError as exc:
+        raise LogInspectionScopeTooLargeError(
+            exc.requested_pods,
+            exc.limit,
+        ) from exc
+
+    pods = []
+    for item in pod_summaries:
+        name = str(item.get("name") or "")
+        container_logs = log_collection.container_samples.get(name, {})
+        log_summary = "\n".join(
+            f"[{container_name}] {sample}"
+            for container_name, sample in container_logs.items()
+            if sample
+        ) or None
+        previous_log_summary = log_collection.previous_samples.get(name)
+        pod = {
+            "name": name,
+            "labels": item.get("labels") or {},
+            "status": "unknown",
+            "node_name": None,
+            "restarts": 0,
+            "containers": [
+                {
+                    "name": container_name,
+                    "restart_count": 0,
+                    "state": "unknown",
+                    "reason": None,
+                }
+                for container_name in container_logs
+            ],
+            "events": [],
+            "describe_summary": "日志巡检未采集 Pod 运行状态、事件、Service 或 Ingress。",
+            "log_summary": log_summary,
+            "container_log_summaries": container_logs,
+            "previous_log_summary": previous_log_summary,
+            "resource_usage": {},
+            "related_resources": [],
+        }
+        pods.append(_attach_log_hits(session, payload.namespace, payload.label_selector, pod))
+
+    result = {
+        "inspection_target": {
+            "type": "namespace",
+            "namespace": payload.namespace,
+            "pod_name": None,
+            "label_selector": payload.label_selector,
+            "saved_target_id": None,
+            "template_id": None,
+            "resource_scope": ["pod_logs"],
+        },
+        "namespace": payload.namespace,
+        "label_selector": payload.label_selector,
+        "health_status": "warning" if any(pod.get("log_hits") for pod in pods) else "healthy",
+        "executed_at": datetime.now(timezone.utc).isoformat(),
+        "evidence_bundles": [_build_evidence_bundle(payload.namespace, pod) for pod in pods],
+        "pods": pods,
+        "services": [],
+        "ingresses": [],
+        "tls_secrets": [],
+        "daemonsets": [],
+        "issues": [],
+        "coverage": [],
+        "log_collection": {
+            "pod_count": len(pod_summaries),
+            "pods_read": log_collection.log_pods_read,
+            "collected_log_bytes": log_collection.collected_log_bytes,
+            "truncated": log_collection.truncated,
+        },
+    }
+    _save_record(
+        session,
+        "namespace_log",
+        payload.model_dump(),
+        result,
     )
     return sanitize_inspection_response(result)
 

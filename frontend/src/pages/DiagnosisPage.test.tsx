@@ -252,7 +252,7 @@ describe("DiagnosisPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "运行模板检查" }));
 
-    expect(await screen.findByText("模板匹配失败：Request failed: 500")).toBeInTheDocument();
+    expect(await screen.findByText("模板匹配失败：boom")).toBeInTheDocument();
   });
 
   it("shows empty result state when no template matches are returned", async () => {

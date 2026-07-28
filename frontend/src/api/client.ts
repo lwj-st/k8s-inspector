@@ -73,10 +73,11 @@ type InternalRequestInit = RequestInit & {
 async function responseError(response: Response): Promise<ApiClientError> {
   let payload: Partial<ApiError> = {};
   try {
-    const raw = await response.json() as Partial<ApiError>;
+    const raw = await response.json() as Partial<ApiError> & { detail?: unknown };
+    const detailMessage = typeof raw.detail === "string" ? raw.detail : null;
     payload = {
       code: raw.code,
-      message: raw.message ?? `Request failed: ${response.status}`,
+      message: raw.message ?? detailMessage ?? `Request failed: ${response.status}`,
       request_id: raw.request_id ?? response.headers.get("x-request-id"),
       details: raw.details ?? {},
     };
@@ -298,6 +299,19 @@ export function runNamespaceInspection(
       namespace,
       label_selector: labelSelector || null,
       include_logs: includeLogs,
+    }),
+  });
+}
+
+export function runNamespaceLogInspection(
+  namespace: string,
+  labelSelector: string | null,
+): Promise<NamespaceInspectionResponse> {
+  return request("/inspections/logs/namespace/run", {
+    method: "POST",
+    body: JSON.stringify({
+      namespace,
+      label_selector: labelSelector || null,
     }),
   });
 }

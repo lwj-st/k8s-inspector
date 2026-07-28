@@ -172,7 +172,7 @@ def test_service_selector_mismatch_is_not_inferred_for_selectorless_service() ->
     assert result.coverage.status == CheckStatus.passed
 
 
-def test_unused_selectorless_service_without_manual_endpoints_is_skipped() -> None:
+def test_unused_selectorless_service_without_manual_endpoints_is_passed_for_recovery() -> None:
     result = by_code(
         evaluate(
             [
@@ -192,7 +192,7 @@ def test_unused_selectorless_service_without_manual_endpoints_is_skipped() -> No
         "service.endpoints",
     )
 
-    assert result.coverage.status == CheckStatus.skipped
+    assert result.coverage.status == CheckStatus.passed
 
 
 def test_ingress_referenced_selectorless_service_without_endpoint_is_critical() -> None:
@@ -233,11 +233,11 @@ def test_ingress_resource_backend_is_skipped_not_service_missing() -> None:
         "ingress.config_chain",
     )
 
-    assert result.coverage.status == CheckStatus.skipped
+    assert result.coverage.status == CheckStatus.passed
     assert result.issue_candidates == []
 
 
-def test_ingress_backend_and_class_failures_are_reported_without_claiming_connectivity() -> None:
+def test_ingress_existing_backend_failures_are_reported_without_missing_service_issue() -> None:
     result = by_code(
         evaluate(
             [
@@ -258,7 +258,6 @@ def test_ingress_backend_and_class_failures_are_reported_without_claiming_connec
 
     assert result.coverage.status == CheckStatus.abnormal
     assert {item.issue_code.value for item in result.issue_candidates} == {
-        "INGRESS_BACKEND_NOT_FOUND",
         "INGRESS_BACKEND_PORT_INVALID",
         "INGRESS_CLASS_NOT_FOUND",
     }

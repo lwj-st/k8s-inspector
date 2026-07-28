@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { discoverNamespacePods, getSettings, ignoreWhitelistLogHit } from "../api/client";
+import { discoverNamespacePods, getSettings, ignoreWhitelistLogHit, runNamespaceLogInspection } from "../api/client";
 import type { InspectedPod, KeywordHit, SavedInspectionTarget } from "../api/types";
 import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
 import { InspectionOutcomePanel } from "../components/InspectionOutcomePanel";
@@ -268,10 +268,11 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   }
 
   async function runRangeInspection(request: RangeInspectionConfirmation) {
-    await namespaceInspection.submit(
-      request.namespace,
-      request.scopeMode === "label" ? request.labelSelector : "",
-      true,
+    await namespaceInspection.submitWith(
+      () => runNamespaceLogInspection(
+        request.namespace,
+        request.scopeMode === "label" ? request.labelSelector : null,
+      ),
     );
     resetAfterInspection();
   }

@@ -256,6 +256,29 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("测试通知已送达（已送达）")).toBeInTheDocument();
   });
 
+  it("shows the backend detail when notification channel update conflicts", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(baseFetch((url, init) => {
+      if (url.endsWith("/notification-channels/1") && init?.method === "PUT") {
+        return new Response(
+          JSON.stringify({ detail: "通知渠道名称已存在" }),
+          { status: 409, headers: { "x-request-id": "rid-409" } },
+        );
+      }
+      return null;
+    }));
+
+    render(<MemoryRouter initialEntries={["/settings?tab=notifications"]}><SettingsPage /></MemoryRouter>);
+
+    const existingCard = (await screen.findByText("运维飞书群")).closest(".management-card") as HTMLElement;
+    await user.click(within(existingCard).getByRole("button", { name: "编辑" }));
+    await user.clear(screen.getByLabelText("渠道名称"));
+    await user.type(screen.getByLabelText("渠道名称"), "运维飞书群");
+    await user.click(screen.getByRole("button", { name: "保存渠道" }));
+
+    expect(await screen.findByText("通知渠道名称已存在（请求 ID：rid-409）")).toBeInTheDocument();
+  });
+
   it("keeps queued runs single-flight, polls to a terminal result, and exposes the run", async () => {
     const user = userEvent.setup();
     let detailResolver: (response: Response) => void = () => {

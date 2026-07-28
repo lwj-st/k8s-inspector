@@ -241,25 +241,21 @@ def evaluate_resource_collection(
             "workload.status",
             workload_items,
             workload_candidates(workload_items, policy),
-            "当前范围没有工作负载对象",
         ),
         (
             "pod.runtime",
             items(result, "Pod"),
             pod_candidates(items(result, "Pod"), policy),
-            "当前范围没有 Pod",
         ),
         (
             "service.endpoints",
             items(result, "Service"),
             service_candidates(items(result, "Service")),
-            "当前范围没有 Service",
         ),
         (
             "ingress.config_chain",
             items(result, "Ingress"),
             ingress_candidates(items(result, "Ingress")),
-            "当前范围没有 Ingress",
         ),
         (
             "storage.status",
@@ -268,48 +264,14 @@ def evaluate_resource_collection(
                 items(result, "PersistentVolumeClaim", "PersistentVolume"),
                 policy,
             ),
-            "当前范围没有 PVC 或 PV",
         ),
         (
             "node.health",
             items(result, "Node"),
             node_candidates(items(result, "Node"), policy),
-            "当前范围没有 Node",
         ),
     )
-    for check_code, observations, issues, empty_reason in domain_specs:
-        skipped_reason = empty_reason if not observations else None
-        if check_code == "service.endpoints" and observations:
-            applicable = [
-                item
-                for item in observations
-                if str(item.facts.get("service_type") or "").casefold()
-                != "externalname"
-                and not (
-                    not bool(item.facts.get("selector_present"))
-                    and int(item.facts.get("endpoint_slices") or 0) == 0
-                    and not bool(item.facts.get("ingress_referenced"))
-                )
-            ]
-            if not applicable:
-                skipped_reason = (
-                    "范围内仅有 ExternalName，或未被 Ingress 引用且"
-                    "没有手工 EndpointSlice 的无 selector Service"
-                )
-        if check_code == "ingress.config_chain" and observations:
-            service_backends = sum(
-                int(item.facts.get("service_backends") or 0)
-                for item in observations
-            )
-            resource_backends = sum(
-                int(item.facts.get("resource_backends") or 0)
-                for item in observations
-            )
-            if service_backends == 0 and resource_backends > 0:
-                skipped_reason = (
-                    "Ingress 仅使用 Resource Backend；"
-                    "当前版本不判断非 Service 配置链路"
-                )
+    for check_code, observations, issues in domain_specs:
         evaluations.append(
             evaluation(
                 scope=scope,
@@ -318,7 +280,7 @@ def evaluate_resource_collection(
                 candidates=issues,
                 duration_ms=duration,
                 failures=failures_for(result, check_code),
-                skipped_reason=skipped_reason,
+                skipped_reason=None,
             )
         )
 
@@ -331,9 +293,7 @@ def evaluate_resource_collection(
             candidates=tls_candidates(tls_items, policy),
             duration_ms=duration,
             failures=failures_for(result, "tls.certificate"),
-            skipped_reason=(
-                "当前范围没有 Ingress TLS 引用" if not tls_items else None
-            ),
+            skipped_reason=None,
         )
     )
 

@@ -61,7 +61,7 @@ describe("NamespaceInspectionPage", () => {
         );
       }
 
-      if (url.endsWith("/inspections/namespace/run") && init?.method === "POST") {
+      if (url.endsWith("/inspections/logs/namespace/run") && init?.method === "POST") {
         const payload = JSON.parse(String(init.body));
         return Promise.resolve(
           new Response(

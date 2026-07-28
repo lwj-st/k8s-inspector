@@ -63,6 +63,34 @@ def _evaluation(scope: InspectionScope, *, present: bool, status: CheckStatus | 
     )
 
 
+def _service_evaluation(scope: InspectionScope, *, present: bool):
+    candidate = IssueCandidate(
+        issue_code=IssueCode.SERVICE_NO_READY_ENDPOINT,
+        severity=IssueSeverity.warning,
+        scope=IssueScope.service,
+        resource=ResourceRef(kind="Service", namespace="demo", name="helloworld"),
+        summary="Service helloworld 没有 Ready Endpoint",
+        reason="Ready Endpoint 数量为 0。",
+        suggestion="检查 Service selector、Pod Ready 和 EndpointSlice。",
+        source_check="service.endpoints",
+    )
+    candidates = [candidate] if present else []
+    return CheckEvaluation(
+        scope=scope,
+        scope_key=build_inspection_scope_key(scope),
+        coverage=Coverage(
+            check_code="service.endpoints",
+            name="Service 与 EndpointSlice",
+            status=CheckStatus.abnormal if present else CheckStatus.passed,
+            reason="发现异常" if present else None,
+            checked_objects=1 if present else 0,
+            duration_ms=1,
+            issue_count=len(candidates),
+        ),
+        issue_candidates=candidates,
+    )
+
+
 def test_multi_scope_membership_delays_recovery_until_all_scopes_clear(client):
     session_factory = client.app.state.session_factory
     now = datetime.now(timezone.utc)
@@ -147,6 +175,40 @@ def test_multi_scope_membership_delays_recovery_until_all_scopes_clear(client):
         )
         assert membership.active is True
         assert membership.deactivated_at is None
+
+
+def test_deleted_service_recovers_previous_service_issue(client):
+    session_factory = client.app.state.session_factory
+    now = datetime.now(timezone.utc)
+    scope = InspectionScope(type="namespace", namespace="demo")
+    with session_factory() as session:
+        first_run = _run(session, scope, now)
+        first = apply_evaluations(
+            session,
+            cluster_id="cluster-service-delete",
+            run_id=first_run.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_service_evaluation(scope, present=True)],
+            occurred_at=now,
+        )
+        session.commit()
+        issue_id = next(iter(first.issue_ids))
+        assert session.get(IssueModel, issue_id).status == "open"
+
+        second_run = _run(session, scope, now + timedelta(minutes=1))
+        recovered = apply_evaluations(
+            session,
+            cluster_id="cluster-service-delete",
+            run_id=second_run.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_service_evaluation(scope, present=False)],
+            occurred_at=now + timedelta(minutes=1),
+        )
+        session.commit()
+
+        assert recovered.recovered_count == 1
+        assert recovered.issue_ids == {issue_id}
+        assert session.get(IssueModel, issue_id).status == "recovered"
 
 
 def test_failed_check_does_not_deactivate_membership(client):

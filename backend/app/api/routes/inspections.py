@@ -72,6 +72,25 @@ def list_namespace_history(session: Session = Depends(get_db_session)) -> list[d
     return [record.result_payload for record in records]
 
 
+@router.post("/inspections/logs/namespace/run", response_model=NamespaceInspectionResponse)
+def run_namespace_log_inspection(
+    payload: NamespaceInspectionRequest,
+    request: Request,
+    session: Session = Depends(get_db_session),
+    provider: InspectionProvider = Depends(get_provider),
+) -> NamespaceInspectionResponse:
+    try:
+        return NamespaceInspectionResponse.model_validate(
+            inspection_service.run_namespace_log_inspection(
+                session,
+                provider,
+                payload,
+            )
+        )
+    except inspection_service.LogInspectionScopeTooLargeError as exc:
+        return _log_limit_response(request, exc)
+
+
 @router.post("/inspections/namespaces/run", response_model=NamespaceBatchInspectionResponse)
 def run_namespace_batch_inspection(
     payload: NamespaceBatchInspectionRequest,

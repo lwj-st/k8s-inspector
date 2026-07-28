@@ -7,6 +7,7 @@ from kubernetes.client.exceptions import ApiException
 from app.models import InspectionRecord, SystemSetting
 from app.models import InspectionRun as InspectionRunModel
 from app.providers.base import LogPodLimitExceededError
+from app.providers.base import TemporaryPodLogCollection
 from app.providers.kubernetes_provider import KubernetesInspectionProvider
 from app.schemas.common import KeywordHit
 from app.schemas.inspection import NamespaceInspectionRequest
@@ -193,6 +194,48 @@ def test_namespace_api_forwards_explicit_log_collection_mode(
         provider.list_namespace_pods.assert_called_once_with("demo", None)
     else:
         provider.list_namespace_pods.assert_not_called()
+
+
+def test_namespace_log_api_collects_only_pod_logs(client) -> None:
+    provider = client.app.state.provider
+    provider.list_namespace_pods = Mock(
+        return_value={
+            "namespace": "demo",
+            "label_selector": "app=demo",
+            "executed_at": "2026-07-28T00:00:00Z",
+            "pod_count": 1,
+            "pods": [{"name": "demo-api-0", "labels": {"app": "demo"}}],
+        }
+    )
+    provider.collect_pod_log_samples = Mock(
+        return_value=TemporaryPodLogCollection(
+            container_samples={"demo-api-0": {"app": "database connection refused"}},
+            log_pods_read=1,
+            collected_log_bytes=27,
+        )
+    )
+    provider.run_namespace_inspection = Mock(
+        side_effect=AssertionError("日志巡检不应执行状态巡检")
+    )
+
+    response = client.post(
+        "/api/v1/inspections/logs/namespace/run",
+        json={"namespace": "demo", "label_selector": "app=demo"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["inspection_target"]["resource_scope"] == ["pod_logs"]
+    assert body["services"] == []
+    assert body["ingresses"] == []
+    assert body["tls_secrets"] == []
+    assert body["daemonsets"] == []
+    assert body["issues"] == []
+    assert body["coverage"] == []
+    assert body["pods"][0]["log_summary"] == "[app] database connection refused"
+    provider.list_namespace_pods.assert_called_once_with("demo", "app=demo")
+    provider.collect_pod_log_samples.assert_called_once()
+    provider.run_namespace_inspection.assert_not_called()
 
 
 def test_cluster_api_explicit_status_mode_skips_log_preflight(client) -> None:

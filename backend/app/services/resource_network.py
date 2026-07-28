@@ -97,15 +97,6 @@ def ingress_candidates(items: list[ProviderObservation]) -> list[IssueCandidate]
         )
         specs = (
             (
-                "missing_backend_services",
-                IssueCode.INGRESS_BACKEND_NOT_FOUND,
-                IssueSeverity.critical,
-                "配置链路中的 Service 不存在",
-                "修正 Ingress backend 名称或创建对应 Service。",
-                "ingress_backend_missing",
-                "backend_service",
-            ),
-            (
                 "invalid_backend_ports",
                 IssueCode.INGRESS_BACKEND_PORT_INVALID,
                 IssueSeverity.critical,

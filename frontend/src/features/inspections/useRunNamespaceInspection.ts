@@ -9,11 +9,15 @@ export function useRunNamespaceInspection() {
   const [error, setError] = useState<string | null>(null);
 
   async function submit(namespace: string, labelSelector: string | null, includeLogs = false) {
+    await submitWith(() => runNamespaceInspection(namespace, labelSelector, includeLogs));
+  }
+
+  async function submitWith(action: () => Promise<NamespaceInspectionResponse>) {
     setLoading(true);
     setError(null);
     setData(null);
     try {
-      const result = await runNamespaceInspection(namespace, labelSelector, includeLogs);
+      const result = await action();
       setData(result);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "未知错误");
@@ -22,5 +26,5 @@ export function useRunNamespaceInspection() {
     }
   }
 
-  return { data, loading, error, submit };
+  return { data, loading, error, submit, submitWith };
 }
