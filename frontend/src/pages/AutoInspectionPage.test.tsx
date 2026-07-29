@@ -534,6 +534,13 @@ describe("AutoInspectionPage", () => {
     expect(rows[0]).toHaveAttribute("aria-label", "批量结果 error-ns");
     expect(rows[1]).toHaveAttribute("aria-label", "批量结果 warning-ns");
     expect(rows[2]).toHaveAttribute("aria-label", "批量结果 healthy-ns");
+
+    const outcomeSummary = screen.getByText("展开批量巡检整体结论与覆盖");
+    const outcomeDetails = outcomeSummary.closest("details");
+    const resultTable = container.querySelector(".batch-result-table-shell");
+    expect(outcomeDetails).not.toBeNull();
+    expect(outcomeDetails).not.toHaveAttribute("open");
+    expect(resultTable?.compareDocumentPosition(outcomeDetails as HTMLElement)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("never presents unknown health or failed coverage as healthy", async () => {

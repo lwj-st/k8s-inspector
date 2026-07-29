@@ -281,6 +281,27 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     return labelDiscovery.labels.find((item) => item.selector === targetLabelSelector)?.pod_count ?? null;
   }
 
+  async function resolveRangePodCount(
+    targetNamespace: string,
+    targetScopeMode: Exclude<PodScopeMode, "single">,
+    targetLabelSelector: string,
+  ) {
+    const cachedPodCount = discoveredRangePodCount(targetNamespace, targetScopeMode, targetLabelSelector);
+    if (cachedPodCount !== null) {
+      return cachedPodCount;
+    }
+
+    try {
+      const discovery = await discoverNamespacePods(
+        targetNamespace,
+        targetScopeMode === "label" ? targetLabelSelector : null,
+      );
+      return discovery.pod_count;
+    } catch {
+      return null;
+    }
+  }
+
   async function runRangeInspection(request: RangeInspectionConfirmation) {
     await namespaceInspection.submitWith(
       () => runNamespaceLogInspection(
@@ -296,7 +317,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     targetScopeMode: Exclude<PodScopeMode, "single">,
     targetLabelSelector: string,
   ) {
-    const podCount = discoveredRangePodCount(targetNamespace, targetScopeMode, targetLabelSelector);
+    const podCount = await resolveRangePodCount(targetNamespace, targetScopeMode, targetLabelSelector);
     const request = {
       namespace: targetNamespace,
       scopeMode: targetScopeMode,

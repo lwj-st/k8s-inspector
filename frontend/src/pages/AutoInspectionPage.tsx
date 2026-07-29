@@ -872,12 +872,6 @@ export function AutoInspectionPage() {
             <span>无法判断 {unknownBatchCount}</span>
             <span>正常 {healthyBatchCount}</span>
           </div>
-          <InspectionOutcomePanel
-            healthStatus={batchSummaryStatus}
-            issues={batchResult.issues}
-            coverage={batchResult.coverage}
-            title="批量巡检整体结论"
-          />
           <div className="table-scroll-shell batch-result-table-shell">
             <table className="compact-table batch-result-table">
               <thead>
@@ -933,6 +927,15 @@ export function AutoInspectionPage() {
               </tbody>
             </table>
           </div>
+          <details className="batch-outcome-details">
+            <summary>展开批量巡检整体结论与覆盖</summary>
+            <InspectionOutcomePanel
+              healthStatus={batchSummaryStatus}
+              issues={batchResult.issues}
+              coverage={batchResult.coverage}
+              title="批量巡检整体结论"
+            />
+          </details>
         </section>
       ) : null}
       {evidenceTarget ? (

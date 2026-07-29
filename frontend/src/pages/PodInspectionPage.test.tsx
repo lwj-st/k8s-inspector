@@ -7,12 +7,14 @@ import { PodInspectionPage } from "./PodInspectionPage";
 const fetchMock = vi.fn();
 let discoveredPodCount: number | null = 3;
 let configuredMaxLogPods = 120;
+let failDemoPodDiscovery = false;
 
 describe("PodInspectionPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
     discoveredPodCount = 3;
     configuredMaxLogPods = 120;
+    failDemoPodDiscovery = false;
     const savedTargets = [
       {
         id: 1,
@@ -100,7 +102,31 @@ describe("PodInspectionPage", () => {
         );
       }
 
+      if (url.includes("/discovery/namespaces/demo/pods?")) {
+        expect(url).toContain("label_selector=app%3Ddemo-api");
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              namespace: "demo",
+              label_selector: "app=demo-api",
+              executed_at: "2026-07-19T10:00:00Z",
+              pod_count: 1,
+              pods: [{ name: "demo-api-1", labels: { app: "demo-api" } }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       if (url.endsWith("/discovery/namespaces/demo/pods")) {
+        if (failDemoPodDiscovery) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "discovery failed" }), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -421,6 +447,25 @@ describe("PodInspectionPage", () => {
     });
   });
 
+  it("runs saved label inspection point on the first click after resolving pod count", async () => {
+    render(<PodInspectionPage />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.click(screen.getByRole("button", { name: "巡检点" }));
+    const targetRow = screen.getByText("demo API 标签范围").closest("tr");
+    expect(targetRow).not.toBeNull();
+
+    fireEvent.click(within(targetRow as HTMLTableRowElement).getByRole("button", { name: "巡检" }));
+
+    expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
+    expect(screen.queryByText("日志读取保护")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      String(input).endsWith("/inspections/logs/namespace/run")
+      && init?.method === "POST"
+      && JSON.parse(String(init.body)).label_selector === "app=demo-api",
+    )).toBe(true);
+  });
+
   it("presents log inspection as healthy when no log keyword is hit", async () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -553,6 +598,7 @@ describe("PodInspectionPage", () => {
 
   it("blocks a range with unknown pod count without sending an inspection request", async () => {
     discoveredPodCount = null;
+    failDemoPodDiscovery = true;
     render(<PodInspectionPage initialScopeMode="all" />);
 
     await screen.findByRole("option", { name: "demo" });

@@ -1094,6 +1094,20 @@ a {
   width: 92px;
 }
 
+.batch-outcome-details {
+  margin-top: 14px;
+  color: var(--muted);
+}
+
+.batch-outcome-details summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.batch-outcome-details .inspection-outcome {
+  margin-top: 12px;
+}
+
 .batch-category-list-inline {
   max-height: 30px;
   overflow: hidden;
