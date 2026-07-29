@@ -76,6 +76,7 @@ Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会�
 - TLS Secret `sensecore-tls`
 - IngressClass `nginx`
 - 本地管理员账号 `admin`
+- 本地管理员密码 `123456`
 - 固定的开发环境 Session Secret 和配置加密密钥
 
 此文件中的账号和密钥已经公开，严禁用于生产环境。生产环境必须新建受访问控制的

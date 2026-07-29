@@ -90,6 +90,97 @@ function logHitContext(hit: KeywordHit) {
   return normalizeTerminalLogText(hit.context_text?.trim() || hit.matched_text);
 }
 
+function resourceUsageItems(resourceUsage: Record<string, string> | undefined) {
+  if (!resourceUsage || Object.keys(resourceUsage).length === 0) {
+    return [];
+  }
+  return [
+    { label: "CPU", value: resourceUsage.cpu },
+    { label: "内存", value: resourceUsage.memory },
+    { label: "Pod 样本", value: resourceUsage.sampled_pods },
+    { label: "CPU / limit", value: resourceUsage.cpu_limit_percent },
+    { label: "内存 / limit", value: resourceUsage.memory_limit_percent },
+    { label: "CPU / request", value: resourceUsage.cpu_request_percent },
+    { label: "内存 / request", value: resourceUsage.memory_request_percent },
+    { label: "采样时间", value: resourceUsage.sample_time },
+  ].filter((item): item is { label: string; value: string } => Boolean(item.value));
+}
+
+function parseMillicores(value: string | undefined) {
+  if (!value?.endsWith("m")) {
+    return null;
+  }
+  const parsed = Number(value.slice(0, -1));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseMemoryMi(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+  if (value.endsWith("Gi")) {
+    const parsed = Number(value.slice(0, -2));
+    return Number.isFinite(parsed) ? parsed * 1024 : null;
+  }
+  if (value.endsWith("Mi")) {
+    const parsed = Number(value.slice(0, -2));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatMemoryMi(value: number) {
+  return value >= 1024 ? `${(value / 1024).toFixed(1)}Gi` : `${Math.round(value)}Mi`;
+}
+
+function summarizePodsResourceUsage(pods: InspectedPod[]) {
+  let cpu = 0;
+  let memory = 0;
+  let sampledPods = 0;
+  let sampleTime = "";
+  pods.forEach((pod) => {
+    const podCpu = parseMillicores(pod.resource_usage.cpu);
+    const podMemory = parseMemoryMi(pod.resource_usage.memory);
+    if (podCpu === null && podMemory === null) {
+      return;
+    }
+    sampledPods += 1;
+    cpu += podCpu ?? 0;
+    memory += podMemory ?? 0;
+    if ((pod.resource_usage.sample_time ?? "") > sampleTime) {
+      sampleTime = pod.resource_usage.sample_time ?? "";
+    }
+  });
+  if (sampledPods === 0) {
+    return {};
+  }
+  return {
+    cpu: `${cpu}m`,
+    memory: formatMemoryMi(memory),
+    sampled_pods: String(sampledPods),
+    ...(sampleTime ? { sample_time: sampleTime } : {}),
+  };
+}
+
+function ResourceUsageBlock({
+  title,
+  resourceUsage,
+}: {
+  title: string;
+  resourceUsage: Record<string, string> | undefined;
+}) {
+  const items = resourceUsageItems(resourceUsage);
+  if (items.length === 0) {
+    return <p className="inline-note">{title}：未采集到 Metrics 样本</p>;
+  }
+  return (
+    <div>
+      <span className="evidence-label">{title}</span>
+      <KeyValueList items={items} />
+    </div>
+  );
+}
+
 type IgnoreDraft = {
   pod: InspectedPod;
   hit: KeywordHit;
@@ -183,6 +274,7 @@ function EvidencePodCard({
             </ul>
           ) : <p className="inline-note">暂无容器状态</p>}
         </div>
+        <ResourceUsageBlock title="资源使用" resourceUsage={pod.resource_usage} />
         <div>
           <span className="evidence-label">事件摘要</span>
           {pod.events.length > 0 ? <pre className="log-block code-block-scroll">{pod.events.join("\n")}</pre> : <p className="inline-note">暂无事件</p>}
@@ -299,6 +391,10 @@ function NamespaceEvidenceDrawer({
               { label: "健康状态", value: data?.health_status ?? summary.status },
               { label: "异常分类数", value: String(abnormalCategoryLabels.length) },
             ]}
+          />
+          <ResourceUsageBlock
+            title="名称空间资源使用"
+            resourceUsage={data ? summarizePodsResourceUsage(data.pods) : summary.resource_usage}
           />
           <div className="batch-category-block">
             <span className="inline-note">异常分类</span>
@@ -791,6 +887,8 @@ export function AutoInspectionPage() {
                   <th>状态</th>
                   <th>Pod</th>
                   <th>异常 Pod</th>
+                  <th>CPU</th>
+                  <th>内存</th>
                   <th>异常分类</th>
                   <th>操作</th>
                 </tr>
@@ -810,6 +908,8 @@ export function AutoInspectionPage() {
                     <td><StatusBadge status={item.health_status} /></td>
                     <td>{item.summary.pod_count}</td>
                     <td>{item.summary.abnormal_pod_count}</td>
+                    <td>{item.summary.resource_usage?.cpu ?? "-"}</td>
+                    <td>{item.summary.resource_usage?.memory ?? "-"}</td>
                     <td>
                       <div className="batch-category-list batch-category-list-inline">
                         {item.summary.abnormal_categories.length > 0 ? (

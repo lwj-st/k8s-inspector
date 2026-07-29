@@ -1049,7 +1049,8 @@ describe("AutoInspectionPage", () => {
           executed_at: "2026-07-14T10:01:00Z", all_namespaces: false, requested_namespaces: ["prod-core"],
           results: [{
             summary: { name: "summary-name", status: "warning", pod_count: 2, abnormal_pod_count: 1,
-              last_inspected_at: null, labels: {}, abnormal_categories: ["pod_status", "event"] },
+              last_inspected_at: null, labels: {}, abnormal_categories: ["pod_status", "event"],
+              resource_usage: { cpu: "180m", memory: "576Mi", sampled_pods: "2", sample_time: "2026-07-14T10:01:00Z" } },
             health_status: "warning",
             detail_target: { type: "namespace", namespace: "detail-name", label_selector: "app=api", resource_scope: ["pods"] },
           }],
@@ -1076,13 +1077,14 @@ describe("AutoInspectionPage", () => {
               events: ["Back-off restarting failed container"], describe_summary: "健康检查失败",
               log_summary: null, previous_log_summary: null,
               log_hits: [{ keyword: "ERROR", category: "dependency", severity: "warning", source: "current_log", matched_text: "level=error msg=database connection refused", container_name: "api", whitelisted: false }],
-              resource_usage: {}, related_resources: [{ kind: "Service", name: "api", status: "healthy" }],
+              resource_usage: { cpu: "150m", memory: "512Mi", cpu_limit_percent: "30.0%", memory_limit_percent: "50.0%", sample_time: "2026-07-14T10:01:30Z" },
+              related_resources: [{ kind: "Service", name: "api", status: "healthy" }],
             },
             {
               name: "healthy-api", status: "Running", node_name: "node-b", restarts: 0,
               containers: [{ name: "api", restart_count: 0, state: "running", reason: null }],
               events: [], describe_summary: "运行正常", log_summary: null, previous_log_summary: null,
-              log_hits: [], resource_usage: {}, related_resources: [],
+              log_hits: [], resource_usage: { cpu: "30m", memory: "64Mi", sample_time: "2026-07-14T10:01:20Z" }, related_resources: [],
             },
           ],
         }), { status: 200 });
@@ -1094,12 +1096,20 @@ describe("AutoInspectionPage", () => {
     await chooseNamespace("prod-core");
     fireEvent.click(screen.getByRole("button", { name: "巡检" }));
     expect(await screen.findByText("批量巡检摘要")).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /summary-name/ })).toHaveTextContent("180m");
+    expect(screen.getByRole("row", { name: /summary-name/ })).toHaveTextContent("576Mi");
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
     const drawer = await screen.findByRole("complementary", { name: "detail-name 巡检证据" });
     expect(within(drawer).getByText("Pod 状态")).toBeInTheDocument();
     expect(within(drawer).getByText("事件")).toBeInTheDocument();
+    expect(within(drawer).getByText("名称空间资源使用")).toBeInTheDocument();
+    expect(within(drawer).getByText("180m")).toBeInTheDocument();
+    expect(within(drawer).getByText("576Mi")).toBeInTheDocument();
     expect(within(drawer).getByText("broken-api")).toBeInTheDocument();
+    expect(within(drawer).getAllByText("资源使用").length).toBeGreaterThan(0);
+    expect(within(drawer).getByText("150m")).toBeInTheDocument();
+    expect(within(drawer).getByText("512Mi")).toBeInTheDocument();
     expect(within(drawer).getByText("Back-off restarting failed container")).toBeInTheDocument();
     expect(within(drawer).getByText("ERROR")).toBeInTheDocument();
     expect(within(drawer).getByText("命中上下文（不是完整日志）")).toBeInTheDocument();

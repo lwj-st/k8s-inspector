@@ -462,6 +462,7 @@ export type NamespaceSummary = {
   last_inspected_at?: string | null;
   labels?: Record<string, string>;
   abnormal_categories: AbnormalCategory[];
+  resource_usage?: Record<string, string>;
 };
 
 export type NamespaceDiscoveryResponse = {

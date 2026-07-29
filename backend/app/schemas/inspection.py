@@ -111,6 +111,7 @@ class NamespaceSummary(BaseModel):
     last_inspected_at: str | None = None
     labels: dict[str, str] = Field(default_factory=dict)
     abnormal_categories: list[AbnormalCategory] = Field(default_factory=list)
+    resource_usage: dict[str, str] = Field(default_factory=dict)
 
 
 class NamespaceDiscoveryResponse(BaseModel):

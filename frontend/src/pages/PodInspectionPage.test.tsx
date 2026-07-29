@@ -770,10 +770,91 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
     fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
-    expect(await screen.findByText("原始日志")).toBeInTheDocument();
+    expect(await screen.findByText("命中上下文")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s\npanic: dependency unavailable")).toBeInTheDocument();
     expect(screen.getAllByText("connection refused").some((element) => element.tagName.toLowerCase() === "mark")).toBe(true);
     expect(screen.queryByText((_, element) => element?.textContent === "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}")).not.toBeInTheDocument();
+  });
+
+  it("always shows matched log line when context text was truncated before the hit", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/settings")) {
+        return Promise.resolve(new Response(JSON.stringify({ inspection_policy: { max_log_pods: 120 } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      if (url.endsWith("/discovery/namespaces")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          executed_at: "2026-07-21T10:00:00Z",
+          namespaces: [{ name: "demo", status: "warning", pod_count: 1, abnormal_pod_count: 1, last_inspected_at: null, labels: {}, abnormal_categories: ["log_keyword"] }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      if (url.endsWith("/inspection-targets") && (!init || init.method === undefined)) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      if (url.endsWith("/discovery/namespaces/demo/labels")) {
+        return Promise.resolve(new Response(JSON.stringify({ namespace: "demo", executed_at: "2026-07-21T10:00:00Z", labels: [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      if (url.endsWith("/discovery/namespaces/demo/pods")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          namespace: "demo",
+          label_selector: null,
+          executed_at: "2026-07-21T10:00:00Z",
+          pod_count: 1,
+          pods: [{ name: "demo-api-1", labels: { app: "demo-api" } }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      if (url.endsWith("/inspections/logs/namespace/run") && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify({
+          inspection_target: { type: "namespace", namespace: "demo", label_selector: null, saved_target_id: null, resource_scope: ["pods"] },
+          namespace: "demo",
+          health_status: "warning",
+          executed_at: "2026-07-21T10:10:00Z",
+          evidence_bundles: [],
+          pods: [{
+            name: "demo-api-1",
+            status: "Running",
+            restarts: 0,
+            node_name: "node-a",
+            containers: [],
+            events: [],
+            describe_summary: "running",
+            log_summary: null,
+            previous_log_summary: null,
+            log_hits: [{
+              keyword: "ERROR",
+              category: "runtime",
+              severity: "error",
+              source: "current_log",
+              matched_text: "level=error msg=database failed",
+              context_text: "[DEBUG] long stream output without the matched keyword…（已截断）",
+              container_name: "api",
+              whitelisted: false,
+              whitelist_rule_id: null,
+            }],
+            resource_usage: {},
+            related_resources: [],
+          }],
+          services: [],
+          ingresses: [],
+          tls_secrets: [],
+          daemonsets: [],
+        }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
+
+    expect(await screen.findByText("命中上下文")).toBeInTheDocument();
+    expect(screen.getAllByText((_, element) =>
+      element?.tagName.toLowerCase() === "pre"
+      && Boolean(element.textContent?.includes("命中行：level=error msg=database failed")),
+    )).toHaveLength(1);
   });
 
   it("saves current label selector as inspection point through modal", async () => {

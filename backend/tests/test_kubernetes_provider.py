@@ -106,6 +106,49 @@ def test_run_pod_inspection_reads_single_pod_directly() -> None:
     assert result["inspection_target"]["type"] == "pod"
 
 
+def test_pod_resource_usage_is_built_from_metrics_api() -> None:
+    provider = _make_provider()
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="demo-api-abc"),
+        spec=SimpleNamespace(
+            containers=[
+                SimpleNamespace(
+                    resources=SimpleNamespace(
+                        requests={"cpu": "100m", "memory": "128Mi"},
+                        limits={"cpu": "500m", "memory": "512Mi"},
+                    )
+                )
+            ],
+            init_containers=[],
+            overhead={},
+        ),
+    )
+    provider.custom.list_namespaced_custom_object = lambda **kwargs: {
+        "items": [
+            {
+                "metadata": {"name": "demo-api-abc"},
+                "timestamp": "2026-07-29T01:36:43Z",
+                "containers": [
+                    {"usage": {"cpu": "250m", "memory": "256Mi"}},
+                    {"usage": {"cpu": "50000000n", "memory": "64Mi"}},
+                ],
+            }
+        ]
+    }
+
+    usage = provider._pod_resource_usage_map("demo", [pod])["demo-api-abc"]
+
+    assert usage == {
+        "cpu": "300m",
+        "memory": "320Mi",
+        "sample_time": "2026-07-29T01:36:43Z",
+        "cpu_request_percent": "300.0%",
+        "memory_request_percent": "250.0%",
+        "cpu_limit_percent": "60.0%",
+        "memory_limit_percent": "62.5%",
+    }
+
+
 def test_run_pod_inspection_reads_logs_for_every_container_even_when_pod_is_running() -> None:
     provider = _make_provider()
     provider.run_namespace_inspection = lambda namespace, label_selector: (_ for _ in ()).throw(
@@ -514,7 +557,7 @@ def _configure_namespace_inspection_provider(
         ]
     )
     provider.core.list_namespaced_secret = lambda namespace, _request_timeout: SimpleNamespace(items=[])
-    provider._build_pod_result = lambda namespace, pod, services: {
+    provider._build_pod_result = lambda namespace, pod, services, **kwargs: {
         "name": "demo-api-1",
         "status": "Running",
         "node_name": "node-a",

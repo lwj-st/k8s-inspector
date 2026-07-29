@@ -698,6 +698,21 @@ def test_error_keyword_matches_bracketed_log_level(client, log_text: str) -> Non
     assert any(hit.keyword == "ERROR" and hit.matched_text == log_text for hit in hits)
 
 
+def test_log_context_keeps_matched_line_when_previous_lines_are_long(client) -> None:
+    long_debug_line = "[DEBUG] " + ("stream token " * 80)
+    log_text = "\n".join([long_debug_line for _ in range(20)] + ["level=error msg=database failed"])
+    session = client.app.state.session_factory()
+    try:
+        hits = match_log_text(session, "demo", None, "demo-api", "api", log_text)
+    finally:
+        session.close()
+
+    error_hit = next(hit for hit in hits if hit.keyword == "ERROR")
+    assert error_hit.matched_text == "level=error msg=database failed"
+    assert "level=error msg=database failed" in (error_hit.context_text or "")
+    assert error_hit.context_text.startswith("…（前文过长已省略）")
+
+
 def test_error_keyword_does_not_match_inside_config_field_name(client) -> None:
     session = client.app.state.session_factory()
     try:

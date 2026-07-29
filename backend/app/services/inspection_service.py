@@ -592,7 +592,70 @@ def _build_namespace_batch_summary(
         "last_inspected_at": inspection.get("executed_at"),
         "labels": (discovered_summary or {}).get("labels", {}),
         "abnormal_categories": abnormal_categories,
+        "resource_usage": _summarize_namespace_resource_usage(pods),
     }
+
+
+def _summarize_namespace_resource_usage(pods: list[dict]) -> dict[str, str]:
+    total_cpu_millicores = 0
+    total_memory_bytes = 0
+    sampled_pods = 0
+    latest_sample_time = ""
+    for pod in pods:
+        usage = pod.get("resource_usage") or {}
+        cpu = _parse_millicores(usage.get("cpu"))
+        memory = _parse_memory_bytes(usage.get("memory"))
+        if cpu is None and memory is None:
+            continue
+        sampled_pods += 1
+        total_cpu_millicores += cpu or 0
+        total_memory_bytes += memory or 0
+        sample_time = str(usage.get("sample_time") or "")
+        if sample_time > latest_sample_time:
+            latest_sample_time = sample_time
+    if sampled_pods == 0:
+        return {}
+    result = {
+        "cpu": f"{total_cpu_millicores}m",
+        "memory": _format_memory_bytes(total_memory_bytes),
+        "sampled_pods": str(sampled_pods),
+    }
+    if latest_sample_time:
+        result["sample_time"] = latest_sample_time
+    return result
+
+
+def _parse_millicores(value: object) -> int | None:
+    if value is None:
+        return None
+    text = str(value)
+    if not text.endswith("m"):
+        return None
+    try:
+        return int(text[:-1])
+    except ValueError:
+        return None
+
+
+def _parse_memory_bytes(value: object) -> int | None:
+    if value is None:
+        return None
+    text = str(value)
+    try:
+        if text.endswith("Mi"):
+            return int(float(text[:-2]) * 1024 * 1024)
+        if text.endswith("Gi"):
+            return int(float(text[:-2]) * 1024 * 1024 * 1024)
+    except ValueError:
+        return None
+    return None
+
+
+def _format_memory_bytes(value: int) -> str:
+    mib = value / 1024 / 1024
+    if mib >= 1024:
+        return f"{mib / 1024:.1f}Gi"
+    return f"{mib:.0f}Mi"
 
 
 def _derive_namespace_abnormal_categories(inspection: dict) -> list[str]:

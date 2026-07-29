@@ -375,8 +375,37 @@ def _extract_log_contexts(log_text: str, keyword: str, radius: int = 20) -> list
             continue
         before = lines[max(0, index - radius):index]
         after = lines[index + 1:index + radius + 1]
-        contexts.append((line, before, after, "\n".join([*before, line, *after])))
+        contexts.append((line, before, after, _bounded_context_text(before, line, after)))
     return contexts
+
+
+def _bounded_context_text(
+    before: list[str],
+    matched_text: str,
+    after: list[str],
+    *,
+    max_chars: int = 1800,
+) -> str:
+    """Build display context without allowing long preceding lines to hide the hit."""
+
+    selected_before: list[str] = []
+    selected_after: list[str] = []
+    used = len(matched_text)
+    for line in reversed(before):
+        candidate = len(line) + 1
+        if used + candidate > max_chars:
+            break
+        selected_before.insert(0, line)
+        used += candidate
+    for line in after:
+        candidate = len(line) + 1
+        if used + candidate > max_chars:
+            break
+        selected_after.append(line)
+        used += candidate
+    prefix = ["…（前文过长已省略）"] if len(selected_before) < len(before) else []
+    suffix = ["…（后文过长已省略）"] if len(selected_after) < len(after) else []
+    return "\n".join([*prefix, *selected_before, matched_text, *selected_after, *suffix])
 
 
 def _select_keyword_hit_context(

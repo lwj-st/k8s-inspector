@@ -31,7 +31,13 @@ type IgnoreDraft = {
 };
 
 function logHitContext(hit: KeywordHit) {
-  return hit.context_text?.trim() || hit.matched_text;
+  const context = hit.context_text?.trim();
+  if (!context) {
+    return hit.matched_text;
+  }
+  return context.toLowerCase().includes(hit.matched_text.toLowerCase())
+    ? context
+    : `命中行：${hit.matched_text}\n\n上下文：\n${context}`;
 }
 
 function normalizeLogText(value: string) {
@@ -66,6 +72,21 @@ function renderHighlightedLog(value: string, keyword: string) {
   }
 
   return parts;
+}
+
+function resourceUsageItems(resourceUsage: Record<string, string> | undefined) {
+  if (!resourceUsage || Object.keys(resourceUsage).length === 0) {
+    return [];
+  }
+  return [
+    { label: "CPU", value: resourceUsage.cpu },
+    { label: "内存", value: resourceUsage.memory },
+    { label: "CPU / limit", value: resourceUsage.cpu_limit_percent },
+    { label: "内存 / limit", value: resourceUsage.memory_limit_percent },
+    { label: "CPU / request", value: resourceUsage.cpu_request_percent },
+    { label: "内存 / request", value: resourceUsage.memory_request_percent },
+    { label: "采样时间", value: resourceUsage.sample_time },
+  ].filter((item): item is { label: string; value: string } => Boolean(item.value));
 }
 
 type PodInspectionPageProps = {
@@ -755,6 +776,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                   items={[
                     { label: "Pod", value: currentPod.name },
                     { label: "日志命中", value: String(currentLogHits.length) },
+                    ...resourceUsageItems(currentPod.resource_usage),
                   ]}
                 />
               </div>
@@ -775,7 +797,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                               <strong>{hit.keyword}</strong>
                               <StatusBadge status={hit.severity} />
                             </div>
-                            <span className="inline-note">原始日志</span>
+                            <span className="inline-note">命中上下文</span>
                             <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                             <div className="log-hit-actions">
                               <button type="button" onClick={() => openIgnoreLogHit(hit)} disabled={ignoring}>
@@ -834,6 +856,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     items={[
                       { label: "Pod", value: currentPod.name },
                       { label: "日志命中", value: String(currentLogHits.length) },
+                      ...resourceUsageItems(currentPod.resource_usage),
                     ]}
                   />
                   <article className="card">
@@ -849,7 +872,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                                 <strong>{hit.keyword}</strong>
                                 <StatusBadge status={hit.severity} />
                               </div>
-                              <span className="inline-note">原始日志</span>
+                              <span className="inline-note">命中上下文</span>
                               <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                               <div className="log-hit-actions">
                                 <button type="button" onClick={() => openIgnoreLogHit(hit)} disabled={ignoring}>

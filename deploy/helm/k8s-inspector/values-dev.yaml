@@ -27,6 +27,6 @@ env:
 
 secretEnv:
   adminUsername: admin
-  adminPasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$Jb0hNmwmv+B+3VVP8NYBbg$UnGg3V5iFn7ca8R71tbBwiZn2b89YIiEw59b2hGcH/E"
+  adminPasswordHash: "$argon2id$v=19$m=65536,t=3,p=4$mGglKJLMgmPblgHlGn2RQA$61xUjD+9SmYUeKBJ4PEujBvZfYMnk7a1LQeBic0c64U"
   sessionSecret: ef290594e450efb6052b1332d5d1ac6f40dd9bd454ee6f2e0362c1871919200f
   configEncryptionKey: "rw_KxtU3BNzmkmrT1TNQN4p7EWKzrYQQvGeBlutaNhU="

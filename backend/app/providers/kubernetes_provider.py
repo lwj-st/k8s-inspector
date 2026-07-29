@@ -11,6 +11,11 @@ from kubernetes.config.config_exception import ConfigException
 from app.core.config import Settings
 from app.providers.base import LogPodLimitExceededError, TemporaryPodLogCollection
 from app.providers.kubernetes_collection import KubernetesResourceCollector
+from app.providers.kubernetes_quantities import (
+    quantity_bytes,
+    quantity_cpu_millicores,
+    sum_resources,
+)
 from app.schemas.v1_1 import CollectionLimits, ProviderCollectionRequest, ProviderCollectionResult
 from app.services.pod_health import is_abnormal_container, is_abnormal_pod, is_normal_pod_status
 
@@ -21,6 +26,21 @@ def now_iso() -> str:
 
 def _setting_int(settings: Settings, name: str, default: int) -> int:
     return int(getattr(settings, name, default) or default)
+
+
+def _format_cpu_millicores(value: int) -> str:
+    return f"{value}m"
+
+
+def _format_memory_bytes(value: int) -> str:
+    mib = value / 1024 / 1024
+    if mib >= 1024:
+        return f"{mib / 1024:.1f}Gi"
+    return f"{mib:.0f}Mi"
+
+
+def _format_percent(value: float) -> str:
+    return f"{value:.1f}%"
 
 
 class KubernetesInspectionProvider:
@@ -477,6 +497,7 @@ class KubernetesInspectionProvider:
         *,
         include_logs: bool = False,
         log_collection: TemporaryPodLogCollection | None = None,
+        resource_usage: dict[str, str] | None = None,
     ) -> dict:
         describe_summary, _ = self._pod_issue_summary(pod, include_logs=False)
         if include_logs and log_collection is not None:
@@ -547,9 +568,72 @@ class KubernetesInspectionProvider:
                 if include_logs and log_collection is None
                 else None
             ),
-            "resource_usage": {"cpu": "n/a", "memory": "n/a"},
+            "resource_usage": resource_usage or {},
             "related_resources": self._related_services(pod, services),
         }
+
+    def _pod_resource_usage_map(
+        self,
+        namespace: str,
+        pods: list[client.V1Pod],
+    ) -> dict[str, dict[str, str]]:
+        pod_specs = {pod.metadata.name: pod for pod in pods}
+        try:
+            payload = self.custom.list_namespaced_custom_object(
+                group="metrics.k8s.io",
+                version="v1beta1",
+                namespace=namespace,
+                plural="pods",
+                _request_timeout=self.settings.k8s_request_timeout,
+            )
+        except Exception:
+            return {}
+
+        result: dict[str, dict[str, str]] = {}
+        for item in payload.get("items", []):
+            metadata = item.get("metadata") or {}
+            name = str(metadata.get("name") or "")
+            pod = pod_specs.get(name)
+            if pod is None:
+                continue
+            result[name] = self._resource_usage_from_pod_metric(item, pod)
+        return result
+
+    def _single_pod_resource_usage(
+        self,
+        namespace: str,
+        pod_name: str,
+        pod: client.V1Pod,
+    ) -> dict[str, str]:
+        return self._pod_resource_usage_map(namespace, [pod]).get(pod_name, {})
+
+    def _resource_usage_from_pod_metric(
+        self,
+        item: dict,
+        pod: client.V1Pod,
+    ) -> dict[str, str]:
+        cpu = memory = 0
+        for container in item.get("containers") or []:
+            usage = container.get("usage") or {}
+            cpu += quantity_cpu_millicores(usage.get("cpu")) or 0
+            memory += quantity_bytes(usage.get("memory")) or 0
+
+        request_cpu, request_memory = sum_resources(pod, "requests")
+        limit_cpu, limit_memory = sum_resources(pod, "limits")
+        result = {
+            "cpu": _format_cpu_millicores(cpu),
+            "memory": _format_memory_bytes(memory),
+            "sample_time": str(item.get("timestamp") or ""),
+        }
+        if request_cpu:
+            result["cpu_request_percent"] = _format_percent(cpu * 100 / request_cpu)
+        if request_memory:
+            result["memory_request_percent"] = _format_percent(memory * 100 / request_memory)
+        if limit_cpu:
+            result["cpu_limit_percent"] = _format_percent(cpu * 100 / limit_cpu)
+        if limit_memory:
+            result["memory_limit_percent"] = _format_percent(memory * 100 / limit_memory)
+        return result
 
     def _log_hits_from_pod(self, pod_result: dict) -> list[dict]:
         container_logs = pod_result.get("container_log_summaries") or {}
@@ -798,6 +882,7 @@ class KubernetesInspectionProvider:
             if include_logs
             else None
         )
+        resource_usage_by_pod = self._pod_resource_usage_map(namespace, pods)
         pod_results = (
             [
                 self._build_pod_result(
@@ -806,12 +891,18 @@ class KubernetesInspectionProvider:
                     services,
                     include_logs=True,
                     log_collection=log_collection,
+                    resource_usage=resource_usage_by_pod.get(pod.metadata.name),
                 )
                 for pod in pods
             ]
             if include_logs
             else [
-                self._build_pod_result(namespace, pod, services)
+                self._build_pod_result(
+                    namespace,
+                    pod,
+                    services,
+                    resource_usage=resource_usage_by_pod.get(pod.metadata.name),
+                )
                 for pod in pods
             ]
         )
@@ -967,6 +1058,7 @@ class KubernetesInspectionProvider:
             pod_obj,
             services,
             include_logs=True,
+            resource_usage=self._single_pod_resource_usage(namespace, pod_name, pod_obj),
         )
 
         return {

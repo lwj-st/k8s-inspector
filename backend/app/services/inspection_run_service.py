@@ -538,11 +538,15 @@ def _aggregate_coverage(evaluations: list[CheckEvaluation]) -> list[Coverage]:
     for check_code in sorted(grouped):
         items = grouped[check_code]
         statuses = {item.status for item in items}
+        has_current_metrics = (
+            check_code == "metrics.resource"
+            and any(item.status in {CheckStatus.passed, CheckStatus.abnormal} for item in items)
+        )
         if CheckStatus.failed in statuses:
             status = CheckStatus.failed
         elif CheckStatus.abnormal in statuses:
             status = CheckStatus.abnormal
-        elif CheckStatus.skipped in statuses:
+        elif CheckStatus.skipped in statuses and not has_current_metrics:
             status = CheckStatus.skipped
         else:
             status = CheckStatus.passed
@@ -551,6 +555,9 @@ def _aggregate_coverage(evaluations: list[CheckEvaluation]) -> list[Coverage]:
         if status != CheckStatus.passed:
             scope_summary = f"{len(items)} 个范围中有检查未通过"
             reason = f"{scope_summary}：{'；'.join(reasons[:3])}" if reasons else scope_summary
+        elif check_code == "metrics.resource" and CheckStatus.skipped in statuses:
+            skipped_count = sum(1 for item in items if item.status == CheckStatus.skipped)
+            reason = f"已采集到当前 Metrics 样本；{skipped_count} 个范围没有 Pod/Node 当前样本或样本已陈旧。"
         result.append(
             Coverage(
                 check_code=check_code,
