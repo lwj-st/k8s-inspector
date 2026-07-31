@@ -125,6 +125,78 @@ class KubernetesVersionFailureProvider:
         )
 
 
+class ClusterStorageProvider:
+    def __init__(self, *, include_released_pv: bool):
+        self.include_released_pv = include_released_pv
+        self.cluster_calls = 0
+
+    def list_namespaces(self):
+        return {
+            "executed_at": "2026-07-31T10:00:00Z",
+            "namespaces": [
+                {
+                    "name": "demo",
+                    "status": "healthy",
+                    "pod_count": 0,
+                    "abnormal_pod_count": 0,
+                    "last_inspected_at": None,
+                    "labels": {},
+                    "abnormal_categories": [],
+                }
+            ],
+        }
+
+    def run_namespace_inspection(self, namespace, label_selector, *, include_logs=True, limits=None):
+        return {
+            "inspection_target": {
+                "type": "namespace",
+                "namespace": namespace,
+                "label_selector": label_selector,
+                "resource_scope": ["pods"],
+            },
+            "namespace": namespace,
+            "health_status": "healthy",
+            "executed_at": "2026-07-31T10:01:00Z",
+            "evidence_bundles": [],
+            "pods": [],
+            "services": [],
+            "ingresses": [],
+            "tls_secrets": [],
+            "daemonsets": [],
+        }
+
+    def collect_resources(self, request):
+        if request.scope.type.value != "cluster":
+            return ProviderCollectionResult(layer=CollectionLayer.status)
+
+        self.cluster_calls += 1
+        observations = [
+            ProviderObservation(
+                resource=ResourceRef(kind="KubernetesVersion", name="server"),
+                observed_at=datetime.now(timezone.utc),
+                observed_state="v1.36.0",
+                facts={"supported": True},
+            )
+        ]
+        if self.include_released_pv:
+            observations.append(
+                ProviderObservation(
+                    resource=ResourceRef(kind="PersistentVolume", name="pv-orphan"),
+                    observed_at=datetime.now(timezone.utc),
+                    observed_state="Released",
+                    facts={
+                        "phase": "Released",
+                        "released_hours": 48,
+                        "reclaim_policy": "Retain",
+                    },
+                )
+            )
+        return ProviderCollectionResult(
+            layer=CollectionLayer.status,
+            observations=observations,
+        )
+
+
 def test_namespace_failure_is_scoped_and_top_coverage_is_aggregated(client):
     scope = InspectionScope(type="namespace", namespaces=["demo", "broken"])
     with client.app.state.session_factory() as session:
@@ -148,6 +220,53 @@ def test_namespace_failure_is_scoped_and_top_coverage_is_aggregated(client):
         ]
         assert len(scoped) == 1
         assert scoped[0].scope.namespace == "broken"
+
+
+def test_namespace_batch_inspection_recovers_cluster_scoped_storage_issues(client):
+    cluster_id = client.app.state.settings.cluster_id
+    with client.app.state.session_factory() as session:
+        run, _ = execute_inspection(
+            session,
+            provider=ClusterStorageProvider(include_released_pv=True),
+            cluster_id=cluster_id,
+            scope=InspectionScope(type="cluster"),
+            trigger=InspectionTrigger.manual,
+        )
+        assert any(item.check_code == "storage.status" and item.issue_count == 1 for item in run.coverage)
+        issue = (
+            session.query(IssueModel)
+            .filter(
+                IssueModel.cluster_id == cluster_id,
+                IssueModel.resource_kind == "PersistentVolume",
+                IssueModel.resource_name == "pv-orphan",
+                IssueModel.source_check == "storage.status",
+            )
+            .one()
+        )
+        assert issue.status == "open"
+
+    provider = ClusterStorageProvider(include_released_pv=False)
+    client.app.state.provider = provider
+    response = client.post(
+        "/api/v1/inspections/namespaces/run",
+        json={"all_namespaces": True},
+    )
+
+    assert response.status_code == 200
+    assert provider.cluster_calls == 1
+    with client.app.state.session_factory() as session:
+        issue = (
+            session.query(IssueModel)
+            .filter(
+                IssueModel.cluster_id == cluster_id,
+                IssueModel.resource_kind == "PersistentVolume",
+                IssueModel.resource_name == "pv-orphan",
+                IssueModel.source_check == "storage.status",
+            )
+            .one()
+        )
+        assert issue.status == "recovered"
+        assert issue.recovered_at is not None
 
 
 def test_all_namespace_failures_create_valid_failed_run(client):

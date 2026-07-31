@@ -341,10 +341,9 @@ def run_namespace_batch_inspection(
     )
     persisted = result | {"health_status": overall_health_status}
     record = _save_record(session, "namespaces", payload.model_dump(), persisted)
-    _attach_v11_extension(
+    namespace_run, namespace_issues, namespace_coverage = _execute_v11_extension(
         session,
         provider,
-        result,
         scope=InspectionScope(
             type=InspectionScopeType.namespace,
             namespaces=requested_namespaces,
@@ -352,6 +351,17 @@ def run_namespace_batch_inspection(
         inspection_record=record,
         registry=registry,
     )
+    cluster_run, cluster_issues, cluster_coverage = _execute_v11_extension(
+        session,
+        provider,
+        scope=InspectionScope(type=InspectionScopeType.cluster),
+        inspection_record=None,
+        registry=registry,
+    )
+    result["issues"] = _merge_issue_payloads([*namespace_issues, *cluster_issues])
+    result["coverage"] = _merge_coverage_payloads([*namespace_coverage, *cluster_coverage])
+    record.result_payload = sanitize_persistence_payload(result)
+    session.commit()
     result.pop("health_status", None)
     return sanitize_inspection_response(result)
 
@@ -478,16 +488,37 @@ def _attach_v11_extension(
     result: dict,
     *,
     scope: InspectionScope,
-    inspection_record: InspectionRecord,
+    inspection_record: InspectionRecord | None,
     registry: ComponentStatusRegistry | None = None,
 ) -> None:
+    _, issues, coverage = _execute_v11_extension(
+        session,
+        provider,
+        scope=scope,
+        inspection_record=inspection_record,
+        registry=registry,
+    )
+    result["issues"] = issues
+    result["coverage"] = coverage
+    inspection_record.result_payload = sanitize_persistence_payload(result)
+    session.commit()
+
+
+def _execute_v11_extension(
+    session: Session,
+    provider: InspectionProvider,
+    *,
+    scope: InspectionScope,
+    inspection_record: InspectionRecord,
+    registry: ComponentStatusRegistry | None = None,
+):
     run, _ = execute_inspection(
         session,
         provider=provider,
         cluster_id=get_app_settings().cluster_id,
         scope=scope,
         trigger=InspectionTrigger.manual,
-        inspection_record_id=inspection_record.id,
+        inspection_record_id=inspection_record.id if inspection_record else None,
         registry=registry,
     )
     issues = [
@@ -495,10 +526,49 @@ def _attach_v11_extension(
         for issue_id in run.issue_ids
         if (row := session.get(IssueModel, issue_id)) is not None
     ]
-    result["issues"] = issues
-    result["coverage"] = [item.model_dump(mode="json") for item in run.coverage]
-    inspection_record.result_payload = sanitize_persistence_payload(result)
-    session.commit()
+    coverage = [item.model_dump(mode="json") for item in run.coverage]
+    return run, issues, coverage
+
+
+def _merge_issue_payloads(issues: list[dict]) -> list[dict]:
+    merged: dict[int | str, dict] = {}
+    for issue in issues:
+        key = issue.get("id") or issue.get("fingerprint") or str(issue)
+        merged[key] = issue
+    return list(merged.values())
+
+
+def _merge_coverage_payloads(coverage: list[dict]) -> list[dict]:
+    status_rank = {
+        "failed": 0,
+        "abnormal": 1,
+        "skipped": 2,
+        "passed": 3,
+    }
+    merged: dict[str, dict] = {}
+    for item in coverage:
+        check_code = str(item.get("check_code") or "")
+        if not check_code:
+            continue
+        existing = merged.get(check_code)
+        if existing is None:
+            merged[check_code] = dict(item)
+            continue
+        existing_status = str(existing.get("status") or "passed")
+        item_status = str(item.get("status") or "passed")
+        if status_rank.get(item_status, 99) < status_rank.get(existing_status, 99):
+            existing["status"] = item_status
+        existing["checked_objects"] = int(existing.get("checked_objects") or 0) + int(item.get("checked_objects") or 0)
+        existing["duration_ms"] = int(existing.get("duration_ms") or 0) + int(item.get("duration_ms") or 0)
+        existing["issue_count"] = int(existing.get("issue_count") or 0) + int(item.get("issue_count") or 0)
+        reasons = [
+            str(reason)
+            for reason in [existing.get("reason"), item.get("reason")]
+            if reason
+        ]
+        unique_reasons = list(dict.fromkeys(reasons))
+        existing["reason"] = "；".join(unique_reasons[:3]) if unique_reasons else None
+    return list(merged.values())
 
 
 def _attach_namespace_evidence(
