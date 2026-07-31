@@ -28,6 +28,7 @@ describe("base path helpers", () => {
       if (url.endsWith("/api/v1/settings")) {
         return new Response(
           JSON.stringify({
+            cluster_id: "test",
             base_path: "/inspector",
             provider_mode: "kubernetes",
             kubeconfig_path: "/path/to/.kube/config",

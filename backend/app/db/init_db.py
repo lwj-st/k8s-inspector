@@ -24,6 +24,7 @@ def initialize_database(settings: Settings) -> None:
                 session.add(
                     SystemSetting(
                         id=1,
+                        cluster_id=settings.cluster_id,
                         base_path=settings.base_path,
                         provider_mode=settings.provider_mode,
                         kubeconfig_path=settings.kubeconfig_path,

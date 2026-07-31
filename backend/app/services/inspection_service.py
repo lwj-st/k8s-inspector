@@ -18,7 +18,7 @@ from app.schemas.v1_1 import (
 from app.services import discovery_service
 from app.services.inspection_run_service import execute_inspection
 from app.services.issue_query import issue_from_model
-from app.services.settings_service import policy_with_builtin_required_components
+from app.services.settings_service import get_effective_cluster_id, policy_with_builtin_required_components
 from app.services.payload_sanitizer import (
     sanitize_persistence_payload as _shared_sanitize_persistence_payload,
     sanitize_public_payload,
@@ -518,7 +518,7 @@ def _execute_v11_extension(
     run, _ = execute_inspection(
         session,
         provider=provider,
-        cluster_id=get_app_settings().cluster_id,
+        cluster_id=get_effective_cluster_id(session, get_app_settings()),
         scope=scope,
         trigger=InspectionTrigger.manual,
         inspection_record_id=inspection_record.id if inspection_record else None,

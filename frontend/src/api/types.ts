@@ -688,6 +688,7 @@ export type WhitelistIgnoreCreate = {
 };
 
 export type SettingsResponse = {
+  cluster_id: string;
   base_path: string;
   provider_mode: string;
   kubeconfig_path?: string | null;

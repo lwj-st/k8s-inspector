@@ -14,6 +14,7 @@ class SystemSetting(Base):
     __tablename__ = "system_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    cluster_id: Mapped[str] = mapped_column(String(128), default="local", nullable=False)
     base_path: Mapped[str] = mapped_column(String(128), default="")
     provider_mode: Mapped[str] = mapped_column(String(32), default="mock")
     kubeconfig_path: Mapped[str | None] = mapped_column(String(512), nullable=True)

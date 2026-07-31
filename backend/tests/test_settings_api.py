@@ -23,6 +23,7 @@ def test_get_settings_returns_base_path_field(client) -> None:
     response = client.get("/api/v1/settings")
 
     assert response.status_code == 200
+    assert response.json()["cluster_id"] == client.app.state.settings.cluster_id
     assert response.json()["base_path"] == ""
     assert response.json()["provider_mode"] == "mock"
     assert response.json()["inspection_policy"]["max_log_pods"] == 200
@@ -91,6 +92,24 @@ def test_update_settings_persists_values(client) -> None:
             )
             == "demo-key"
         )
+
+
+def test_update_settings_persists_cluster_id_and_system_status_uses_it(client) -> None:
+    response = client.put(
+        "/api/v1/settings",
+        json=_settings_payload(cluster_id="dev-cluster"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cluster_id"] == "dev-cluster"
+
+    with client.app.state.session_factory() as session:
+        stored = session.get(SystemSetting, 1)
+        assert stored.cluster_id == "dev-cluster"
+
+    status_response = client.get("/api/v1/system/status")
+    assert status_response.status_code == 200
+    assert status_response.json()["cluster_id"] == "dev-cluster"
 
 
 def test_old_settings_put_without_inspection_policy_preserves_current_policy(client) -> None:

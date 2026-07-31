@@ -10,6 +10,7 @@ import { SettingsPage } from "./SettingsPage";
 const fetchMock = vi.fn();
 
 const settings: SettingsResponse = {
+  cluster_id: "prod-cluster",
   base_path: "",
   provider_mode: "kubernetes",
   kubeconfig_path: null,
@@ -510,5 +511,27 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("资源指标未覆盖")).toBeInTheDocument();
     expect(screen.getByText("资源指标未覆盖").closest(".system-component-card")).toHaveTextContent("不可用");
     expect(screen.getByText("一个渠道发送失败").closest(".system-component-card")).toHaveTextContent("降级");
+  });
+
+  it("saves cluster id from basic settings", async () => {
+    const user = userEvent.setup();
+    let updatedSettings: SettingsResponse | null = null;
+    fetchMock.mockImplementation(baseFetch((url, init) => {
+      if (url.endsWith("/settings") && init?.method === "PUT") {
+        updatedSettings = JSON.parse(String(init.body));
+        return new Response(JSON.stringify(updatedSettings), { status: 200 });
+      }
+      return null;
+    }));
+
+    render(<MemoryRouter initialEntries={["/settings?tab=basic"]}><SettingsPage /></MemoryRouter>);
+
+    const clusterInput = await screen.findByLabelText("集群标识");
+    await user.clear(clusterInput);
+    await user.type(clusterInput, "dev-cluster");
+    await user.click(screen.getByRole("button", { name: "保存基础配置" }));
+
+    expect(await screen.findByText("基础配置已保存")).toBeInTheDocument();
+    expect((updatedSettings as SettingsResponse | null)?.cluster_id).toBe("dev-cluster");
   });
 });

@@ -129,6 +129,8 @@ secretEnv:
   configEncryptionKey: replace-with-fernet-key
 ```
 
+`env.clusterId` 只作为首次初始化系统配置的默认集群标识。系统启动后可在“系统设置 → 基础配置 → 集群标识”中修改；运行时的问题去重、问题工作台过滤和通知来源以数据库中的系统配置为准，不再长期依赖环境变量。
+
 部署：
 
 ```bash

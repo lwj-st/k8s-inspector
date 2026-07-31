@@ -685,6 +685,31 @@ export function SettingsPage() {
     }
   }
 
+  async function saveBasicSettings(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!settings) {
+      return;
+    }
+    const clusterId = settings.cluster_id.trim();
+    if (!clusterId) {
+      setActionError("集群标识不能为空");
+      return;
+    }
+    if (clusterId.length > 128) {
+      setActionError("集群标识不能超过 128 个字符");
+      return;
+    }
+    try {
+      await perform(async () => {
+        const updated = await updateSettings({ ...settings, cluster_id: clusterId });
+        setSettings(updated);
+        setSystemStatus((current) => current ? { ...current, cluster_id: updated.cluster_id } : current);
+      }, "基础配置已保存");
+    } catch {
+      // 错误已展示。
+    }
+  }
+
   const groupedThresholds = useMemo(() => {
     const groups = new Map<string, typeof thresholdFields>();
     for (const field of thresholdFields) {
@@ -1128,14 +1153,28 @@ export function SettingsPage() {
         <section className="panel">
           <h2>基础配置</h2>
           {!settings ? <p className="empty-copy">基础配置暂时不可用。</p> : (
-            <dl className="detail-grid">
-              <div><dt>访问前缀</dt><dd>{settings.base_path || "/"}</dd></div>
-              <div><dt>Provider 模式</dt><dd>{settings.provider_mode}</dd></div>
-              <div><dt>Kubeconfig</dt><dd>{settings.kubeconfig_path ?? "集群内配置"}</dd></div>
-              <div><dt>Kube Context</dt><dd>{settings.kube_context ?? "--"}</dd></div>
-              <div><dt>模型提供方</dt><dd>{settings.llm_provider}</dd></div>
-              <div><dt>API Key</dt><dd>{settings.api_key ? "已配置（内容始终隐藏）" : "未配置"}</dd></div>
-            </dl>
+            <form className="settings-form" onSubmit={saveBasicSettings}>
+              <label>
+                集群标识
+                <input
+                  aria-label="集群标识"
+                  value={settings.cluster_id}
+                  maxLength={128}
+                  onChange={(event) => setSettings({ ...settings, cluster_id: event.target.value })}
+                  placeholder="例如：dev-cluster、prod-shanghai"
+                />
+                <small>用于问题去重、问题工作台过滤和通知来源。修改后，新巡检结果归属新标识，旧问题仍保留在原标识下。</small>
+              </label>
+              <dl className="detail-grid">
+                <div><dt>访问前缀</dt><dd>{settings.base_path || "/"}</dd></div>
+                <div><dt>Provider 模式</dt><dd>{settings.provider_mode}</dd></div>
+                <div><dt>Kubeconfig</dt><dd>{settings.kubeconfig_path ?? "集群内配置"}</dd></div>
+                <div><dt>Kube Context</dt><dd>{settings.kube_context ?? "--"}</dd></div>
+                <div><dt>模型提供方</dt><dd>{settings.llm_provider}</dd></div>
+                <div><dt>API Key</dt><dd>{settings.api_key ? "已配置（内容始终隐藏）" : "未配置"}</dd></div>
+              </dl>
+              <button type="submit" disabled={saving}>保存基础配置</button>
+            </form>
           )}
         </section>
       ) : null}

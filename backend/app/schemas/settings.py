@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.v1_1 import InspectionPolicySettings, RequiredComponentPolicy
 
@@ -6,6 +6,7 @@ from app.schemas.v1_1 import InspectionPolicySettings, RequiredComponentPolicy
 class SettingsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    cluster_id: str = Field(min_length=1, max_length=128)
     base_path: str
     provider_mode: str = "mock"
     kubeconfig_path: str | None = None
@@ -19,6 +20,7 @@ class SettingsResponse(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    cluster_id: str | None = Field(default=None, min_length=1, max_length=128)
     base_path: str
     provider_mode: str = "mock"
     kubeconfig_path: str | None = None
@@ -29,6 +31,16 @@ class SettingsUpdate(BaseModel):
     api_key: str | None = None
     default_inspection_strategy: dict
     inspection_policy: InspectionPolicySettings | None = None
+
+    @field_validator("cluster_id")
+    @classmethod
+    def normalize_cluster_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("cluster_id must not be empty")
+        return normalized
 
     @model_validator(mode="after")
     def reject_explicit_null_policy(self) -> "SettingsUpdate":

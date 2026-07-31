@@ -397,6 +397,11 @@ a {
   border-top: 1px solid rgba(157, 182, 202, 0.22);
 }
 
+.settings-form {
+  display: grid;
+  gap: 18px;
+}
+
 .panel button:disabled,
 .section-header button:disabled,
 .text-button:disabled {

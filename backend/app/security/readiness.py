@@ -35,7 +35,7 @@ def build_ready_response(app) -> ReadyHealthResponse:
     )
 
 
-def build_system_status(app) -> SystemStatus:
+def build_system_status(app, *, cluster_id: str | None = None) -> SystemStatus:
     settings = app.state.settings
     now = datetime.now(timezone.utc)
     reasons = readiness_reasons(app)
@@ -90,7 +90,7 @@ def build_system_status(app) -> SystemStatus:
     return SystemStatus(
         status=status_value,
         version=settings.app_version,
-        cluster_id=settings.cluster_id,
+        cluster_id=cluster_id or settings.cluster_id,
         database=database,
         kubernetes_api=kubernetes_api,
         provider=provider,

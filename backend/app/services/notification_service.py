@@ -41,6 +41,7 @@ from app.security.crypto import SensitiveValueCipher
 from app.security.outbound import validate_outbound_target
 from app.services import notification_delivery
 from app.services.notification_delivery import WebhookSender
+from app.services.settings_service import get_effective_cluster_id
 from app.services.notification_transport import (
     NotificationTransportError as NotificationTargetError,
     SendResult,
@@ -193,9 +194,10 @@ def test_channel(
     sender: WebhookSender | None = None,
 ) -> NotificationTestResponse:
     now = utcnow()
+    cluster_id = get_effective_cluster_id(session, settings)
     message = NotificationMessage(
         event_type=NotificationEventType.notification_test,
-        cluster_id=settings.cluster_id,
+        cluster_id=cluster_id,
         summary="这是一条 K8s Inspector 测试通知",
         last_seen_at=now,
         evidence_summaries=[],
@@ -314,6 +316,7 @@ def dispatch_inspection_failure(
     if not plan_id:
         return
     channels = _plan_channels(session, plan_id)
+    cluster_id = get_effective_cluster_id(session, settings)
     for channel in channels:
         delivery = notification_delivery.create_delivery(
             session,
@@ -324,7 +327,7 @@ def dispatch_inspection_failure(
         )
         message = NotificationMessage(
             event_type=NotificationEventType.inspection_failed,
-            cluster_id=settings.cluster_id,
+            cluster_id=cluster_id,
             run_id=run.id,
             summary="定时巡检任务整体失败",
             last_seen_at=_utc(run.finished_at) or utcnow(),
@@ -373,7 +376,7 @@ def _issue_message(
     ][:20]
     return NotificationMessage(
         event_type=event_type,
-        cluster_id=settings.cluster_id,
+        cluster_id=issue.cluster_id,
         issue_id=issue.id,
         fingerprint=issue.fingerprint,
         issue_status=IssueStatus(issue.status),

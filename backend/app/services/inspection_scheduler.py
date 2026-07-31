@@ -25,7 +25,7 @@ from app.schemas.v1_1 import (
     SystemComponentStatus,
 )
 from app.security.lifespan import register_lifespan_hook
-from app.services import inspection_plan_service, notification_service, retention_service
+from app.services import inspection_plan_service, notification_service, retention_service, settings_service
 from app.services.inspection_service import sanitize_persistence_payload
 from app.services.inspection_run_service import execute_inspection, run_from_model
 
@@ -121,10 +121,11 @@ def execute_queued_run(app, run_id: int) -> InspectionRun:
             if plan is None:
                 raise LookupError("巡检计划不存在")
             scope = InspectionScope.model_validate(queued.scope)
+            cluster_id = settings_service.get_effective_cluster_id(session, app.state.settings)
             run, lifecycle = execute_inspection(
                 session,
                 provider=app.state.provider,
-                cluster_id=app.state.settings.cluster_id,
+                cluster_id=cluster_id,
                 scope=scope,
                 trigger=InspectionTrigger.scheduled,
                 plan_id=plan_id,

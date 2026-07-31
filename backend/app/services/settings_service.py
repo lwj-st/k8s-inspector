@@ -42,9 +42,17 @@ def get_settings(session: Session) -> SystemSetting:
     return settings
 
 
+def get_effective_cluster_id(session: Session, app_settings: Settings) -> str:
+    settings = session.get(SystemSetting, 1)
+    if settings is not None and settings.cluster_id.strip():
+        return settings.cluster_id.strip()
+    return app_settings.cluster_id.strip() or "local"
+
+
 def serialize_settings(settings: SystemSetting) -> SettingsResponse:
     policy = policy_with_builtin_required_components(settings.inspection_policy)
     return SettingsResponse(
+        cluster_id=settings.cluster_id,
         base_path=settings.base_path,
         provider_mode=settings.provider_mode,
         kubeconfig_path=settings.kubeconfig_path,
@@ -74,9 +82,11 @@ def update_settings(
     app_settings: Settings,
 ) -> SystemSetting:
     settings = get_settings(session)
-    values = payload.model_dump(exclude={"api_key", "inspection_policy"})
+    values = payload.model_dump(exclude={"api_key", "inspection_policy", "cluster_id"})
     for key, value in values.items():
         setattr(settings, key, value)
+    if payload.cluster_id is not None:
+        settings.cluster_id = payload.cluster_id
     if payload.api_key != MASKED_SECRET:
         settings.api_key = None
         settings.api_key_encrypted = (

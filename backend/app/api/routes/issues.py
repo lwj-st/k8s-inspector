@@ -13,7 +13,7 @@ from app.schemas.v1_1 import (
     IssueStatus,
     Page,
 )
-from app.services import issue_lifecycle, issue_query
+from app.services import issue_lifecycle, issue_query, settings_service
 
 
 router = APIRouter(prefix="/issues", tags=["issues"])
@@ -32,6 +32,7 @@ def list_issues(
     page_size: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_db_session),
 ) -> Page[Issue]:
+    cluster_id = settings_service.get_effective_cluster_id(session, request.app.state.settings)
     return issue_query.list_issues(
         session,
         IssueListFilter(
@@ -44,7 +45,7 @@ def list_issues(
             page=page,
             page_size=page_size,
         ),
-        cluster_id=request.app.state.settings.cluster_id,
+        cluster_id=cluster_id,
     )
 
 
@@ -53,18 +54,20 @@ def list_issue_filter_options(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> IssueFilterOptions:
+    cluster_id = settings_service.get_effective_cluster_id(session, request.app.state.settings)
     return issue_query.list_issue_filter_options(
         session,
-        cluster_id=request.app.state.settings.cluster_id,
+        cluster_id=cluster_id,
     )
 
 
 @router.get("/{issue_id}", response_model=Issue)
 def get_issue(issue_id: int, request: Request, session: Session = Depends(get_db_session)) -> Issue:
+    cluster_id = settings_service.get_effective_cluster_id(session, request.app.state.settings)
     row = issue_query.get_issue(
         session,
         issue_id,
-        cluster_id=request.app.state.settings.cluster_id,
+        cluster_id=cluster_id,
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
@@ -79,12 +82,13 @@ def list_issue_events(
     page_size: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_db_session),
 ) -> Page[IssueEvent]:
+    cluster_id = settings_service.get_effective_cluster_id(session, request.app.state.settings)
     result = issue_query.list_issue_events(
         session,
         issue_id=issue_id,
         page=page,
         page_size=page_size,
-        cluster_id=request.app.state.settings.cluster_id,
+        cluster_id=cluster_id,
     )
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
@@ -98,10 +102,11 @@ def acknowledge_issue(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> Issue:
+    cluster_id = settings_service.get_effective_cluster_id(session, request.app.state.settings)
     if issue_query.get_issue(
         session,
         issue_id,
-        cluster_id=request.app.state.settings.cluster_id,
+        cluster_id=cluster_id,
     ) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
     result = issue_lifecycle.acknowledge_issue(
@@ -120,10 +125,11 @@ def ignore_issue(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> Issue:
+    cluster_id = settings_service.get_effective_cluster_id(session, request.app.state.settings)
     if issue_query.get_issue(
         session,
         issue_id,
-        cluster_id=request.app.state.settings.cluster_id,
+        cluster_id=cluster_id,
     ) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
     result = issue_lifecycle.ignore_issue(session, issue_id=issue_id)
@@ -138,10 +144,11 @@ def unignore_issue(
     request: Request,
     session: Session = Depends(get_db_session),
 ) -> Issue:
+    cluster_id = settings_service.get_effective_cluster_id(session, request.app.state.settings)
     if issue_query.get_issue(
         session,
         issue_id,
-        cluster_id=request.app.state.settings.cluster_id,
+        cluster_id=cluster_id,
     ) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
     result = issue_lifecycle.unignore_issue(session, issue_id=issue_id)
