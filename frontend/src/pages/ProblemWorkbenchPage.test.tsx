@@ -284,14 +284,15 @@ describe("ProblemWorkbenchPage", () => {
     expect(screen.getByText("配置链路在 Service 后端处中断")).toBeInTheDocument();
     expect(screen.getAllByText("问题仍在持续")).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "查看命令" })).toBeInTheDocument();
-    expect(screen.getByText("kubectl get ingress -n 'prod' 'checkout' -o yaml")).toBeInTheDocument();
-    expect(screen.getByText("kubectl get endpointslices.discovery.k8s.io -n 'prod' 'checkout-x1' -o yaml")).toBeInTheDocument();
+    expect(screen.getByText("kubectl describe service -n 'prod' 'checkout'")).toBeInTheDocument();
+    expect(screen.getByText("kubectl get endpoints -n 'prod' 'checkout' -o wide")).toBeInTheDocument();
     expect(screen.getByText("kubectl get endpointslices.discovery.k8s.io -n 'prod' -l kubernetes.io/service-name='checkout' -o wide")).toBeInTheDocument();
-    expect(screen.getByText("kubectl logs -n 'prod' 'checkout-0' --all-containers --tail=200")).toBeInTheDocument();
+    expect(screen.queryByText("kubectl get endpointslices.discovery.k8s.io -n 'prod' 'checkout-x1' -o yaml")).not.toBeInTheDocument();
+    expect(screen.queryByText("kubectl logs -n 'prod' 'checkout-0' --all-containers --tail=200")).not.toBeInTheDocument();
 
     const copyButtons = screen.getAllByRole("button", { name: "复制命令" });
     await user.click(copyButtons[0]);
-    expect(writeText).toHaveBeenCalledWith("kubectl get ingress -n 'prod' 'checkout' -o yaml");
+    expect(writeText).toHaveBeenCalledWith("kubectl describe service -n 'prod' 'checkout'");
     expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "加载更早记录" }));

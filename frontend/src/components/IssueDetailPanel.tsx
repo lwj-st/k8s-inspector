@@ -98,29 +98,53 @@ type IssueCommand = {
   command: string;
 };
 
-function resourceCommands(resource: ResourceRef): IssueCommand[] {
+function getResourceCommand(resource: ResourceRef): IssueCommand {
   const kind = kubectlKind(resource.kind);
   const namespace = namespaceFlag(resource);
   const name = shellQuote(resource.name);
   const label = resourceLabel(resource);
-  return [
-    {
-      title: `查看 ${label}`,
-      command: `kubectl get ${kind}${namespace} ${name} -o yaml`,
-    },
-    {
-      title: `Describe ${label}`,
-      command: `kubectl describe ${kind}${namespace} ${name}`,
-    },
-  ];
+  return {
+    title: `查看 ${label}`,
+    command: `kubectl get ${kind}${namespace} ${name} -o yaml`,
+  };
 }
 
-function serviceSpecificCommands(resource: ResourceRef, facts: Record<string, unknown>): IssueCommand[] {
+function describeResourceCommand(resource: ResourceRef): IssueCommand {
+  const kind = kubectlKind(resource.kind);
+  const namespace = namespaceFlag(resource);
+  const name = shellQuote(resource.name);
+  const label = resourceLabel(resource);
+  return {
+    title: `Describe ${label}`,
+    command: `kubectl describe ${kind}${namespace} ${name}`,
+  };
+}
+
+function relatedResource(issue: Issue, kind: string) {
+  return issue.evidence
+    .flatMap((item) => item.related_resources)
+    .find((resource) => resource.kind.toLowerCase() === kind.toLowerCase());
+}
+
+function evidenceFacts(issue: Issue) {
+  return issue.evidence.map((item) => item.facts);
+}
+
+function firstFactString(issue: Issue, key: string) {
+  for (const facts of evidenceFacts(issue)) {
+    const value = facts[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function serviceEndpointCommands(resource: ResourceRef, facts: Record<string, unknown> = {}): IssueCommand[] {
   if (resource.kind.toLowerCase() !== "service" || !resource.namespace) {
     return [];
   }
   const namespace = shellQuote(resource.namespace);
-  const name = shellQuote(resource.name);
   const selector = Array.isArray(facts.selector) ? facts.selector.map(String).filter(Boolean).join(",") : "";
   return [
     {
@@ -129,7 +153,7 @@ function serviceSpecificCommands(resource: ResourceRef, facts: Record<string, un
     },
     {
       title: `查看 ${resource.name} 的 Endpoints`,
-      command: `kubectl get endpoints -n ${namespace} ${name} -o wide`,
+      command: `kubectl get endpoints -n ${namespace} ${shellQuote(resource.name)} -o wide`,
     },
     ...(selector
       ? [{
@@ -140,7 +164,7 @@ function serviceSpecificCommands(resource: ResourceRef, facts: Record<string, un
   ];
 }
 
-function podSpecificCommands(resource: ResourceRef): IssueCommand[] {
+function podDiagnosisCommands(resource: ResourceRef): IssueCommand[] {
   if (resource.kind.toLowerCase() !== "pod" || !resource.namespace) {
     return [];
   }
@@ -162,8 +186,9 @@ function podSpecificCommands(resource: ResourceRef): IssueCommand[] {
   ];
 }
 
-function ingressSpecificCommands(resource: ResourceRef, facts: Record<string, unknown>): IssueCommand[] {
-  if (resource.kind.toLowerCase() !== "ingress" || !resource.namespace) {
+function ingressDiagnosisCommands(issue: Issue): IssueCommand[] {
+  const resource = issue.resource.kind.toLowerCase() === "ingress" ? issue.resource : relatedResource(issue, "Ingress");
+  if (!resource || resource.kind.toLowerCase() !== "ingress" || !resource.namespace) {
     return [];
   }
   const namespace = shellQuote(resource.namespace);
@@ -173,7 +198,7 @@ function ingressSpecificCommands(resource: ResourceRef, facts: Record<string, un
       command: `kubectl describe ingress -n ${namespace} ${shellQuote(resource.name)}`,
     },
   ];
-  const backend = typeof facts.backend === "string" ? facts.backend : "";
+  const backend = firstFactString(issue, "backend");
   const backendService = backend.split(":", 1)[0]?.trim();
   if (backendService) {
     commands.push({
@@ -184,7 +209,7 @@ function ingressSpecificCommands(resource: ResourceRef, facts: Record<string, un
   return commands;
 }
 
-function tlsSecretCommands(resource: ResourceRef): IssueCommand[] {
+function tlsSecretDiagnosisCommands(resource: ResourceRef): IssueCommand[] {
   if (resource.kind.toLowerCase() !== "secret" || !resource.namespace) {
     return [];
   }
@@ -203,32 +228,50 @@ function tlsSecretCommands(resource: ResourceRef): IssueCommand[] {
 }
 
 function issueCommands(issue: Issue): IssueCommand[] {
-  const evidenceFacts = issue.evidence.flatMap((item) => [item.facts]);
-  const resources = [
-    issue.resource,
-    ...issue.evidence.flatMap((item) => item.related_resources),
-  ];
-  const uniqueResources = Array.from(
-    new Map(resources.map((resource) => [resourceKey(resource), resource])).values(),
-  );
-  const commands: IssueCommand[] = [
-    ...uniqueResources.flatMap(resourceCommands),
-    ...uniqueResources.flatMap((resource) => podSpecificCommands(resource)),
-    ...uniqueResources.flatMap((resource) => tlsSecretCommands(resource)),
-  ];
-  for (const facts of evidenceFacts) {
-    commands.push(...serviceSpecificCommands(issue.resource, facts));
-    commands.push(...ingressSpecificCommands(issue.resource, facts));
-    for (const resource of uniqueResources) {
-      commands.push(...serviceSpecificCommands(resource, facts));
-      commands.push(...ingressSpecificCommands(resource, facts));
+  const commands: IssueCommand[] = [];
+  const service = issue.resource.kind.toLowerCase() === "service" ? issue.resource : relatedResource(issue, "Service");
+  const pod = issue.resource.kind.toLowerCase() === "pod" ? issue.resource : relatedResource(issue, "Pod");
+
+  if (issue.issue_code.startsWith("INGRESS_")) {
+    commands.push(...ingressDiagnosisCommands(issue));
+  } else if (issue.issue_code.startsWith("TLS_")) {
+    commands.push(getResourceCommand(issue.resource), ...tlsSecretDiagnosisCommands(issue.resource));
+    const ingress = relatedResource(issue, "Ingress");
+    if (ingress) {
+      commands.push(describeResourceCommand(ingress));
     }
-  }
-  if (issue.resource.namespace) {
+  } else if (issue.issue_code.startsWith("SERVICE_") && service) {
+    commands.push(describeResourceCommand(service));
+    for (const facts of evidenceFacts(issue)) {
+      commands.push(...serviceEndpointCommands(service, facts));
+    }
+  } else if (issue.issue_code.startsWith("POD_") && pod) {
+    commands.push(describeResourceCommand(pod), ...podDiagnosisCommands(pod));
+  } else if (issue.issue_code.startsWith("PVC_") || issue.issue_code === "VOLUME_MOUNT_FAILED") {
+    commands.push(describeResourceCommand(issue.resource));
+    if (issue.resource.namespace) {
+      commands.push({
+        title: `查看 ${issue.resource.namespace} 存储 Warning 事件`,
+        command: `kubectl get events -n ${shellQuote(issue.resource.namespace)} --field-selector type=Warning --sort-by=.lastTimestamp`,
+      });
+    }
+  } else if (issue.issue_code.startsWith("PV_")) {
+    commands.push(describeResourceCommand(issue.resource));
+  } else if (issue.issue_code.startsWith("NODE_")) {
+    commands.push(describeResourceCommand(issue.resource));
     commands.push({
-      title: `查看 ${issue.resource.namespace} 最近 Warning 事件`,
-      command: `kubectl get events -n ${shellQuote(issue.resource.namespace)} --field-selector type=Warning --sort-by=.lastTimestamp`,
+      title: "查看节点资源使用",
+      command: `kubectl top node ${shellQuote(issue.resource.name)}`,
     });
+  } else if (
+    issue.issue_code.startsWith("WORKLOAD_")
+    || issue.issue_code === "JOB_FAILED"
+    || issue.issue_code === "CRONJOB_NOT_SCHEDULED"
+    || issue.issue_code === "REQUIRED_COMPONENT_MISSING"
+  ) {
+    commands.push(describeResourceCommand(issue.resource));
+  } else {
+    commands.push(describeResourceCommand(issue.resource));
   }
   return Array.from(
     new Map(commands.map((command) => [commandKey(command), command])).values(),
