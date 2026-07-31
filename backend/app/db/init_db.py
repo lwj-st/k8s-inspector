@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.session import build_engine
 from app.models import SystemSetting
-from app.schemas.v1_1 import InspectionPolicySettings
+from app.schemas.v1_1 import InspectionPolicySettings, default_required_components
 from app.security.crypto import SensitiveValueCipher
 from app.services.keyword_service import ensure_default_keywords
 
@@ -34,7 +34,9 @@ def initialize_database(settings: Settings) -> None:
                         api_key=None,
                         api_key_encrypted=encrypted_api_key,
                         default_inspection_strategy={},
-                        inspection_policy=InspectionPolicySettings().model_dump(mode="json"),
+                        inspection_policy=InspectionPolicySettings(
+                            required_components=default_required_components(),
+                        ).model_dump(mode="json"),
                     )
                 )
                 session.commit()

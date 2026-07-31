@@ -272,6 +272,14 @@ export type RequiredComponentPolicy = {
   enabled: boolean;
 };
 
+export type RequiredComponentCandidate = RequiredComponentPolicy & {
+  source: "builtin" | "discovered";
+};
+
+export type RequiredComponentCandidateResponse = {
+  items: RequiredComponentCandidate[];
+};
+
 export type InspectionThresholds = {
   tls_warning_days: number;
   tls_critical_days: number;

@@ -18,6 +18,7 @@ from app.schemas.v1_1 import (
 from app.services import discovery_service
 from app.services.inspection_run_service import execute_inspection
 from app.services.issue_query import issue_from_model
+from app.services.settings_service import policy_with_builtin_required_components
 from app.services.payload_sanitizer import (
     sanitize_persistence_payload as _shared_sanitize_persistence_payload,
     sanitize_public_payload,
@@ -470,7 +471,9 @@ def _estimate_namespace_log_pods(
 def _load_inspection_policy(session: Session) -> InspectionPolicySettings:
     settings = session.get(SystemSetting, 1)
     return InspectionPolicySettings.model_validate(
-        settings.inspection_policy if settings and settings.inspection_policy else {}
+        policy_with_builtin_required_components(
+            settings.inspection_policy if settings else None,
+        )
     )
 
 

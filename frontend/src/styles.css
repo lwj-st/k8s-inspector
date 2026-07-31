@@ -749,6 +749,108 @@ a {
   font-size: 12px !important;
 }
 
+.issue-workbench-table {
+  table-layout: fixed;
+  min-width: 1280px;
+}
+
+.issue-workbench-table th,
+.issue-workbench-table td {
+  overflow: hidden;
+}
+
+.issue-workbench-table .status-badge,
+.issue-workbench-table .text-link {
+  white-space: nowrap;
+}
+
+.issue-col-severity {
+  width: 78px;
+}
+
+.issue-col-summary {
+  width: 33%;
+}
+
+.issue-col-resource {
+  width: 260px;
+}
+
+.issue-col-namespace {
+  width: 110px;
+}
+
+.issue-col-source {
+  width: 108px;
+}
+
+.issue-col-status {
+  width: 78px;
+}
+
+.issue-col-duration {
+  width: 82px;
+}
+
+.issue-col-last-seen {
+  width: 128px;
+}
+
+.issue-col-ack {
+  width: 76px;
+}
+
+.issue-col-action {
+  width: 76px;
+}
+
+.issue-table-copy-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.issue-table-copy-cell-wrap {
+  align-items: start;
+}
+
+.issue-table-ellipsis-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issue-table-wrap-text {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.issue-table-copy-button {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.issue-workbench-table tr:hover .issue-table-copy-button,
+.issue-table-copy-button:focus-visible {
+  opacity: 1;
+}
+
+.issue-cell-badge,
+.issue-cell-actions {
+  white-space: nowrap;
+}
+
+@media (hover: none) {
+  .issue-table-copy-button {
+    opacity: 1;
+  }
+}
+
 .mini-button {
   min-height: 30px !important;
   padding: 5px 10px !important;
@@ -2385,6 +2487,21 @@ summary:focus-visible {
   margin: 0;
   color: #8c1d18;
   font-weight: 700;
+}
+
+.candidate-preview {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--navy);
+  font-size: 13px;
+}
+
+.candidate-preview code {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .break-all,

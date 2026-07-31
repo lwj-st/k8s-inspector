@@ -75,6 +75,28 @@ function baseFetch(
     const handled = await extra(url, init);
     if (handled) return handled;
     if (url.includes("/settings") && (!init?.method || init.method === "GET")) {
+      if (url.includes("/settings/required-component-candidates")) {
+        return new Response(JSON.stringify({
+          items: [
+            {
+              name: "入口控制器",
+              namespace: "ingress-nginx",
+              kind: "DaemonSet",
+              label_selector: "app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller",
+              enabled: true,
+              source: "builtin",
+            },
+            {
+              name: "demo-api",
+              namespace: "demo",
+              kind: "Deployment",
+              label_selector: "app=demo-api",
+              enabled: true,
+              source: "discovered",
+            },
+          ],
+        }), { status: 200 });
+      }
       return new Response(JSON.stringify(settings), { status: 200 });
     }
     if (url.includes("/system/status")) {
@@ -449,11 +471,12 @@ describe("SettingsPage", () => {
 
     render(<MemoryRouter initialEntries={["/settings?tab=policy"]}><SettingsPage /></MemoryRouter>);
 
-    await user.type(await screen.findByLabelText("显示名称"), "入口控制器");
-    await user.type(screen.getByLabelText("名称空间"), "ingress-nginx");
-    await user.clear(screen.getByLabelText("Kind"));
-    await user.type(screen.getByLabelText("Kind"), "Deployment");
-    await user.type(screen.getByLabelText("Label Selector"), "app.kubernetes.io/component=controller");
+    await user.selectOptions(
+      await screen.findByLabelText("选择组件"),
+      "ingress-nginx|daemonset|app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller",
+    );
+    expect(screen.getByLabelText("已选择组件定位")).toHaveTextContent("ingress-nginx");
+    expect(screen.getByLabelText("已选择组件定位")).toHaveTextContent("DaemonSet");
     await user.click(screen.getByRole("button", { name: "加入策略" }));
     expect(screen.getByText("入口控制器")).toBeInTheDocument();
 

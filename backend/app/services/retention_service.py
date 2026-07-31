@@ -17,6 +17,7 @@ from app.models import (
 )
 from app.models.v1_1 import inspection_run_issues
 from app.schemas.v1_1 import InspectionPolicySettings
+from app.services.settings_service import policy_with_builtin_required_components
 
 
 def cleanup_expired_data(
@@ -118,6 +119,6 @@ def cleanup_expired_data(
 
 def _policy(session: Session) -> InspectionPolicySettings:
     settings = session.get(SystemSetting, 1)
-    if settings is None or not settings.inspection_policy:
-        return InspectionPolicySettings()
-    return InspectionPolicySettings.model_validate(settings.inspection_policy)
+    return InspectionPolicySettings.model_validate(
+        policy_with_builtin_required_components(settings.inspection_policy if settings else None)
+    )

@@ -35,6 +35,7 @@ import type {
   NotificationChannelCreate,
   NotificationChannelUpdate,
   NotificationTestResponse,
+  RequiredComponentCandidateResponse,
   SettingsUpdate,
   SystemStatus,
 } from "./types";
@@ -656,6 +657,10 @@ export function disableWhitelist(whitelistId: number): Promise<Whitelist> {
 
 export function getSettings(): Promise<SettingsResponse> {
   return request("/settings");
+}
+
+export function listRequiredComponentCandidates(): Promise<RequiredComponentCandidateResponse> {
+  return request("/settings/required-component-candidates");
 }
 
 export function updateSettings(payload: SettingsUpdate): Promise<SettingsResponse> {

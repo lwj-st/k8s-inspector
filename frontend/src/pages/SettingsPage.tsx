@@ -10,6 +10,7 @@ import {
   getInspectionRun,
   getSettings,
   getSystemStatus,
+  listRequiredComponentCandidates,
   listInspectionPlans,
   listNotificationChannels,
   runInspectionPlan,
@@ -28,6 +29,7 @@ import type {
   NotificationChannel,
   NotificationChannelCreate,
   NotificationChannelType,
+  RequiredComponentCandidate,
   RequiredComponentPolicy,
   SettingsResponse,
   SystemComponentStatus,
@@ -56,6 +58,14 @@ const intervalLabels: Record<InspectionPlanCreate["schedule"]["interval"], strin
   "60m": "每 60 分钟",
   daily: "每日",
 };
+
+function requiredComponentKey(component: RequiredComponentPolicy) {
+  return `${component.namespace}|${component.kind.toLowerCase()}|${component.label_selector}`;
+}
+
+function requiredComponentLabel(component: RequiredComponentPolicy) {
+  return `${component.name}（${component.namespace} · ${component.kind} · ${component.label_selector}）`;
+}
 
 const thresholdFields: Array<{
   key: keyof InspectionThresholds;
@@ -176,6 +186,10 @@ export function SettingsPage() {
   const [channelEditingId, setChannelEditingId] = useState<number | null>(null);
   const [channelDraft, setChannelDraft] = useState<NotificationChannelCreate>(emptyChannelDraft);
   const [clearSigningSecret, setClearSigningSecret] = useState(false);
+  const [componentCandidates, setComponentCandidates] = useState<RequiredComponentCandidate[]>([]);
+  const [componentCandidateLoading, setComponentCandidateLoading] = useState(false);
+  const [componentCandidateError, setComponentCandidateError] = useState<string | null>(null);
+  const [selectedComponentKey, setSelectedComponentKey] = useState("");
   const [componentDraft, setComponentDraft] = useState<RequiredComponentPolicy>({
     name: "",
     namespace: "",
@@ -221,6 +235,34 @@ export function SettingsPage() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (activeTab !== "policy") {
+      return;
+    }
+    let cancelled = false;
+    setComponentCandidateLoading(true);
+    setComponentCandidateError(null);
+    void listRequiredComponentCandidates()
+      .then((result) => {
+        if (!cancelled) {
+          setComponentCandidates(result.items);
+        }
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setComponentCandidateError(readableError(reason));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setComponentCandidateLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab]);
 
   const activePlanRuns = Object.entries(visiblePlanRuns).filter(([, run]) =>
     run.status === "queued" || run.status === "running");
@@ -461,6 +503,23 @@ export function SettingsPage() {
     setChannelDraft((current) => ({ ...current, mention_all_on_critical: enabled }));
   }
 
+  function selectRequiredComponent(value: string) {
+    setSelectedComponentKey(value);
+    const selected = componentCandidates.find((item) => requiredComponentKey(item) === value);
+    if (!selected) {
+      setComponentDraft({ name: "", namespace: "", kind: "Deployment", label_selector: "", enabled: true });
+      return;
+    }
+    setComponentDraft({
+      name: selected.name,
+      namespace: selected.namespace,
+      kind: selected.kind,
+      label_selector: selected.label_selector,
+      enabled: true,
+    });
+    setActionError(null);
+  }
+
   async function toggleChannel(channel: NotificationChannel) {
     try {
       await perform(async () => {
@@ -543,6 +602,7 @@ export function SettingsPage() {
       },
     });
     setComponentDraft({ name: "", namespace: "", kind: "Deployment", label_selector: "", enabled: true });
+    setSelectedComponentKey("");
     setActionError(null);
   }
 
@@ -901,11 +961,36 @@ export function SettingsPage() {
             )}
             <form className="management-form compact-add-form" onSubmit={addRequiredComponent}>
               <h3>添加必需组件</h3>
-              <label>显示名称<input value={componentDraft.name} onChange={(event) => setComponentDraft({ ...componentDraft, name: event.target.value })} /></label>
-              <label>名称空间<input value={componentDraft.namespace} onChange={(event) => setComponentDraft({ ...componentDraft, namespace: event.target.value })} /></label>
-              <label>Kind<input value={componentDraft.kind} onChange={(event) => setComponentDraft({ ...componentDraft, kind: event.target.value })} /></label>
-              <label>Label Selector<input value={componentDraft.label_selector} onChange={(event) => setComponentDraft({ ...componentDraft, label_selector: event.target.value })} placeholder="app.kubernetes.io/name=controller" /></label>
-              <button type="submit">加入策略</button>
+              <label>
+                选择组件
+                <select
+                  value={selectedComponentKey}
+                  onChange={(event) => selectRequiredComponent(event.target.value)}
+                  disabled={componentCandidateLoading || componentCandidates.length === 0}
+                >
+                  <option value="">{componentCandidateLoading ? "正在发现组件…" : "请选择组件"}</option>
+                  {componentCandidates.map((candidate) => {
+                    const key = requiredComponentKey(candidate);
+                    const exists = settings.inspection_policy.required_components.some((component) =>
+                      requiredComponentKey(component) === key);
+                    return (
+                      <option key={`${candidate.source}-${key}`} value={key} disabled={exists}>
+                        {candidate.source === "builtin" ? "内置：" : "发现："}{requiredComponentLabel(candidate)}{exists ? "（已加入）" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              {componentCandidateError ? <p className="field-error">组件候选读取失败：{componentCandidateError}</p> : null}
+              {componentDraft.name ? (
+                <div className="candidate-preview" aria-label="已选择组件定位">
+                  <span>显示名称：{componentDraft.name}</span>
+                  <span>名称空间：{componentDraft.namespace}</span>
+                  <span>Kind：{componentDraft.kind}</span>
+                  <code>{componentDraft.label_selector}</code>
+                </div>
+              ) : null}
+              <button type="submit" disabled={!selectedComponentKey}>加入策略</button>
             </form>
           </section>
           <section className="panel">

@@ -83,6 +83,40 @@ function selectableOptions(options: IssueFilterOption[], selected: string) {
   return [{ value: selected, label: selected }, ...options];
 }
 
+type IssueTableTextCellProps = {
+  value: string;
+  wrap?: boolean;
+};
+
+function IssueTableTextCell({ value, wrap = false }: IssueTableTextCellProps) {
+  const [copied, setCopied] = useState(false);
+
+  const copyValue = useCallback(async () => {
+    await navigator.clipboard?.writeText(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }, [value]);
+
+  return (
+    <div
+      className={`issue-table-copy-cell${wrap ? " issue-table-copy-cell-wrap" : ""}`}
+      title={value}
+    >
+      <span className={wrap ? "issue-table-wrap-text" : "issue-table-ellipsis-text"}>
+        {value}
+      </span>
+      <button
+        type="button"
+        className="copy-button issue-table-copy-button"
+        aria-label={`复制 ${value}`}
+        onClick={() => void copyValue()}
+      >
+        {copied ? "已复制" : "复制"}
+      </button>
+    </div>
+  );
+}
+
 type SummaryState = {
   open: number | null;
   critical: number | null;
@@ -385,7 +419,19 @@ export function ProblemWorkbenchPage() {
         {issues && issues.items.length > 0 ? (
           <>
             <div className="responsive-table-shell issue-desktop-table">
-              <table className="compact-table">
+              <table className="compact-table issue-workbench-table">
+                <colgroup>
+                  <col className="issue-col-severity" />
+                  <col className="issue-col-summary" />
+                  <col className="issue-col-resource" />
+                  <col className="issue-col-namespace" />
+                  <col className="issue-col-source" />
+                  <col className="issue-col-status" />
+                  <col className="issue-col-duration" />
+                  <col className="issue-col-last-seen" />
+                  <col className="issue-col-ack" />
+                  <col className="issue-col-action" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>严重程度</th>
@@ -403,16 +449,16 @@ export function ProblemWorkbenchPage() {
                 <tbody>
                   {issues.items.map((issue) => (
                     <tr key={issue.id}>
-                      <td><StatusBadge status={issue.severity} /></td>
-                      <td>{issue.summary}</td>
-                      <td>{resourceLabel(issue)}</td>
-                      <td>{issue.resource.namespace ?? "集群级"}</td>
-                      <td>{sourceCheckLabels.get(issue.source_check) ?? issue.source_check}</td>
-                      <td><StatusBadge status={issue.status} /></td>
-                      <td>{durationLabel(issue)}</td>
-                      <td>{displayTime(issue.last_seen_at)}</td>
-                      <td>{issue.acknowledged_at ? "已确认" : "未确认"}</td>
-                      <td>
+                      <td className="issue-cell-badge"><StatusBadge status={issue.severity} /></td>
+                      <td className="issue-cell-summary"><IssueTableTextCell value={issue.summary} wrap /></td>
+                      <td><IssueTableTextCell value={resourceLabel(issue)} /></td>
+                      <td><IssueTableTextCell value={issue.resource.namespace ?? "集群级"} /></td>
+                      <td><IssueTableTextCell value={sourceCheckLabels.get(issue.source_check) ?? issue.source_check} /></td>
+                      <td className="issue-cell-badge"><StatusBadge status={issue.status} /></td>
+                      <td><IssueTableTextCell value={durationLabel(issue)} /></td>
+                      <td><IssueTableTextCell value={displayTime(issue.last_seen_at)} /></td>
+                      <td><IssueTableTextCell value={issue.acknowledged_at ? "已确认" : "未确认"} /></td>
+                      <td className="issue-cell-actions">
                         <Link
                           to={`/issues/${issue.id}`}
                           state={{ from: `${location.pathname}${location.search}` }}

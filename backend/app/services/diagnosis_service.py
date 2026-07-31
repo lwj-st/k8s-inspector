@@ -15,6 +15,7 @@ from app.services.payload_sanitizer import (
     sanitize_persistence_payload,
     sanitize_public_payload,
 )
+from app.services.settings_service import policy_with_builtin_required_components
 
 
 @dataclass
@@ -140,7 +141,7 @@ def _build_result_summary(matched: bool, matched_conditions: list[dict], unmatch
 def _collection_limits(session: Session) -> CollectionLimits:
     settings = session.get(SystemSetting, 1)
     policy = InspectionPolicySettings.model_validate(
-        settings.inspection_policy if settings and settings.inspection_policy else {}
+        policy_with_builtin_required_components(settings.inspection_policy if settings else None)
     )
     return CollectionLimits(
         max_log_pods=policy.max_log_pods,

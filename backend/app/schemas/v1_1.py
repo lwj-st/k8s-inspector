@@ -399,6 +399,71 @@ class RequiredComponentPolicy(ContractModel):
     enabled: bool = True
 
 
+def default_required_components() -> list[RequiredComponentPolicy]:
+    return [
+        RequiredComponentPolicy(
+            name="Calico Node",
+            namespace="kube-system",
+            kind="DaemonSet",
+            label_selector="k8s-app=calico-node",
+        ),
+        RequiredComponentPolicy(
+            name="Calico Controllers",
+            namespace="kube-system",
+            kind="Deployment",
+            label_selector="k8s-app=calico-kube-controllers",
+        ),
+        RequiredComponentPolicy(
+            name="CoreDNS",
+            namespace="kube-system",
+            kind="Deployment",
+            label_selector="k8s-app=kube-dns",
+        ),
+        RequiredComponentPolicy(
+            name="etcd",
+            namespace="kube-system",
+            kind="Pod",
+            label_selector="component=etcd",
+        ),
+        RequiredComponentPolicy(
+            name="Kube APIServer",
+            namespace="kube-system",
+            kind="Pod",
+            label_selector="component=kube-apiserver",
+        ),
+        RequiredComponentPolicy(
+            name="Kube Controller Manager",
+            namespace="kube-system",
+            kind="Pod",
+            label_selector="component=kube-controller-manager",
+        ),
+        RequiredComponentPolicy(
+            name="Kube Scheduler",
+            namespace="kube-system",
+            kind="Pod",
+            label_selector="component=kube-scheduler",
+        ),
+        RequiredComponentPolicy(
+            name="Kube Proxy",
+            namespace="kube-system",
+            kind="DaemonSet",
+            label_selector="k8s-app=kube-proxy",
+        ),
+        RequiredComponentPolicy(
+            name="Metrics Server",
+            namespace="kube-system",
+            kind="Deployment",
+            label_selector="k8s-app=metrics-server",
+        ),
+        RequiredComponentPolicy(
+            name="Ingress NGINX Controller",
+            namespace="ingress-nginx",
+            kind="DaemonSet",
+            label_selector="app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller",
+        ),
+    ]
+
+
 class InspectionThresholds(ContractModel):
     model_config = ConfigDict(frozen=True)
 

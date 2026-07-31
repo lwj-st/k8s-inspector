@@ -42,6 +42,7 @@ from app.schemas.diagnosis import DiagnosisRequest
 from app.security.component_status import ComponentStatusRegistry
 from app.services.issue_lifecycle import LifecycleResult, apply_evaluations
 from app.services.resource_inspection import evaluate_resource_collection
+from app.services.settings_service import policy_with_builtin_required_components
 from app.services import diagnosis_service
 from app.services.payload_sanitizer import sanitize_public_payload
 
@@ -361,9 +362,9 @@ def _collect_status(
 
 def _load_policy_snapshot(session: Session) -> InspectionPolicySettings:
     row = session.get(SystemSetting, 1)
-    if row is None or not row.inspection_policy:
-        return InspectionPolicySettings()
-    return InspectionPolicySettings.model_validate(row.inspection_policy)
+    return InspectionPolicySettings.model_validate(
+        policy_with_builtin_required_components(row.inspection_policy if row else None)
+    )
 
 
 def _enrich_metric_state(

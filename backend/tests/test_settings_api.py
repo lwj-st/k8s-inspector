@@ -26,6 +26,40 @@ def test_get_settings_returns_base_path_field(client) -> None:
     assert response.json()["base_path"] == ""
     assert response.json()["provider_mode"] == "mock"
     assert response.json()["inspection_policy"]["max_log_pods"] == 200
+    required_components = response.json()["inspection_policy"]["required_components"]
+    assert any(
+        item["namespace"] == "kube-system"
+        and item["kind"] == "Deployment"
+        and item["label_selector"] == "k8s-app=kube-dns"
+        for item in required_components
+    )
+    assert any(
+        item["namespace"] == "ingress-nginx"
+        and item["kind"] == "DaemonSet"
+        and item["label_selector"] == "app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller"
+        for item in required_components
+    )
+
+
+def test_required_component_candidates_include_builtin_and_discovered(client) -> None:
+    response = client.get("/api/v1/settings/required-component-candidates")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert any(
+        item["source"] == "builtin"
+        and item["name"] == "CoreDNS"
+        and item["label_selector"] == "k8s-app=kube-dns"
+        for item in items
+    )
+    assert any(
+        item["source"] == "discovered"
+        and item["name"] == "demo-api"
+        and item["namespace"] == "demo"
+        and item["kind"] == "Deployment"
+        and item["label_selector"] == "app=demo-api"
+        for item in items
+    )
 
 
 def test_update_settings_persists_values(client) -> None:

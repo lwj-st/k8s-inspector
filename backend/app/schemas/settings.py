@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.schemas.v1_1 import InspectionPolicySettings
+from app.schemas.v1_1 import InspectionPolicySettings, RequiredComponentPolicy
 
 
 class SettingsResponse(BaseModel):
@@ -43,3 +43,11 @@ class SystemStatusResponse(BaseModel):
     message: str
     provider_mode: str
     kube_context: str | None = None
+
+
+class RequiredComponentCandidate(RequiredComponentPolicy):
+    source: str = "discovered"
+
+
+class RequiredComponentCandidateResponse(BaseModel):
+    items: list[RequiredComponentCandidate]
