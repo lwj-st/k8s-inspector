@@ -10,6 +10,7 @@ from app.schemas.v1_1 import ComponentState, ReadyHealthResponse, SystemComponen
 
 
 def readiness_reasons(app) -> list[str]:
+    settings = app.state.settings
     reasons = list(_security_configuration_errors(app))
     if app.state.platform_initialization_error:
         reasons.append(app.state.platform_initialization_error)

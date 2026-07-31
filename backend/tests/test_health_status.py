@@ -54,6 +54,21 @@ def test_production_missing_security_configuration_is_not_ready(tmp_path: Path) 
         assert any("鉴权" in reason for reason in result.json()["reasons"])
 
 
+def test_ready_succeeds_after_platform_initialization(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(
+            app_env="test",
+            database_url=f"sqlite:///{tmp_path / 'ready.db'}",
+            encryption_key=TEST_KEY,
+        )
+    )
+    with TestClient(app) as client:
+        result = client.get("/health/ready")
+        assert result.status_code == 200
+        assert result.json()["ready"] is True
+        assert result.json()["reasons"] == []
+
+
 def test_lifespan_hook_failure_cleans_started_hooks_and_blocks_readiness(
     tmp_path: Path,
 ) -> None:
