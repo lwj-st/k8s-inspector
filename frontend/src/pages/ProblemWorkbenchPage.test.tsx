@@ -64,11 +64,6 @@ describe("ProblemWorkbenchPage", () => {
 
   it("keeps server priority order and shows abnormal, skipped, failed and partial states", async () => {
     const requestedUrls: string[] = [];
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
     const criticalIssue = issue();
     const warningIssue = issue({
       id: 2,
@@ -77,6 +72,7 @@ describe("ProblemWorkbenchPage", () => {
       severity: "warning",
       resource: { kind: "Pod", namespace: "prod", name: "worker-0" },
       summary: "Worker 重启次数突增",
+      acknowledged_at: "2026-07-26T10:10:00Z",
     });
     const recoveredIssue = issue({
       id: 3,
@@ -153,14 +149,15 @@ describe("ProblemWorkbenchPage", () => {
     const rows = within(table).getAllByRole("row");
     expect(rows[1]).toHaveTextContent("结算入口没有可用后端");
     expect(rows[2]).toHaveTextContent("Worker 重启次数突增");
-    const summaryCell = within(table).getByText("结算入口没有可用后端").closest(".issue-table-copy-cell");
-    expect(summaryCell).toHaveClass("issue-table-copy-cell-wrap");
+    const summaryCell = within(table).getByText("结算入口没有可用后端").closest(".issue-table-text-cell");
+    expect(summaryCell).toHaveClass("issue-table-text-cell-wrap");
     expect(summaryCell).toHaveAttribute("title", "结算入口没有可用后端");
-    const resourceCell = within(table).getByText("Ingress/checkout").closest(".issue-table-copy-cell");
-    expect(resourceCell).not.toHaveClass("issue-table-copy-cell-wrap");
+    const resourceCell = within(table).getByText("Ingress/checkout").closest(".issue-table-text-cell");
+    expect(resourceCell).not.toHaveClass("issue-table-text-cell-wrap");
     expect(resourceCell).toHaveAttribute("title", "Ingress/checkout");
-    await userEvent.click(within(resourceCell as HTMLElement).getByRole("button", { name: "复制 Ingress/checkout" }));
-    expect(writeText).toHaveBeenCalledWith("Ingress/checkout");
+    expect(within(table).queryByRole("button", { name: /复制/ })).not.toBeInTheDocument();
+    expect(within(table).getByText("未确认")).toHaveClass("issue-ack-badge-pending");
+    expect(within(table).getByText("已确认")).toHaveClass("issue-ack-badge-confirmed");
     expect(screen.getByText("最近巡检未完全覆盖")).toBeInTheDocument();
     expect(screen.getByText("资源指标").closest(".coverage-row")).toHaveClass("coverage-skipped");
     expect(screen.getByText("存储检查").closest(".coverage-row")).toHaveClass("coverage-failed");

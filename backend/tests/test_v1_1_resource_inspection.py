@@ -526,6 +526,68 @@ def test_required_component_supports_kubernetes_set_and_exists_selectors() -> No
     assert result.coverage.status == CheckStatus.passed
 
 
+def test_required_component_matches_pod_level_control_plane_components() -> None:
+    policy = InspectionPolicySettings(
+        required_components=[
+            RequiredComponentPolicy(
+                name="etcd",
+                namespace="kube-system",
+                kind="Pod",
+                label_selector="component=etcd",
+            )
+        ]
+    )
+    result = by_code(
+        evaluate(
+            [
+                observation(
+                    "Pod",
+                    "etcd-real-144",
+                    namespace="kube-system",
+                    state="Running",
+                    facts={"labels": ["component=etcd", "tier=control-plane"]},
+                )
+            ],
+            policy=policy,
+        ),
+        "required_components",
+    )
+
+    assert result.coverage.status == CheckStatus.passed
+    assert result.issue_candidates == []
+
+
+def test_required_component_collection_failure_does_not_create_missing_issue() -> None:
+    policy = InspectionPolicySettings(
+        required_components=[
+            RequiredComponentPolicy(
+                name="CoreDNS",
+                namespace="kube-system",
+                kind="Deployment",
+                label_selector="k8s-app=kube-dns",
+            )
+        ]
+    )
+    result = by_code(
+        evaluate(
+            [],
+            failures=[
+                ProviderCollectionFailure(
+                    check_code="workload.status",
+                    error_code="KUBERNETES_API_FORBIDDEN",
+                    message="deployments.apps is forbidden",
+                    resource=ResourceRef(kind="Namespace", name="kube-system"),
+                )
+            ],
+            policy=policy,
+        ),
+        "required_components",
+    )
+
+    assert result.coverage.status == CheckStatus.failed
+    assert result.issue_candidates == []
+
+
 def test_mock_provider_exposes_passed_abnormal_skipped_and_failed_states() -> None:
     provider = MockInspectionProvider()
     request = ProviderCollectionRequest(

@@ -89,30 +89,14 @@ type IssueTableTextCellProps = {
 };
 
 function IssueTableTextCell({ value, wrap = false }: IssueTableTextCellProps) {
-  const [copied, setCopied] = useState(false);
-
-  const copyValue = useCallback(async () => {
-    await navigator.clipboard?.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  }, [value]);
-
   return (
     <div
-      className={`issue-table-copy-cell${wrap ? " issue-table-copy-cell-wrap" : ""}`}
+      className={`issue-table-text-cell${wrap ? " issue-table-text-cell-wrap" : ""}`}
       title={value}
     >
       <span className={wrap ? "issue-table-wrap-text" : "issue-table-ellipsis-text"}>
         {value}
       </span>
-      <button
-        type="button"
-        className="copy-button issue-table-copy-button"
-        aria-label={`复制 ${value}`}
-        onClick={() => void copyValue()}
-      >
-        {copied ? "已复制" : "复制"}
-      </button>
     </div>
   );
 }
@@ -457,7 +441,11 @@ export function ProblemWorkbenchPage() {
                       <td className="issue-cell-badge"><StatusBadge status={issue.status} /></td>
                       <td><IssueTableTextCell value={durationLabel(issue)} /></td>
                       <td><IssueTableTextCell value={displayTime(issue.last_seen_at)} /></td>
-                      <td><IssueTableTextCell value={issue.acknowledged_at ? "已确认" : "未确认"} /></td>
+                      <td className="issue-cell-ack">
+                        <span className={`issue-ack-badge ${issue.acknowledged_at ? "issue-ack-badge-confirmed" : "issue-ack-badge-pending"}`}>
+                          {issue.acknowledged_at ? "已确认" : "未确认"}
+                        </span>
+                      </td>
                       <td className="issue-cell-actions">
                         <Link
                           to={`/issues/${issue.id}`}

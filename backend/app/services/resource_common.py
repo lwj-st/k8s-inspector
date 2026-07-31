@@ -36,6 +36,7 @@ CHECK_NAMES = {
 }
 
 WORKLOAD_KINDS = {"deployment", "statefulset", "daemonset", "job", "cronjob"}
+REQUIRED_COMPONENT_KINDS = WORKLOAD_KINDS | {"pod", "service"}
 METRIC_KINDS = {"podmetric", "nodemetric"}
 
 

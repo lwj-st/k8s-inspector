@@ -13,6 +13,7 @@ from app.schemas.v1_1 import (
 )
 from app.services.resource_common import (
     METRIC_KINDS,
+    REQUIRED_COMPONENT_KINDS,
     WORKLOAD_KINDS,
     evaluation,
     failures_for,
@@ -31,6 +32,41 @@ from app.services.resource_workloads import (
     required_component_candidates,
     workload_candidates,
 )
+
+REQUIRED_COMPONENT_COLLECTION_CHECKS = {
+    "deployment": "workload.status",
+    "statefulset": "workload.status",
+    "daemonset": "workload.status",
+    "job": "workload.status",
+    "cronjob": "workload.status",
+    "pod": "pod.runtime",
+    "service": "service.endpoints",
+}
+
+
+def _required_component_failures(result: ProviderCollectionResult, policy: InspectionPolicySettings):
+    required_namespaces = {item.namespace for item in policy.required_components if item.enabled}
+    required_checks = {
+        REQUIRED_COMPONENT_COLLECTION_CHECKS.get(item.kind.casefold())
+        for item in policy.required_components
+        if item.enabled
+    }
+    required_checks.discard(None)
+    failures = failures_for(result, "required_components")
+    failures.extend(
+        failure
+        for failure in result.failures
+        if failure.check_code in required_checks
+        and failure.resource
+        and (
+            failure.resource.namespace in required_namespaces
+            or (
+                failure.resource.kind.casefold() == "namespace"
+                and failure.resource.name in required_namespaces
+            )
+        )
+    )
+    return failures
 
 
 def evaluate_resource_collection(
@@ -157,7 +193,7 @@ def evaluate_resource_collection(
                 [
                     item
                     for item in result.observations
-                    if kind(item) in WORKLOAD_KINDS
+                    if kind(item) in REQUIRED_COMPONENT_KINDS
                 ],
                 policy,
                 observed_at,
@@ -168,7 +204,7 @@ def evaluate_resource_collection(
                 checked_objects=len(policy.required_components),
                 candidates=required_issues,
                 duration_ms=result.duration_ms,
-                failures=failures_for(result, "required_components"),
+                failures=_required_component_failures(result, policy),
                 skipped_reason=(
                     None
                     if any(
@@ -215,8 +251,11 @@ def evaluate_resource_collection(
     workload_items = [
         item for item in result.observations if kind(item) in WORKLOAD_KINDS
     ]
+    required_component_items = [
+        item for item in result.observations if kind(item) in REQUIRED_COMPONENT_KINDS
+    ]
     required_issues = required_component_candidates(
-        workload_items,
+        required_component_items,
         policy,
         observed_at,
     )
@@ -227,7 +266,7 @@ def evaluate_resource_collection(
             checked_objects=len(policy.required_components),
             candidates=required_issues,
             duration_ms=duration,
-            failures=failures_for(result, "required_components"),
+            failures=_required_component_failures(result, policy),
             skipped_reason=(
                 None
                 if any(item.enabled for item in policy.required_components)
