@@ -282,7 +282,12 @@ export function ProblemWorkbenchPage() {
         </div>
         <div className="status-pair">
           {summary.latestRun ? <StatusBadge status={summary.latestRun.status} /> : null}
-          <button type="button" onClick={refreshWorkbench} disabled={issuesLoading || summary.loading}>
+          <button
+            type="button"
+            className="workbench-refresh-button"
+            onClick={refreshWorkbench}
+            disabled={issuesLoading || summary.loading}
+          >
             刷新
           </button>
         </div>
@@ -309,16 +314,6 @@ export function ProblemWorkbenchPage() {
           </button>
         ))}
       </section>
-
-      {summary.latestRun?.status === "partial" || summary.latestRun?.status === "failed" || hasIncompleteCoverage ? (
-        <div className="feedback-banner feedback-warning incomplete-banner" role="status">
-          <div>
-            <strong>最近巡检未完全覆盖</strong>
-            <p>请查看跳过和检查失败项；当前不能确认全部正常。</p>
-          </div>
-          <a href="#latest-coverage">查看检查覆盖</a>
-        </div>
-      ) : null}
 
       <section className="panel issue-list-panel" aria-labelledby="issue-list-title">
         <div className="section-header">

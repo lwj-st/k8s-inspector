@@ -168,7 +168,7 @@ describe("ProblemWorkbenchPage", () => {
     expect(within(table).queryByRole("button", { name: /复制/ })).not.toBeInTheDocument();
     expect(within(table).getByText("未确认")).toHaveClass("issue-ack-badge-pending");
     expect(within(table).getByText("已确认")).toHaveClass("issue-ack-badge-confirmed");
-    expect(screen.getByText("最近巡检未完全覆盖")).toBeInTheDocument();
+    expect(screen.queryByText("最近巡检未完全覆盖")).not.toBeInTheDocument();
     expect(screen.getByText("资源指标").closest(".coverage-row")).toHaveClass("coverage-skipped");
     expect(screen.getByText("存储检查").closest(".coverage-row")).toHaveClass("coverage-failed");
     expect(screen.getAllByText("部分完成").length).toBeGreaterThan(0);
