@@ -82,6 +82,13 @@ describe("ProblemWorkbenchPage", () => {
       summary: "结算入口已恢复",
       recovered_at: "2026-07-26T10:05:00Z",
     });
+    const ignoredIssue = issue({
+      id: 4,
+      fingerprint: "d".repeat(64),
+      status: "ignored",
+      severity: "warning",
+      summary: "临时忽略的证书问题",
+    });
 
     fetchMock.mockImplementation(async (input: string | URL | Request) => {
       const url = String(input);
@@ -105,6 +112,9 @@ describe("ProblemWorkbenchPage", () => {
         }
         if (query.get("status") === "recovered") {
           return new Response(JSON.stringify(page([recoveredIssue], 1)), { status: 200 });
+        }
+        if (query.get("status") === "ignored") {
+          return new Response(JSON.stringify(page([ignoredIssue], 1)), { status: 200 });
         }
         return new Response(JSON.stringify(page([criticalIssue, warningIssue], 2)), { status: 200 });
       }
@@ -185,6 +195,11 @@ describe("ProblemWorkbenchPage", () => {
     await userEvent.selectOptions(screen.getByLabelText("状态"), "recovered");
     expect(await screen.findAllByText("结算入口已恢复")).toHaveLength(2);
     expect(screen.getAllByText("已恢复").length).toBeGreaterThan(0);
+
+    await userEvent.selectOptions(screen.getByLabelText("状态"), "ignored");
+    expect(await screen.findByRole("heading", { name: "已忽略问题" })).toBeInTheDocument();
+    expect(await screen.findAllByText("临时忽略的证书问题")).toHaveLength(2);
+    expect(requestedUrls.some((url) => url.includes("status=ignored"))).toBe(true);
   });
 
   it("reloads workbench data when a completed status inspection marks it stale", async () => {
@@ -237,6 +252,7 @@ describe("ProblemWorkbenchPage", () => {
   it("renders the evidence chain and paged timeline, and keeps the note after a 403", async () => {
     const user = userEvent.setup();
     const targetIssue = issue();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -277,6 +293,15 @@ describe("ProblemWorkbenchPage", () => {
           details: {},
         }), { status: 403 });
       }
+      if (url.endsWith("/issues/1/ignore") && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          ...targetIssue,
+          status: "ignored",
+        }), { status: 200 });
+      }
+      if (url.endsWith("/issues/1/unignore") && init?.method === "POST") {
+        return new Response(JSON.stringify(targetIssue), { status: 200 });
+      }
       throw new Error(`Unexpected request: ${url}`);
     });
 
@@ -314,5 +339,13 @@ describe("ProblemWorkbenchPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("请求安全校验失败");
     expect(note).toHaveValue("值班同学处理中");
     expect(screen.getByText(/确认只表示你已知晓/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "忽略此问题" }));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(await screen.findByText("此问题已忽略")).toBeInTheDocument();
+    expect(screen.getByText("已忽略")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "取消忽略" }));
+    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole("button", { name: "忽略此问题" })).toBeInTheDocument();
   });
 });

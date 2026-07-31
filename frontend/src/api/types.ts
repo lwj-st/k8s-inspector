@@ -11,7 +11,7 @@ export type TemplateConditionOperator = "equals" | "in" | "contains" | "gte" | "
 export type TemplateConditionJoinOperator = "AND" | "OR";
 export type DiagnosisDirection = "template_check";
 export type IssueSeverity = "critical" | "warning" | "info";
-export type IssueStatus = "open" | "recovered";
+export type IssueStatus = "open" | "recovered" | "ignored";
 export type IssueSortMode = "priority" | "duration" | "last_changed";
 export type IssueScope = "cluster" | "namespace" | "workload" | "pod" | "service" | "ingress" | "node" | "storage";
 export type HealthStatus = "healthy" | "warning" | "critical" | "unknown";
@@ -75,7 +75,7 @@ export type IssueEvent = {
   id: number;
   issue_id: number;
   run_id?: number | null;
-  event_type: "opened" | "observed" | "severity_escalated" | "acknowledged" | "recovered" | "reopened";
+  event_type: "opened" | "observed" | "severity_escalated" | "acknowledged" | "ignored" | "unignored" | "recovered" | "reopened";
   trigger: InspectionTrigger;
   previous_status?: IssueStatus | null;
   new_status?: IssueStatus | null;

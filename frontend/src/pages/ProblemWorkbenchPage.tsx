@@ -17,7 +17,7 @@ import { CoveragePanel } from "../components/CoveragePanel";
 import { StatusBadge } from "../components/StatusBadge";
 
 const allowedSeverities = new Set<IssueSeverity>(["critical", "warning", "info"]);
-const allowedStatuses = new Set<IssueStatus>(["open", "recovered"]);
+const allowedStatuses = new Set<IssueStatus>(["open", "recovered", "ignored"]);
 const allowedSorts = new Set<IssueSortMode>(["priority", "duration", "last_changed"]);
 const problemWorkbenchRefreshKey = "k8s-inspector:problem-workbench-refresh";
 
@@ -323,7 +323,7 @@ export function ProblemWorkbenchPage() {
       <section className="panel issue-list-panel" aria-labelledby="issue-list-title">
         <div className="section-header">
           <div>
-            <h2 id="issue-list-title">{status === "open" ? "开放问题" : "已恢复问题"}</h2>
+            <h2 id="issue-list-title">{status === "open" ? "开放问题" : status === "ignored" ? "已忽略问题" : "已恢复问题"}</h2>
             <p className="inline-note">结果来自所有已完成的巡检，排序由服务端在完整结果上完成。</p>
           </div>
           <span className="section-tip">共 {issues?.total ?? "--"} 项</span>
@@ -335,6 +335,7 @@ export function ProblemWorkbenchPage() {
             <select value={status} onChange={(event) => updateFilter("status", event.target.value)}>
               <option value="open">开放</option>
               <option value="recovered">已恢复</option>
+              <option value="ignored">已忽略</option>
             </select>
           </label>
           <label>

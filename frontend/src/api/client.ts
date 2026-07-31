@@ -195,6 +195,18 @@ export function acknowledgeIssue(issueId: number, note: string): Promise<Issue> 
   });
 }
 
+export function ignoreIssue(issueId: number): Promise<Issue> {
+  return request(`/issues/${issueId}/ignore`, {
+    method: "POST",
+  });
+}
+
+export function unignoreIssue(issueId: number): Promise<Issue> {
+  return request(`/issues/${issueId}/unignore`, {
+    method: "POST",
+  });
+}
+
 export function listInspectionRuns(params: {
   status?: string;
   trigger?: string;

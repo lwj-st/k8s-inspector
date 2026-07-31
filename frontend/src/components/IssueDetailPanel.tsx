@@ -17,6 +17,8 @@ const eventLabels: Record<IssueEvent["event_type"], string> = {
   observed: "问题仍在持续",
   severity_escalated: "严重程度升级",
   acknowledged: "问题已确认",
+  ignored: "问题已忽略",
+  unignored: "已取消忽略",
   recovered: "问题已恢复",
   reopened: "问题重新出现",
 };
@@ -286,6 +288,8 @@ export function IssueDetailPanel({
   eventsError,
   onLoadMore,
   onAcknowledge,
+  onIgnore,
+  onUnignore,
 }: {
   issue: Issue;
   events: IssueEvent[];
@@ -294,10 +298,16 @@ export function IssueDetailPanel({
   eventsError: string | null;
   onLoadMore: () => void;
   onAcknowledge: (note: string) => Promise<void>;
+  onIgnore: () => Promise<void>;
+  onUnignore: () => Promise<void>;
 }) {
   const [note, setNote] = useState("");
   const [acknowledging, setAcknowledging] = useState(false);
   const [acknowledgeError, setAcknowledgeError] = useState<string | null>(null);
+  const [ignoring, setIgnoring] = useState(false);
+  const [ignoreError, setIgnoreError] = useState<string | null>(null);
+  const [unignoring, setUnignoring] = useState(false);
+  const [unignoreError, setUnignoreError] = useState<string | null>(null);
   const [copiedCommandKey, setCopiedCommandKey] = useState<string | null>(null);
 
   const chainResources = useMemo(() => {
@@ -331,6 +341,38 @@ export function IssueDetailPanel({
   async function copyCommand(command: IssueCommand) {
     await navigator.clipboard?.writeText(command.command);
     setCopiedCommandKey(commandKey(command));
+  }
+
+  async function handleIgnore() {
+    const confirmed = window.confirm("忽略后，此问题默认不再出现在开放问题列表，可通过“已忽略”筛选查看。确认忽略吗？");
+    if (!confirmed) {
+      return;
+    }
+    setIgnoring(true);
+    setIgnoreError(null);
+    try {
+      await onIgnore();
+    } catch (reason) {
+      setIgnoreError(reason instanceof Error ? reason.message : "忽略失败，请重试");
+    } finally {
+      setIgnoring(false);
+    }
+  }
+
+  async function handleUnignore() {
+    const confirmed = window.confirm("取消忽略后，此问题会重新出现在开放问题列表。确认取消忽略吗？");
+    if (!confirmed) {
+      return;
+    }
+    setUnignoring(true);
+    setUnignoreError(null);
+    try {
+      await onUnignore();
+    } catch (reason) {
+      setUnignoreError(reason instanceof Error ? reason.message : "取消忽略失败，请重试");
+    } finally {
+      setUnignoring(false);
+    }
   }
 
   return (
@@ -510,6 +552,39 @@ export function IssueDetailPanel({
               {acknowledging ? "确认中…" : "确认已知晓"}
             </button>
           </form>
+        )}
+      </section>
+
+      <section className="detail-section ignore-section" aria-labelledby="ignore-title">
+        <h2 id="ignore-title">忽略问题</h2>
+        <div className="feedback-banner feedback-warning">
+          忽略后，此问题默认不再出现在开放问题列表；不会恢复问题，也不会修改 Kubernetes 资源。
+        </div>
+        {issue.status === "ignored" ? (
+          <>
+            <p className="acknowledged-note"><strong>此问题已忽略</strong></p>
+            {unignoreError ? <p className="field-error" role="alert">{unignoreError}</p> : null}
+            <button
+              type="button"
+              className="primary-action"
+              disabled={unignoring}
+              onClick={() => void handleUnignore()}
+            >
+              {unignoring ? "取消中…" : "取消忽略"}
+            </button>
+          </>
+        ) : (
+          <>
+            {ignoreError ? <p className="field-error" role="alert">{ignoreError}</p> : null}
+            <button
+              type="button"
+              className="danger-button"
+              disabled={ignoring}
+              onClick={() => void handleIgnore()}
+            >
+              {ignoring ? "忽略中…" : "忽略此问题"}
+            </button>
+          </>
         )}
       </section>
 

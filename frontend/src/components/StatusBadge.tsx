@@ -22,6 +22,7 @@ const statusLabels: Record<string, string> = {
   unmatched: "未命中",
   open: "开放",
   recovered: "已恢复",
+  ignored: "已忽略",
   passed: "已检查，无异常",
   abnormal: "已检查，发现异常",
   skipped: "未采集/已跳过",
@@ -43,7 +44,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   const normalized = status.toLowerCase();
   const goodStatuses = new Set(["healthy", "ready", "succeeded", "completed", "enabled", "recovered", "passed", "ok"]);
   const warningStatuses = new Set(["warning", "degraded", "matched", "open", "abnormal", "partial"]);
-  const neutralStatuses = new Set(["info", "unknown", "unmatched", "skipped", "queued", "running", "loading", "disabled", "delivering", "suppressed"]);
+  const neutralStatuses = new Set(["info", "unknown", "unmatched", "skipped", "queued", "running", "loading", "disabled", "delivering", "suppressed", "ignored"]);
   const isBad =
     normalized === "not_ready" ||
     normalized === "unavailable" ||

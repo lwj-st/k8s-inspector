@@ -112,3 +112,39 @@ def acknowledge_issue(
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
     return result
+
+
+@router.post("/{issue_id}/ignore", response_model=Issue)
+def ignore_issue(
+    issue_id: int,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Issue:
+    if issue_query.get_issue(
+        session,
+        issue_id,
+        cluster_id=request.app.state.settings.cluster_id,
+    ) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
+    result = issue_lifecycle.ignore_issue(session, issue_id=issue_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
+    return result
+
+
+@router.post("/{issue_id}/unignore", response_model=Issue)
+def unignore_issue(
+    issue_id: int,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> Issue:
+    if issue_query.get_issue(
+        session,
+        issue_id,
+        cluster_id=request.app.state.settings.cluster_id,
+    ) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
+    result = issue_lifecycle.unignore_issue(session, issue_id=issue_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="问题不存在")
+    return result

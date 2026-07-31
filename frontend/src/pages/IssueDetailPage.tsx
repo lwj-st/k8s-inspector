@@ -5,7 +5,9 @@ import {
   acknowledgeIssue,
   ApiClientError,
   getIssue,
+  ignoreIssue,
   listIssueEvents,
+  unignoreIssue,
 } from "../api/client";
 import type { Issue, IssueEvent } from "../api/types";
 import { IssueDetailPanel } from "../components/IssueDetailPanel";
@@ -81,6 +83,10 @@ export function IssueDetailPage() {
   async function handleAcknowledge(note: string) {
     const updated = await acknowledgeIssue(issueId, note);
     setIssue(updated);
+    await refreshEvents();
+  }
+
+  async function refreshEvents() {
     try {
       const refreshed = await listIssueEvents(issueId, 1, 20);
       setEvents(refreshed.items);
@@ -89,6 +95,18 @@ export function IssueDetailPage() {
     } catch (reason) {
       setEventsError(readableError(reason));
     }
+  }
+
+  async function handleIgnore() {
+    const updated = await ignoreIssue(issueId);
+    setIssue(updated);
+    await refreshEvents();
+  }
+
+  async function handleUnignore() {
+    const updated = await unignoreIssue(issueId);
+    setIssue(updated);
+    await refreshEvents();
   }
 
   if (loading) {
@@ -120,6 +138,8 @@ export function IssueDetailPage() {
         eventsError={eventsError}
         onLoadMore={() => void loadMoreEvents()}
         onAcknowledge={handleAcknowledge}
+        onIgnore={handleIgnore}
+        onUnignore={handleUnignore}
       />
     </section>
   );

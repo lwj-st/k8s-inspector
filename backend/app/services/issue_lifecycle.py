@@ -159,6 +159,73 @@ def acknowledge_issue(
     return issue_from_model(row)
 
 
+def ignore_issue(
+    session: Session,
+    *,
+    issue_id: int,
+    trigger: InspectionTrigger = InspectionTrigger.manual,
+    occurred_at: datetime | None = None,
+):
+    row = session.get(IssueModel, issue_id)
+    if row is None:
+        return None
+    if row.status == IssueStatus.ignored.value:
+        return issue_from_model(row)
+    now = occurred_at or datetime.now(timezone.utc)
+    previous_status = IssueStatus(row.status)
+    row.status = IssueStatus.ignored.value
+    row.recovered_at = None
+    event = IssueEventModel(
+        issue_id=row.id,
+        event_type=IssueEventType.ignored.value,
+        trigger=trigger.value,
+        previous_status=previous_status.value,
+        new_status=IssueStatus.ignored.value,
+        previous_severity=row.severity,
+        new_severity=row.severity,
+        occurred_at=now,
+        summary="问题已忽略；默认不再开放问题列表显示",
+        evidence_codes=[],
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(row)
+    return issue_from_model(row)
+
+
+def unignore_issue(
+    session: Session,
+    *,
+    issue_id: int,
+    trigger: InspectionTrigger = InspectionTrigger.manual,
+    occurred_at: datetime | None = None,
+):
+    row = session.get(IssueModel, issue_id)
+    if row is None:
+        return None
+    if row.status != IssueStatus.ignored.value:
+        return issue_from_model(row)
+    now = occurred_at or datetime.now(timezone.utc)
+    row.status = IssueStatus.open.value
+    row.recovered_at = None
+    event = IssueEventModel(
+        issue_id=row.id,
+        event_type=IssueEventType.unignored.value,
+        trigger=trigger.value,
+        previous_status=IssueStatus.ignored.value,
+        new_status=IssueStatus.open.value,
+        previous_severity=row.severity,
+        new_severity=row.severity,
+        occurred_at=now,
+        summary="已取消忽略；问题重新进入开放问题列表",
+        evidence_codes=[],
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(row)
+    return issue_from_model(row)
+
+
 def _observe_candidate(
     session: Session,
     *,
@@ -221,11 +288,12 @@ def _observe_candidate(
 
     previous_status = IssueStatus(row.status)
     previous_severity = IssueSeverity(row.severity)
+    keep_ignored = previous_status == IssueStatus.ignored
     reopened = previous_status == IssueStatus.recovered
     escalated = _SEVERITY_RANK[candidate.severity.value] > _SEVERITY_RANK[previous_severity.value]
     row.issue_code = candidate.issue_code.value
     row.severity = candidate.severity.value
-    row.status = IssueStatus.open.value
+    row.status = IssueStatus.ignored.value if keep_ignored else IssueStatus.open.value
     row.scope = candidate.scope.value
     row.resource_api_version = candidate.resource.api_version
     row.resource_kind = candidate.resource.kind
@@ -241,6 +309,9 @@ def _observe_candidate(
     row.occurrence_count += 1
     row.source_check = candidate.source_check
     row.correlation_key = candidate.correlation_key
+
+    if keep_ignored:
+        return row, None
 
     event_type = (
         IssueEventType.reopened
@@ -290,7 +361,7 @@ def _recover_missing(
             .where(
                 IssueModel.cluster_id == cluster_id,
                 IssueModel.source_check == source_check,
-                IssueModel.status == IssueStatus.open.value,
+                IssueModel.status.in_([IssueStatus.open.value, IssueStatus.ignored.value]),
             )
             .distinct()
         )
@@ -306,6 +377,7 @@ def _recover_missing(
             ).all():
                 membership.active = False
                 membership.deactivated_at = occurred_at
+            previous_status = IssueStatus(row.status)
             row.status = IssueStatus.recovered.value
             row.recovered_at = max(_aware(row.last_seen_at), occurred_at)
             event = _event(
@@ -313,7 +385,7 @@ def _recover_missing(
                 run_id=run_id,
                 event_type=IssueEventType.recovered,
                 trigger=trigger,
-                previous_status=IssueStatus.open,
+                previous_status=previous_status,
                 new_status=IssueStatus.recovered,
                 previous_severity=IssueSeverity(row.severity),
                 new_severity=IssueSeverity(row.severity),
@@ -331,7 +403,7 @@ def _recover_missing(
         .where(
             IssueModel.cluster_id == cluster_id,
             IssueModel.source_check == source_check,
-            IssueModel.status == IssueStatus.open.value,
+            IssueModel.status.in_([IssueStatus.open.value, IssueStatus.ignored.value]),
             IssueScopeMembership.scope_key == scope_key,
             IssueScopeMembership.active.is_(True),
         )
@@ -353,6 +425,7 @@ def _recover_missing(
         )
         if remaining_active is not None:
             continue
+        previous_status = IssueStatus(row.status)
         row.status = IssueStatus.recovered.value
         row.recovered_at = max(_aware(row.last_seen_at), occurred_at)
         event = _event(
@@ -360,7 +433,7 @@ def _recover_missing(
             run_id=run_id,
             event_type=IssueEventType.recovered,
             trigger=trigger,
-            previous_status=IssueStatus.open,
+            previous_status=previous_status,
             new_status=IssueStatus.recovered,
             previous_severity=IssueSeverity(row.severity),
             new_severity=IssueSeverity(row.severity),

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.models import InspectionRun as InspectionRunModel
+from app.models import IssueEvent as IssueEventModel
 from app.models import Issue as IssueModel
 from app.models import IssueScopeMembership
 from app.models.v1_1 import inspection_run_issues
@@ -332,6 +333,81 @@ def test_issue_acknowledgement_keeps_health_status_and_events_are_paged(client):
     assert timeline.json()["total"] >= 2
     assert len(timeline.json()["items"]) == 1
     assert timeline.json()["items"][0]["event_type"] == "acknowledged"
+
+
+def test_issue_ignore_hides_from_open_list_and_is_filterable(client):
+    inspected = client.post(
+        "/api/v1/inspections/namespace/run",
+        json={"namespace": "demo"},
+    )
+    assert inspected.status_code == 200
+    issue = inspected.json()["issues"][0]
+
+    ignored = client.post(f"/api/v1/issues/{issue['id']}/ignore")
+
+    assert ignored.status_code == 200
+    assert ignored.json()["status"] == "ignored"
+    open_issues = client.get("/api/v1/issues?status=open")
+    assert open_issues.status_code == 200
+    assert all(item["id"] != issue["id"] for item in open_issues.json()["items"])
+    ignored_issues = client.get("/api/v1/issues?status=ignored")
+    assert ignored_issues.status_code == 200
+    assert any(item["id"] == issue["id"] for item in ignored_issues.json()["items"])
+
+    timeline = client.get(f"/api/v1/issues/{issue['id']}/events")
+    assert timeline.status_code == 200
+    assert timeline.json()["items"][0]["event_type"] == "ignored"
+
+    unignored = client.post(f"/api/v1/issues/{issue['id']}/unignore")
+    assert unignored.status_code == 200
+    assert unignored.json()["status"] == "open"
+    open_after_unignore = client.get("/api/v1/issues?status=open")
+    assert any(item["id"] == issue["id"] for item in open_after_unignore.json()["items"])
+    timeline = client.get(f"/api/v1/issues/{issue['id']}/events")
+    assert timeline.status_code == 200
+    assert timeline.json()["items"][0]["event_type"] == "unignored"
+
+
+def test_ignored_issue_recovers_when_next_successful_check_no_longer_reports_it(client):
+    session_factory = client.app.state.session_factory
+    now = datetime.now(timezone.utc)
+    scope = InspectionScope(type="namespace", namespace="demo")
+    cluster_id = client.app.state.settings.cluster_id
+    with session_factory() as session:
+        first_run = _run(session, scope, now)
+        opened = apply_evaluations(
+            session,
+            cluster_id=cluster_id,
+            run_id=first_run.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(scope, present=True)],
+            occurred_at=now,
+        )
+        session.commit()
+        issue_id = next(iter(opened.issue_ids))
+
+        ignored = client.post(f"/api/v1/issues/{issue_id}/ignore")
+        assert ignored.status_code == 200
+        assert ignored.json()["status"] == "ignored"
+
+        second_run = _run(session, scope, now + timedelta(minutes=1))
+        recovered = apply_evaluations(
+            session,
+            cluster_id=cluster_id,
+            run_id=second_run.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_evaluation(scope, present=False)],
+            occurred_at=now + timedelta(minutes=1),
+        )
+        session.commit()
+
+        assert recovered.recovered_count == 1
+        assert recovered.issue_ids == {issue_id}
+        row = session.get(IssueModel, issue_id)
+        assert row.status == "recovered"
+        event = session.query(IssueEventModel).filter_by(issue_id=issue_id).order_by(IssueEventModel.id.desc()).first()
+        assert event.event_type == "recovered"
+        assert event.previous_status == "ignored"
 
 
 def test_issue_priority_sort_is_stable_across_pages(client):

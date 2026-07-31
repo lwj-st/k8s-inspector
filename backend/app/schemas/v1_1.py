@@ -54,6 +54,7 @@ class IssueSeverity(str, Enum):
 class IssueStatus(str, Enum):
     open = "open"
     recovered = "recovered"
+    ignored = "ignored"
 
 
 class IssueSortMode(str, Enum):
@@ -255,8 +256,8 @@ class Issue(ContractModel):
             raise ValueError("last_seen_at must not precede first_seen_at")
         if self.status == IssueStatus.recovered and self.recovered_at is None:
             raise ValueError("recovered_at is required for a recovered issue")
-        if self.status == IssueStatus.open and self.recovered_at is not None:
-            raise ValueError("an open issue must not contain recovered_at")
+        if self.status in {IssueStatus.open, IssueStatus.ignored} and self.recovered_at is not None:
+            raise ValueError("an open or ignored issue must not contain recovered_at")
         if self.recovered_at is not None and self.recovered_at < self.last_seen_at:
             raise ValueError("recovered_at must not precede last_seen_at")
         if self.acknowledge_note and self.acknowledged_at is None:
@@ -334,6 +335,8 @@ class IssueEventType(str, Enum):
     observed = "observed"
     severity_escalated = "severity_escalated"
     acknowledged = "acknowledged"
+    ignored = "ignored"
+    unignored = "unignored"
     recovered = "recovered"
     reopened = "reopened"
 

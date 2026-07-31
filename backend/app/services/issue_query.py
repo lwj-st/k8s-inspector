@@ -181,7 +181,11 @@ def list_issues(session: Session, filters: IssueListFilter, *, cluster_id: str |
 
     total = int(session.scalar(select(func.count()).select_from(query.subquery())) or 0)
     query_time = datetime.now(timezone.utc)
-    status_rank = case((IssueModel.status == IssueStatus.open.value, 0), else_=1)
+    status_rank = case(
+        (IssueModel.status == IssueStatus.open.value, 0),
+        (IssueModel.status == IssueStatus.ignored.value, 1),
+        else_=2,
+    )
     severity_rank = case(
         (IssueModel.severity == IssueSeverity.critical.value, 0),
         (IssueModel.severity == IssueSeverity.warning.value, 1),
@@ -189,7 +193,7 @@ def list_issues(session: Session, filters: IssueListFilter, *, cluster_id: str |
     )
     duration = case(
         (
-            IssueModel.status == IssueStatus.open.value,
+            IssueModel.status.in_([IssueStatus.open.value, IssueStatus.ignored.value]),
             func.julianday(query_time) - func.julianday(IssueModel.first_seen_at),
         ),
         else_=func.julianday(IssueModel.recovered_at) - func.julianday(IssueModel.first_seen_at),
