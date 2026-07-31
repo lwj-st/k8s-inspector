@@ -49,6 +49,13 @@ def get_effective_cluster_id(session: Session, app_settings: Settings) -> str:
     return app_settings.cluster_id.strip() or "local"
 
 
+def get_effective_admin_password_hash(session: Session, app_settings: Settings) -> str | None:
+    settings = session.get(SystemSetting, 1)
+    if settings is not None and settings.admin_password_hash:
+        return settings.admin_password_hash
+    return app_settings.admin_password_hash
+
+
 def serialize_settings(settings: SystemSetting) -> SettingsResponse:
     policy = policy_with_builtin_required_components(settings.inspection_policy)
     return SettingsResponse(

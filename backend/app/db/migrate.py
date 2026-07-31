@@ -12,7 +12,7 @@ from app.db.session import build_engine
 
 
 BASELINE_REVISION = "v100_baseline"
-HEAD_REVISION = "system_cluster_id"
+HEAD_REVISION = "admin_password_hash"
 MIGRATION_DIR = Path(__file__).resolve().parent / "migrations"
 V100_TABLES = {
     "diagnosis_records",

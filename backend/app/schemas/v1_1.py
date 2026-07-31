@@ -1067,6 +1067,17 @@ class AuthLoginRequest(ContractModel):
     password: SecretStr
 
 
+class AuthPasswordChangeRequest(ContractModel):
+    current_password: SecretStr
+    new_password: SecretStr = Field(min_length=6, max_length=256)
+
+    @model_validator(mode="after")
+    def reject_same_password(self) -> "AuthPasswordChangeRequest":
+        if self.current_password.get_secret_value() == self.new_password.get_secret_value():
+            raise ValueError("new password must be different from current password")
+        return self
+
+
 class AdminSession(ContractModel):
     authenticated: bool
     username: str | None = Field(default=None, max_length=128)
@@ -1089,6 +1100,7 @@ class SecurityAuditAction(str, Enum):
     login_failed = "login_failed"
     logout = "logout"
     session_revoked = "session_revoked"
+    password_changed = "password_changed"
     configuration_changed = "configuration_changed"
     plan_changed = "plan_changed"
     notification_tested = "notification_tested"

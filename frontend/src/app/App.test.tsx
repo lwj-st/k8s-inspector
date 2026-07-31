@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -95,6 +96,51 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "选择范围" })).toBeInTheDocument();
     expect(screen.getByLabelText("范围类型")).toBeInTheDocument();
     expect(screen.getByDisplayValue("单个 Pod")).toBeInTheDocument();
+  });
+
+  it("changes password from the sidebar with csrf protection", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/session")) {
+        return new Response(JSON.stringify(authenticatedSession()), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/auth/password") && init?.method === "POST") {
+        expect(new Headers(init.headers).get("X-CSRF-Token")).toBe("csrf-token-at-least-16");
+        expect(JSON.parse(String(init.body))).toEqual({
+          current_password: "old-password",
+          new_password: "123456",
+        });
+        return new Response(JSON.stringify(authenticatedSession()), { status: 200 });
+      }
+      if (url.includes("/api/v1/issues?")) {
+        return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: url.includes("page_size=1") ? 1 : 20 }), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/issues/filter-options")) {
+        return new Response(JSON.stringify({ namespaces: [], resource_kinds: [], source_checks: [] }), { status: 200 });
+      }
+      if (url.includes("/api/v1/inspection-runs?")) {
+        return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: 1 }), { status: 200 });
+      }
+      if (url.endsWith("/api/v1/discovery/namespaces")) {
+        return new Response(JSON.stringify({ executed_at: "2026-07-26T12:00:00Z", namespaces: [] }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+      basename: getRouterBasename(""),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    await user.click(await screen.findByRole("button", { name: "更改密码" }));
+    await user.type(screen.getByLabelText("当前密码"), "old-password");
+    await user.type(screen.getByLabelText("新密码"), "123456");
+    await user.type(screen.getByLabelText("确认新密码"), "123456");
+    await user.click(screen.getByRole("button", { name: "保存新密码" }));
+
+    expect(await screen.findByText("密码已更新，其他已登录会话会失效。")).toBeInTheDocument();
   });
 
 });

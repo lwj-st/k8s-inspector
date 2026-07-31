@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from app.models import SystemSetting
 from app.db.migrate import HEAD_REVISION, current_revision
 from app.schemas.v1_1 import ComponentState, ReadyHealthResponse, SystemComponentStatus, SystemStatus
 
 
 def readiness_reasons(app) -> list[str]:
-    settings = app.state.settings
-    reasons = list(settings.security_configuration_errors())
+    reasons = list(_security_configuration_errors(app))
     if app.state.platform_initialization_error:
         reasons.append(app.state.platform_initialization_error)
     if app.state.provider_initialization_error:
@@ -40,7 +40,7 @@ def build_system_status(app, *, cluster_id: str | None = None) -> SystemStatus:
     now = datetime.now(timezone.utc)
     reasons = readiness_reasons(app)
     database = _database_status(app, now)
-    configuration_errors = settings.security_configuration_errors()
+    configuration_errors = _security_configuration_errors(app)
     configuration = SystemComponentStatus(
         state=ComponentState.failed if configuration_errors else ComponentState.ok,
         message="配置校验失败" if configuration_errors else "配置校验通过",
@@ -102,6 +102,24 @@ def build_system_status(app, *, cluster_id: str | None = None) -> SystemStatus:
         kubernetes_server_version=kubernetes_version,
         kubernetes_version_supported=kubernetes_supported,
     )
+
+
+def _security_configuration_errors(app) -> list[str]:
+    settings = app.state.settings
+    errors = list(settings.security_configuration_errors())
+    missing_password_message = "缺少管理员密码哈希"
+    if missing_password_message in errors and _stored_admin_password_hash_configured(app):
+        errors.remove(missing_password_message)
+    return errors
+
+
+def _stored_admin_password_hash_configured(app) -> bool:
+    try:
+        with app.state.session_factory() as session:
+            row = session.get(SystemSetting, 1)
+            return bool(row and row.admin_password_hash)
+    except Exception:
+        return False
 
 
 def _database_status(app, now: datetime) -> SystemComponentStatus:

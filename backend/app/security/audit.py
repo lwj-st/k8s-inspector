@@ -15,6 +15,7 @@ _ALLOWED_DETAIL_KEYS = {
     "resource_type",
     "changed_fields",
     "channel_type",
+    "revoked_other_sessions",
 }
 
 

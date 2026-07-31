@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.main import create_app
 from app.models import AdminSession as AdminSessionModel
+from app.models import SystemSetting
 from app.models import SecurityAuditLog
 
 
@@ -126,3 +127,56 @@ def test_idle_expired_session_is_rejected_and_revoked(tmp_path: Path) -> None:
         with app.state.session_factory() as database:
             stored = database.scalar(select(AdminSessionModel))
             assert stored.revoked_at is not None
+
+
+def test_change_password_persists_hash_and_revokes_other_sessions(tmp_path: Path) -> None:
+    settings = _local_auth_settings(tmp_path / "change-password.db")
+    app = create_app(settings)
+    with TestClient(app) as client:
+        first_login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        assert first_login.status_code == 200
+        csrf_token = first_login.json()["csrf_token"]
+
+        second_client = TestClient(app)
+        second_login = second_client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        assert second_login.status_code == 200
+
+        denied = client.post(
+            "/api/v1/auth/password",
+            headers={"X-CSRF-Token": csrf_token},
+            json={"current_password": "wrong-password", "new_password": "123456"},
+        )
+        assert denied.status_code == 401
+
+        changed = client.post(
+            "/api/v1/auth/password",
+            headers={"X-CSRF-Token": csrf_token},
+            json={"current_password": "correct-password", "new_password": "123456"},
+        )
+        assert changed.status_code == 200
+        assert changed.json()["authenticated"] is True
+
+        with app.state.session_factory() as database:
+            stored = database.get(SystemSetting, 1)
+            assert stored.admin_password_hash
+            assert "123456" not in stored.admin_password_hash
+            sessions = database.scalars(select(AdminSessionModel)).all()
+            assert sum(1 for item in sessions if item.revoked_at is None) == 1
+
+        old_password = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "correct-password"},
+        )
+        assert old_password.status_code == 401
+        new_password = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "123456"},
+        )
+        assert new_password.status_code == 200
+        assert second_client.get("/api/v1/auth/session").json()["authenticated"] is False

@@ -92,6 +92,7 @@ def test_empty_database_initializes_to_v110_head(tmp_path: Path) -> None:
         assert "scope_key" not in issue_columns
         settings_columns = {column["name"] for column in inspect(engine).get_columns("system_settings")}
         assert "cluster_id" in settings_columns
+        assert "admin_password_hash" in settings_columns
     finally:
         engine.dispose()
 

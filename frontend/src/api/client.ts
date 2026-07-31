@@ -172,6 +172,13 @@ export function logout(): Promise<void> {
   return requestVoid("/auth/logout", { method: "POST" });
 }
 
+export function changePassword(currentPassword: string, newPassword: string): Promise<AdminSession> {
+  return request("/auth/password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
 export function listIssues(params: IssueListParams = {}): Promise<Page<Issue>> {
   return request(`/issues${queryString(params)}`);
 }

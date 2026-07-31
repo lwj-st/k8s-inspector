@@ -28,15 +28,26 @@ class AuthenticatedSession:
     database_id: int | None
 
 
-def verify_admin_password(settings: Settings, username: str, password: str) -> bool:
-    if settings.auth_mode != "local" or not settings.admin_username or not settings.admin_password_hash:
+def verify_admin_password(
+    settings: Settings,
+    username: str,
+    password: str,
+    *,
+    password_hash: str | None = None,
+) -> bool:
+    effective_password_hash = password_hash or settings.admin_password_hash
+    if settings.auth_mode != "local" or not settings.admin_username or not effective_password_hash:
         return False
     username_matches = hmac.compare_digest(username.encode("utf-8"), settings.admin_username.encode("utf-8"))
     try:
-        password_matches = _PASSWORD_HASHER.verify(settings.admin_password_hash, password)
+        password_matches = _PASSWORD_HASHER.verify(effective_password_hash, password)
     except (InvalidHashError, VerificationError, VerifyMismatchError):
         password_matches = False
     return bool(username_matches and password_matches)
+
+
+def hash_admin_password(password: str) -> str:
+    return _PASSWORD_HASHER.hash(password)
 
 
 def hash_session_token(token: str, settings: Settings) -> str:
@@ -157,6 +168,31 @@ def revoke_admin_session(
     model.revoked_at = datetime.now(timezone.utc)
     session.commit()
     return True
+
+
+def revoke_other_admin_sessions(
+    session: Session,
+    *,
+    username: str,
+    keep_database_id: int | None,
+) -> int:
+    if keep_database_id is None:
+        return 0
+    now = datetime.now(timezone.utc)
+    rows = list(
+        session.scalars(
+            select(AdminSessionModel).where(
+                AdminSessionModel.username == username,
+                AdminSessionModel.id != keep_database_id,
+                AdminSessionModel.revoked_at.is_(None),
+            )
+        )
+    )
+    for row in rows:
+        row.revoked_at = now
+    if rows:
+        session.commit()
+    return len(rows)
 
 
 def to_session_response(value: AuthenticatedSession | None) -> AdminSessionResponse:

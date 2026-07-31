@@ -34,6 +34,7 @@ def initialize_database(settings: Settings) -> None:
                         model_endpoint=settings.model_endpoint,
                         api_key=None,
                         api_key_encrypted=encrypted_api_key,
+                        admin_password_hash=settings.admin_password_hash,
                         default_inspection_strategy={},
                         inspection_policy=InspectionPolicySettings(
                             required_components=default_required_components(),
