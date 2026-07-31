@@ -28,6 +28,29 @@ const chainOrder: Record<string, number> = {
   pod: 3,
 };
 
+const resourceAliases: Record<string, string> = {
+  configmap: "configmap",
+  cronjob: "cronjob",
+  daemonset: "daemonset",
+  deployment: "deployment",
+  endpoint: "endpoints",
+  endpoints: "endpoints",
+  endpointslice: "endpointslices.discovery.k8s.io",
+  ingress: "ingress",
+  ingressclass: "ingressclass",
+  job: "job",
+  namespace: "namespace",
+  node: "node",
+  persistentvolume: "pv",
+  persistentvolumeclaim: "pvc",
+  pod: "pod",
+  replicaset: "replicaset",
+  secret: "secret",
+  service: "service",
+  statefulset: "statefulset",
+  storageclass: "storageclass",
+};
+
 function formatDateTime(value?: string | null) {
   if (!value) {
     return "--";
@@ -54,6 +77,164 @@ function factValue(value: unknown) {
   return String(value);
 }
 
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, "'\"'\"'")}'`;
+}
+
+function kubectlKind(kind: string) {
+  return resourceAliases[kind.toLowerCase()] ?? kind.toLowerCase();
+}
+
+function namespaceFlag(resource: ResourceRef) {
+  return resource.namespace ? ` -n ${shellQuote(resource.namespace)}` : "";
+}
+
+function commandKey(command: IssueCommand) {
+  return `${command.title}:${command.command}`;
+}
+
+type IssueCommand = {
+  title: string;
+  command: string;
+};
+
+function resourceCommands(resource: ResourceRef): IssueCommand[] {
+  const kind = kubectlKind(resource.kind);
+  const namespace = namespaceFlag(resource);
+  const name = shellQuote(resource.name);
+  const label = resourceLabel(resource);
+  return [
+    {
+      title: `查看 ${label}`,
+      command: `kubectl get ${kind}${namespace} ${name} -o yaml`,
+    },
+    {
+      title: `Describe ${label}`,
+      command: `kubectl describe ${kind}${namespace} ${name}`,
+    },
+  ];
+}
+
+function serviceSpecificCommands(resource: ResourceRef, facts: Record<string, unknown>): IssueCommand[] {
+  if (resource.kind.toLowerCase() !== "service" || !resource.namespace) {
+    return [];
+  }
+  const namespace = shellQuote(resource.namespace);
+  const name = shellQuote(resource.name);
+  const selector = Array.isArray(facts.selector) ? facts.selector.map(String).filter(Boolean).join(",") : "";
+  return [
+    {
+      title: `查看 ${resource.name} 的 EndpointSlice`,
+      command: `kubectl get endpointslices.discovery.k8s.io -n ${namespace} -l kubernetes.io/service-name=${shellQuote(resource.name)} -o wide`,
+    },
+    {
+      title: `查看 ${resource.name} 的 Endpoints`,
+      command: `kubectl get endpoints -n ${namespace} ${name} -o wide`,
+    },
+    ...(selector
+      ? [{
+          title: `按 Service selector 查 Pod`,
+          command: `kubectl get pods -n ${namespace} -l ${shellQuote(selector)} -o wide`,
+        }]
+      : []),
+  ];
+}
+
+function podSpecificCommands(resource: ResourceRef): IssueCommand[] {
+  if (resource.kind.toLowerCase() !== "pod" || !resource.namespace) {
+    return [];
+  }
+  const namespace = shellQuote(resource.namespace);
+  const name = shellQuote(resource.name);
+  return [
+    {
+      title: `查看 ${resource.name} 事件`,
+      command: `kubectl get events -n ${namespace} --field-selector involvedObject.kind=Pod,involvedObject.name=${shellQuote(resource.name)} --sort-by=.lastTimestamp`,
+    },
+    {
+      title: `查看 ${resource.name} 最近日志`,
+      command: `kubectl logs -n ${namespace} ${name} --all-containers --tail=200`,
+    },
+    {
+      title: `查看 ${resource.name} 上次崩溃日志`,
+      command: `kubectl logs -n ${namespace} ${name} --all-containers --previous --tail=200`,
+    },
+  ];
+}
+
+function ingressSpecificCommands(resource: ResourceRef, facts: Record<string, unknown>): IssueCommand[] {
+  if (resource.kind.toLowerCase() !== "ingress" || !resource.namespace) {
+    return [];
+  }
+  const namespace = shellQuote(resource.namespace);
+  const commands: IssueCommand[] = [
+    {
+      title: `查看 ${resource.name} 引用的后端 Service`,
+      command: `kubectl describe ingress -n ${namespace} ${shellQuote(resource.name)}`,
+    },
+  ];
+  const backend = typeof facts.backend === "string" ? facts.backend : "";
+  const backendService = backend.split(":", 1)[0]?.trim();
+  if (backendService) {
+    commands.push({
+      title: `查看后端 Service ${backendService}`,
+      command: `kubectl get service -n ${namespace} ${shellQuote(backendService)} -o yaml`,
+    });
+  }
+  return commands;
+}
+
+function tlsSecretCommands(resource: ResourceRef): IssueCommand[] {
+  if (resource.kind.toLowerCase() !== "secret" || !resource.namespace) {
+    return [];
+  }
+  const namespace = shellQuote(resource.namespace);
+  const name = shellQuote(resource.name);
+  return [
+    {
+      title: `查看 TLS Secret 证书主体`,
+      command: `kubectl get secret -n ${namespace} ${name} -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -subject -issuer -dates`,
+    },
+    {
+      title: `查看 TLS Secret SAN`,
+      command: `kubectl get secret -n ${namespace} ${name} -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -ext subjectAltName`,
+    },
+  ];
+}
+
+function issueCommands(issue: Issue): IssueCommand[] {
+  const evidenceFacts = issue.evidence.flatMap((item) => [item.facts]);
+  const resources = [
+    issue.resource,
+    ...issue.evidence.flatMap((item) => item.related_resources),
+  ];
+  const uniqueResources = Array.from(
+    new Map(resources.map((resource) => [resourceKey(resource), resource])).values(),
+  );
+  const commands: IssueCommand[] = [
+    ...uniqueResources.flatMap(resourceCommands),
+    ...uniqueResources.flatMap((resource) => podSpecificCommands(resource)),
+    ...uniqueResources.flatMap((resource) => tlsSecretCommands(resource)),
+  ];
+  for (const facts of evidenceFacts) {
+    commands.push(...serviceSpecificCommands(issue.resource, facts));
+    commands.push(...ingressSpecificCommands(issue.resource, facts));
+    for (const resource of uniqueResources) {
+      commands.push(...serviceSpecificCommands(resource, facts));
+      commands.push(...ingressSpecificCommands(resource, facts));
+    }
+  }
+  if (issue.resource.namespace) {
+    commands.push({
+      title: `查看 ${issue.resource.namespace} 最近 Warning 事件`,
+      command: `kubectl get events -n ${shellQuote(issue.resource.namespace)} --field-selector type=Warning --sort-by=.lastTimestamp`,
+    });
+  }
+  return Array.from(
+    new Map(commands.map((command) => [commandKey(command), command])).values(),
+  );
+}
+
 export function IssueDetailPanel({
   issue,
   events,
@@ -74,6 +255,7 @@ export function IssueDetailPanel({
   const [note, setNote] = useState("");
   const [acknowledging, setAcknowledging] = useState(false);
   const [acknowledgeError, setAcknowledgeError] = useState<string | null>(null);
+  const [copiedCommandKey, setCopiedCommandKey] = useState<string | null>(null);
 
   const chainResources = useMemo(() => {
     const resources = [issue.resource, ...issue.evidence.flatMap((item) => item.related_resources)];
@@ -82,6 +264,8 @@ export function IssueDetailPanel({
       .filter((resource) => resource.kind.toLowerCase() in chainOrder)
       .sort((left, right) => chainOrder[left.kind.toLowerCase()] - chainOrder[right.kind.toLowerCase()]);
   }, [issue]);
+
+  const commands = useMemo(() => issueCommands(issue), [issue]);
 
   async function handleAcknowledge(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -99,6 +283,11 @@ export function IssueDetailPanel({
     } finally {
       setAcknowledging(false);
     }
+  }
+
+  async function copyCommand(command: IssueCommand) {
+    await navigator.clipboard?.writeText(command.command);
+    setCopiedCommandKey(commandKey(command));
   }
 
   return (
@@ -186,6 +375,33 @@ export function IssueDetailPanel({
         <h2 id="suggestion-title">处理建议</h2>
         <p>{issue.suggestion}</p>
       </section>
+
+      {commands.length > 0 ? (
+        <section className="detail-section" aria-labelledby="commands-title">
+          <div className="section-header">
+            <div>
+              <h2 id="commands-title">查看命令</h2>
+              <p className="inline-note">命令只用于到集群上核对当前状态，不会修改资源。</p>
+            </div>
+          </div>
+          <div className="command-card-list">
+            {commands.map((command) => {
+              const key = commandKey(command);
+              return (
+                <article className="command-card" key={key}>
+                  <div className="section-header">
+                    <strong>{command.title}</strong>
+                    <button type="button" className="mini-button" onClick={() => void copyCommand(command)}>
+                      {copiedCommandKey === key ? "已复制" : "复制命令"}
+                    </button>
+                  </div>
+                  <pre className="log-block code-block-scroll">{command.command}</pre>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <section className="detail-section" aria-labelledby="timeline-title">
         <div className="section-header">

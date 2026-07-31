@@ -227,6 +227,11 @@ describe("ProblemWorkbenchPage", () => {
   it("renders the evidence chain and paged timeline, and keeps the note after a 403", async () => {
     const user = userEvent.setup();
     const targetIssue = issue();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     fetchMock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/issues/1")) {
@@ -278,6 +283,16 @@ describe("ProblemWorkbenchPage", () => {
     expect(within(chain).getByText("Ingress")).toBeInTheDocument();
     expect(screen.getByText("配置链路在 Service 后端处中断")).toBeInTheDocument();
     expect(screen.getAllByText("问题仍在持续")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "查看命令" })).toBeInTheDocument();
+    expect(screen.getByText("kubectl get ingress -n 'prod' 'checkout' -o yaml")).toBeInTheDocument();
+    expect(screen.getByText("kubectl get endpointslices.discovery.k8s.io -n 'prod' 'checkout-x1' -o yaml")).toBeInTheDocument();
+    expect(screen.getByText("kubectl get endpointslices.discovery.k8s.io -n 'prod' -l kubernetes.io/service-name='checkout' -o wide")).toBeInTheDocument();
+    expect(screen.getByText("kubectl logs -n 'prod' 'checkout-0' --all-containers --tail=200")).toBeInTheDocument();
+
+    const copyButtons = screen.getAllByRole("button", { name: "复制命令" });
+    await user.click(copyButtons[0]);
+    expect(writeText).toHaveBeenCalledWith("kubectl get ingress -n 'prod' 'checkout' -o yaml");
+    expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "加载更早记录" }));
     expect(await screen.findByText("首次发现问题")).toBeInTheDocument();
