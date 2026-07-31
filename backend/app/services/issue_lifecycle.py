@@ -284,13 +284,54 @@ def _recover_missing(
     current_fingerprints: set[str],
     occurred_at: datetime,
 ) -> list[LifecycleChange]:
+    if source_check == "required_components":
+        query = (
+            select(IssueModel)
+            .where(
+                IssueModel.cluster_id == cluster_id,
+                IssueModel.source_check == source_check,
+                IssueModel.status == IssueStatus.open.value,
+            )
+            .distinct()
+        )
+        if current_fingerprints:
+            query = query.where(IssueModel.fingerprint.not_in(current_fingerprints))
+        changes: list[LifecycleChange] = []
+        for row in session.scalars(query).all():
+            for membership in session.scalars(
+                select(IssueScopeMembership).where(
+                    IssueScopeMembership.issue_id == row.id,
+                    IssueScopeMembership.active.is_(True),
+                )
+            ).all():
+                membership.active = False
+                membership.deactivated_at = occurred_at
+            row.status = IssueStatus.recovered.value
+            row.recovered_at = max(_aware(row.last_seen_at), occurred_at)
+            event = _event(
+                row,
+                run_id=run_id,
+                event_type=IssueEventType.recovered,
+                trigger=trigger,
+                previous_status=IssueStatus.open,
+                new_status=IssueStatus.recovered,
+                previous_severity=IssueSeverity(row.severity),
+                new_severity=IssueSeverity(row.severity),
+                occurred_at=row.recovered_at,
+                summary="本轮检查成功且问题已不再出现",
+                evidence_codes=[],
+            )
+            session.add(event)
+            changes.append(LifecycleChange(row, event))
+        return changes
+
     query = (
         select(IssueModel, IssueScopeMembership)
         .join(IssueScopeMembership, IssueScopeMembership.issue_id == IssueModel.id)
         .where(
-        IssueModel.cluster_id == cluster_id,
-        IssueModel.source_check == source_check,
-        IssueModel.status == IssueStatus.open.value,
+            IssueModel.cluster_id == cluster_id,
+            IssueModel.source_check == source_check,
+            IssueModel.status == IssueStatus.open.value,
             IssueScopeMembership.scope_key == scope_key,
             IssueScopeMembership.active.is_(True),
         )

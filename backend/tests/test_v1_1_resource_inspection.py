@@ -47,6 +47,7 @@ def evaluate(
     failures: list[ProviderCollectionFailure] | None = None,
     policy: InspectionPolicySettings | None = None,
     trigger: InspectionTrigger = InspectionTrigger.manual,
+    scope: InspectionScope = SCOPE,
 ):
     return evaluate_resource_collection(
         ProviderCollectionResult(
@@ -54,7 +55,7 @@ def evaluate(
             observations=observations,
             failures=failures or [],
         ),
-        scope=SCOPE,
+        scope=scope,
         policy=policy or InspectionPolicySettings(),
         trigger=trigger,
         now=NOW,
@@ -482,7 +483,10 @@ def test_required_component_policy_only_alerts_for_configured_component() -> Non
             )
         ]
     )
-    result = by_code(evaluate([], policy=policy), "required_components")
+    result = by_code(
+        evaluate([], policy=policy, scope=InspectionScope(type="cluster")),
+        "required_components",
+    )
 
     assert result.coverage.status == CheckStatus.abnormal
     assert result.issue_candidates[0].issue_code.value == "REQUIRED_COMPONENT_MISSING"
@@ -519,6 +523,7 @@ def test_required_component_supports_kubernetes_set_and_exists_selectors() -> No
                 )
             ],
             policy=policy,
+            scope=InspectionScope(type="cluster"),
         ),
         "required_components",
     )
@@ -549,6 +554,7 @@ def test_required_component_matches_pod_level_control_plane_components() -> None
                 )
             ],
             policy=policy,
+            scope=InspectionScope(type="cluster"),
         ),
         "required_components",
     )
@@ -580,11 +586,30 @@ def test_required_component_collection_failure_does_not_create_missing_issue() -
                 )
             ],
             policy=policy,
+            scope=InspectionScope(type="cluster"),
         ),
         "required_components",
     )
 
     assert result.coverage.status == CheckStatus.failed
+    assert result.issue_candidates == []
+
+
+def test_required_components_are_cluster_level_and_skipped_for_namespace_scope() -> None:
+    policy = InspectionPolicySettings(
+        required_components=[
+            RequiredComponentPolicy(
+                name="CoreDNS",
+                namespace="kube-system",
+                kind="Deployment",
+                label_selector="k8s-app=kube-dns",
+            )
+        ]
+    )
+    result = by_code(evaluate([], policy=policy), "required_components")
+
+    assert result.coverage.status == CheckStatus.skipped
+    assert result.coverage.reason == "必需组件是集群级策略，仅在全集群巡检中检查"
     assert result.issue_candidates == []
 
 

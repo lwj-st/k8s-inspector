@@ -254,10 +254,14 @@ def evaluate_resource_collection(
     required_component_items = [
         item for item in result.observations if kind(item) in REQUIRED_COMPONENT_KINDS
     ]
-    required_issues = required_component_candidates(
-        required_component_items,
-        policy,
-        observed_at,
+    required_issues = (
+        required_component_candidates(
+            required_component_items,
+            policy,
+            observed_at,
+        )
+        if scope.type.value == "cluster"
+        else []
     )
     evaluations.append(
         evaluation(
@@ -268,6 +272,9 @@ def evaluate_resource_collection(
             duration_ms=duration,
             failures=_required_component_failures(result, policy),
             skipped_reason=(
+                "必需组件是集群级策略，仅在全集群巡检中检查"
+                if scope.type.value != "cluster"
+                else
                 None
                 if any(item.enabled for item in policy.required_components)
                 else "未配置必需组件策略；可选组件缺失不告警"

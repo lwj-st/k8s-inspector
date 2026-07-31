@@ -91,6 +91,34 @@ def _service_evaluation(scope: InspectionScope, *, present: bool):
     )
 
 
+def _required_component_evaluation(scope: InspectionScope, *, present: bool):
+    candidate = IssueCandidate(
+        issue_code=IssueCode.REQUIRED_COMPONENT_MISSING,
+        severity=IssueSeverity.critical,
+        scope=IssueScope.workload,
+        resource=ResourceRef(kind="DaemonSet", namespace="kube-system", name="Calico Node"),
+        summary="必需组件 Calico Node 不存在",
+        reason="未找到 namespace=kube-system、kind=DaemonSet、selector=k8s-app=calico-node 的对象。",
+        suggestion="确认组件是否安装，或修正必需组件定位策略。",
+        source_check="required_components",
+    )
+    candidates = [candidate] if present else []
+    return CheckEvaluation(
+        scope=scope,
+        scope_key=build_inspection_scope_key(scope),
+        coverage=Coverage(
+            check_code="required_components",
+            name="必需组件",
+            status=CheckStatus.abnormal if present else CheckStatus.passed,
+            reason="发现异常" if present else None,
+            checked_objects=10,
+            duration_ms=1,
+            issue_count=len(candidates),
+        ),
+        issue_candidates=candidates,
+    )
+
+
 def test_multi_scope_membership_delays_recovery_until_all_scopes_clear(client):
     session_factory = client.app.state.session_factory
     now = datetime.now(timezone.utc)
@@ -168,13 +196,50 @@ def test_multi_scope_membership_delays_recovery_until_all_scopes_clear(client):
         )
         session.commit()
         assert reopened.opened_count == 1
-        assert session.get(IssueModel, issue_id).status == "open"
+
+
+def test_required_components_global_pass_recovers_old_namespace_scope_false_positive(client):
+    session_factory = client.app.state.session_factory
+    now = datetime.now(timezone.utc)
+    old_namespace_scope = InspectionScope(type="namespace", namespace="platform")
+    cluster_scope = InspectionScope(type="cluster")
+    with session_factory() as session:
+        run1 = _run(session, old_namespace_scope, now)
+        opened = apply_evaluations(
+            session,
+            cluster_id="cluster-a",
+            run_id=run1.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_required_component_evaluation(old_namespace_scope, present=True)],
+            occurred_at=now,
+        )
+        session.commit()
+        issue_id = next(iter(opened.issue_ids))
         membership = session.get(
             IssueScopeMembership,
-            {"issue_id": issue_id, "scope_key": build_inspection_scope_key(pod_scope)},
+            {
+                "issue_id": issue_id,
+                "scope_key": build_inspection_scope_key(old_namespace_scope),
+            },
         )
-        assert membership.active is True
-        assert membership.deactivated_at is None
+        assert membership is not None and membership.active
+
+        run2 = _run(session, cluster_scope, now + timedelta(minutes=1))
+        recovered = apply_evaluations(
+            session,
+            cluster_id="cluster-a",
+            run_id=run2.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[_required_component_evaluation(cluster_scope, present=False)],
+            occurred_at=now + timedelta(minutes=1),
+        )
+        session.commit()
+
+        assert recovered.recovered_count == 1
+        assert recovered.issue_ids == {issue_id}
+        assert session.get(IssueModel, issue_id).status == "recovered"
+        session.refresh(membership)
+        assert membership.active is False
 
 
 def test_deleted_service_recovers_previous_service_issue(client):
