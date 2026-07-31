@@ -945,16 +945,18 @@ export function SettingsPage() {
               </div>
             </div>
             {settings.inspection_policy.required_components.length === 0 ? <p className="empty-copy">尚未配置必需组件。</p> : (
-              <div className="management-list">
+              <div className="management-list required-component-list">
                 {settings.inspection_policy.required_components.map((component, index) => (
-                  <article className="management-card" key={`${component.namespace}-${component.kind}-${component.label_selector}`}>
-                    <div className="section-header">
+                  <article className="management-card required-component-card" key={`${component.namespace}-${component.kind}-${component.label_selector}`}>
+                    <div className="required-component-main">
                       <strong>{component.name}</strong>
-                      <StatusBadge status={component.enabled ? "enabled" : "disabled"} />
+                      <span>{component.namespace} · {component.kind}</span>
+                      <code>{component.label_selector}</code>
                     </div>
-                    <p>{component.namespace} · {component.kind}</p>
-                    <code>{component.label_selector}</code>
-                    <button type="button" className="danger-button" onClick={() => removeRequiredComponent(index)}>移除</button>
+                    <div className="required-component-actions">
+                      <StatusBadge status={component.enabled ? "enabled" : "disabled"} />
+                      <button type="button" className="danger-button mini-button" onClick={() => removeRequiredComponent(index)}>移除</button>
+                    </div>
                   </article>
                 ))}
               </div>

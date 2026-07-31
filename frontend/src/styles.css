@@ -757,11 +757,19 @@ a {
 .issue-workbench-table th,
 .issue-workbench-table td {
   overflow: hidden;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .issue-workbench-table .status-badge,
 .issue-workbench-table .text-link {
   white-space: nowrap;
+}
+
+.issue-workbench-table .status-badge {
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .issue-col-severity {
@@ -785,7 +793,7 @@ a {
 }
 
 .issue-col-status {
-  width: 78px;
+  width: 92px;
 }
 
 .issue-col-duration {
@@ -825,7 +833,7 @@ a {
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
 .issue-cell-badge,
@@ -837,10 +845,11 @@ a {
 .issue-ack-badge {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.2;
   user-select: text;
 }
 
@@ -2034,6 +2043,36 @@ summary:focus-visible {
   background: #fff8f7;
 }
 
+.issue-ignore-action {
+  width: auto;
+  min-height: 36px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.issue-ignore-action-muted {
+  border: 1px solid rgba(122, 75, 0, 0.28);
+  background: #fffaf0;
+  color: #7a4b00;
+}
+
+.issue-ignore-action-muted:hover {
+  background: #fff3d6;
+}
+
+.issue-ignore-action-restore {
+  border: 1px solid rgba(15, 118, 110, 0.26);
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--teal);
+}
+
+.issue-ignore-action-restore:hover {
+  background: rgba(15, 118, 110, 0.14);
+}
+
 .feedback-banner {
   display: flex;
   gap: 12px;
@@ -2572,6 +2611,46 @@ summary:focus-visible {
   color: var(--muted);
 }
 
+.required-component-list {
+  gap: 8px;
+}
+
+.required-component-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.required-component-main {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(150px, 0.9fr) minmax(220px, 1.4fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.required-component-main strong,
+.required-component-main span,
+.required-component-main code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.required-component-main span {
+  color: var(--muted);
+}
+
+.required-component-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .management-form fieldset,
 .threshold-groups fieldset {
   display: grid;
@@ -2641,6 +2720,10 @@ summary:focus-visible {
   .policy-layout {
     grid-template-columns: 1fr;
   }
+
+  .required-component-main {
+    grid-template-columns: minmax(140px, 0.8fr) minmax(140px, 0.8fr) minmax(180px, 1fr);
+  }
 }
 
 @media (max-width: 800px) {
@@ -2684,6 +2767,15 @@ summary:focus-visible {
 
   .summary-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .required-component-card,
+  .required-component-main {
+    grid-template-columns: 1fr;
+  }
+
+  .required-component-actions {
+    justify-content: flex-start;
   }
 
   .summary-card {

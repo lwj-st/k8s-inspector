@@ -566,7 +566,7 @@ export function IssueDetailPanel({
             {unignoreError ? <p className="field-error" role="alert">{unignoreError}</p> : null}
             <button
               type="button"
-              className="primary-action"
+              className="issue-ignore-action issue-ignore-action-restore"
               disabled={unignoring}
               onClick={() => void handleUnignore()}
             >
@@ -578,7 +578,7 @@ export function IssueDetailPanel({
             {ignoreError ? <p className="field-error" role="alert">{ignoreError}</p> : null}
             <button
               type="button"
-              className="danger-button"
+              className="issue-ignore-action issue-ignore-action-muted"
               disabled={ignoring}
               onClick={() => void handleIgnore()}
             >
