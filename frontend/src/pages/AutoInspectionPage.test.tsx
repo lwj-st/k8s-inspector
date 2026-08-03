@@ -534,6 +534,10 @@ describe("AutoInspectionPage", () => {
     expect(rows[0]).toHaveAttribute("aria-label", "批量结果 error-ns");
     expect(rows[1]).toHaveAttribute("aria-label", "批量结果 warning-ns");
     expect(rows[2]).toHaveAttribute("aria-label", "批量结果 healthy-ns");
+    const healthyDetails = screen.getByText("正常名称空间（1）").closest("details");
+    expect(healthyDetails).not.toBeNull();
+    expect(healthyDetails).not.toHaveAttribute("open");
+    expect(within(healthyDetails as HTMLDetailsElement).getByRole("row", { name: "批量结果 healthy-ns" })).toBeInTheDocument();
 
     const outcomeSummary = screen.getByText("展开批量巡检整体结论与覆盖");
     const outcomeDetails = outcomeSummary.closest("details");
@@ -870,17 +874,12 @@ describe("AutoInspectionPage", () => {
     expect(within(drawer).getByText("故障模板手动匹配")).toBeInTheDocument();
     expect(within(drawer).getByText("已命中模板（1）")).toBeInTheDocument();
     expect(within(drawer).getByRole("heading", { name: "无法判断（1）" })).toBeInTheDocument();
-    expect(within(drawer).getByText("未命中模板（1）")).toBeInTheDocument();
+    expect(within(drawer).queryByText("未命中模板（1）")).not.toBeInTheDocument();
     expect(within(drawer).getAllByText("CrashLoop 模板").length).toBeGreaterThan(0);
     expect(within(drawer).getByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();
     expect(within(drawer).getByText("采集失败模板")).toBeInTheDocument();
 
-    const unmatchedDetails = within(drawer).getByText("未命中模板（1）").closest("details");
-    expect(unmatchedDetails).not.toHaveAttribute("open");
-    fireEvent.click(within(unmatchedDetails as HTMLDetailsElement).getByText("未命中模板（1）"));
-    expect(unmatchedDetails).toHaveAttribute("open");
-    expect(within(unmatchedDetails as HTMLDetailsElement).getAllByText("Redis 连接失败模板").length).toBeGreaterThan(0);
-    expect(within(unmatchedDetails as HTMLDetailsElement).getByText(/对象组 redis 在日志中包含 redis timeout/)).toBeInTheDocument();
+    expect(within(drawer).queryByText("Redis 连接失败模板")).not.toBeInTheDocument();
   });
 
   it("shows diagnosis loading state in auto inspection page", async () => {
@@ -1038,7 +1037,7 @@ describe("AutoInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
     const drawer = await screen.findByRole("complementary", { name: "模板匹配结果" });
-    expect(await within(drawer).findByText("本次未命中任何故障模板。")).toBeInTheDocument();
+    expect(await within(drawer).findByText("本次没有命中故障模板。")).toBeInTheDocument();
   });
 
   it("opens namespace evidence with detail_target namespace and label selector, then prioritizes abnormal pods", async () => {
@@ -1110,9 +1109,9 @@ describe("AutoInspectionPage", () => {
     const drawer = await screen.findByRole("complementary", { name: "detail-name 巡检证据" });
     expect(within(drawer).getByText("Pod 状态")).toBeInTheDocument();
     expect(within(drawer).getByText("事件")).toBeInTheDocument();
-    expect(within(drawer).getByText("名称空间资源使用")).toBeInTheDocument();
-    expect(within(drawer).getByText("180m")).toBeInTheDocument();
-    expect(within(drawer).getByText("576Mi")).toBeInTheDocument();
+    expect(within(drawer).getByLabelText("重点摘要")).toHaveTextContent("CPU");
+    expect(within(drawer).getAllByText("180m").length).toBeGreaterThan(0);
+    expect(within(drawer).getAllByText("576Mi").length).toBeGreaterThan(0);
     expect(within(drawer).getByText("broken-api")).toBeInTheDocument();
     expect(within(drawer).getAllByText("资源使用").length).toBeGreaterThan(0);
     expect(within(drawer).getByText("150m")).toBeInTheDocument();
@@ -1415,8 +1414,11 @@ describe("AutoInspectionPage", () => {
     expect(within(drawer).getAllByText("关联对象").length).toBeGreaterThan(0);
     expect(within(drawer).getByText("Ingress/demo：unknown")).toBeInTheDocument();
     expect(within(drawer).getByText("DaemonSet/agent：degraded")).toBeInTheDocument();
-    expect(within(drawer).getByText("Pod（全部正常 / 已完成 1）")).toBeInTheDocument();
-    expect(within(drawer).getByText("Service（全部正常 1）")).toBeInTheDocument();
+    const normalPodDetails = within(drawer).getByText("Pod（全部正常 / 已完成 1）").closest("details");
+    const normalServiceDetails = within(drawer).getByText("Service（全部正常 1）").closest("details");
+    expect(normalPodDetails).not.toHaveAttribute("open");
+    expect(normalServiceDetails).not.toHaveAttribute("open");
+    expect(within(drawer).queryAllByText(/未采集到 Metrics 样本/)).toHaveLength(1);
   });
 
   it("keeps succeeded completed migration pods in the normal section", async () => {
@@ -1459,7 +1461,7 @@ describe("AutoInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看证据" }));
 
     const drawer = await screen.findByRole("complementary", { name: "prod-core 巡检证据" });
-    expect(within(drawer).getByText("异常 Pod")).toBeInTheDocument();
+    expect(within(drawer).getByRole("heading", { name: "异常 Pod" })).toBeInTheDocument();
     expect(within(drawer).getByText("正常 / 已完成 Pod（1）")).toBeInTheDocument();
     expect(within(drawer).getByText("safeapi-migrate").closest("details")).not.toHaveAttribute("open");
     expect(within(drawer).getByText("broken-api")).toBeInTheDocument();

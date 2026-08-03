@@ -1,5 +1,5 @@
 {{- if ne (int .Values.replicaCount) 1 }}
-{{- fail "k8s-inspector v1.1.0 only supports replicaCount=1 because SQLite and the in-process scheduler are single-writer" }}
+{{- fail "k8s-inspector v1.2.0 only supports replicaCount=1 because SQLite and the in-process scheduler are single-writer" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment

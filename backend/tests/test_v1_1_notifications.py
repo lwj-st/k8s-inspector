@@ -222,6 +222,22 @@ def test_channel_api_masks_secrets_and_test_does_not_create_issue(client, monkey
         assert session.get(NotificationDeliveryModel, delivery.id) is not None
 
 
+def test_notification_detail_url_uses_normalized_base_path() -> None:
+    settings = notification_service.Settings(
+        base_path="/inspector/",
+        trusted_detail_base_url="https://inspector.example.com",
+    )
+
+    assert (
+        str(notification_service._detail_url(settings, "/issues/12"))
+        == "https://inspector.example.com/inspector/issues/12"
+    )
+    assert (
+        str(notification_service._detail_url(settings, "issues/12"))
+        == "https://inspector.example.com/inspector/issues/12"
+    )
+
+
 def test_no_feishu_receive_or_callback_route_exists(client):
     paths = set(client.app.openapi()["paths"])
     assert not any("callback" in path or "events" in path and "issues" not in path for path in paths)

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApiBaseUrl, getRouterBasename, normalizeBasePath } from "../app/config";
@@ -93,6 +93,7 @@ describe("base path helpers", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
     fetchMock.mockReset();
   });
@@ -122,5 +123,17 @@ describe("base path helpers", () => {
     expect(await screen.findByRole("heading", { name: "系统设置" })).toBeInTheDocument();
     expect(await screen.findByText("kubernetes")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "系统设置" })).toHaveAttribute("href", "/inspector/settings");
+  });
+
+  it("renders routes correctly at root basename", async () => {
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/settings?tab=basic"],
+      basename: getRouterBasename("")
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "系统设置" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "系统设置" })).toHaveAttribute("href", "/settings");
   });
 });

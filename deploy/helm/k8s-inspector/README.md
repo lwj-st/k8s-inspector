@@ -5,17 +5,39 @@
 必须使用与应用镜像相同版本的 Chart 完整安装或升级，不能只替换 Deployment
 中的镜像。Chart 同时管理 ServiceAccount、ClusterRole 和 ClusterRoleBinding。
 
+根路径部署：
+
 ```bash
 helm lint ./deploy/helm/k8s-inspector \
-  -f ./deploy/helm/k8s-inspector/values-dev.yaml
+  -f ./deploy/helm/k8s-inspector/values-root.yaml
 
 helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
-  -f ./deploy/helm/k8s-inspector/values-dev.yaml \
+  -f ./deploy/helm/k8s-inspector/values-root.yaml \
+  --set image.tag=v1.2.0 \
   --atomic \
   --timeout 15m
 ```
+
+`values-root.yaml` 使用 `basePath: ""`，页面入口为 `/`，API 前缀为 `/api/v1`。
+
+子路径部署：
+
+```bash
+helm lint ./deploy/helm/k8s-inspector \
+  -f ./deploy/helm/k8s-inspector/values-subpath.yaml
+
+helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
+  --namespace k8s-inspector \
+  --create-namespace \
+  -f ./deploy/helm/k8s-inspector/values-subpath.yaml \
+  --set image.tag=v1.2.0 \
+  --atomic \
+  --timeout 15m
+```
+
+`values-subpath.yaml` 使用 `basePath: /inspector`，页面入口为 `/inspector/`，API 前缀为 `/inspector/api/v1`。
 
 ## 安装后权限验收
 
@@ -55,7 +77,7 @@ Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会�
 
 - `image.repository`：镜像地址，默认 `ghcr.io/lwj-st/k8s-inspector`
 - `image.tag`：镜像标签，默认 `latest`
-- `basePath`：应用子路径，默认空，表示域名根路径访问
+- `basePath`：访问路径；空字符串或 `/` 表示根路径，`/inspector` 表示子路径。默认 Ingress path、健康探针和后端 API 前缀都会使用该值
 - `ingress.className`：默认 `nginx`，其他环境可改成 `kong`、`traefik`，或显式置空
 - `ingress.hosts[0].host`：访问域名
 - `ingress.tls`：TLS 证书配置，示例默认使用 `sensecore-tls`
@@ -85,8 +107,11 @@ Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会�
 
 ## Kong strip-path 示例
 
+当前 Chart 默认要求网关不剥离访问前缀。只有网关会剥离 `/inspector` 时才使用以下写法；
+此时应用自身仍以根路径接收请求，应把 `basePath` 留空。
+
 ```yaml
-basePath: /inspector
+basePath: ""
 ingress:
   enabled: true
   annotations:

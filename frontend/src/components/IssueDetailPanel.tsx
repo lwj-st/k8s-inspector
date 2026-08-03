@@ -251,12 +251,6 @@ function issueCommands(issue: Issue): IssueCommand[] {
     commands.push(describeResourceCommand(pod), ...podDiagnosisCommands(pod));
   } else if (issue.issue_code.startsWith("PVC_") || issue.issue_code === "VOLUME_MOUNT_FAILED") {
     commands.push(describeResourceCommand(issue.resource));
-    if (issue.resource.namespace) {
-      commands.push({
-        title: `查看 ${issue.resource.namespace} 存储 Warning 事件`,
-        command: `kubectl get events -n ${shellQuote(issue.resource.namespace)} --field-selector type=Warning --sort-by=.lastTimestamp`,
-      });
-    }
   } else if (issue.issue_code.startsWith("PV_")) {
     commands.push(describeResourceCommand(issue.resource));
   } else if (issue.issue_code.startsWith("NODE_")) {
@@ -271,8 +265,6 @@ function issueCommands(issue: Issue): IssueCommand[] {
     || issue.issue_code === "CRONJOB_NOT_SCHEDULED"
     || issue.issue_code === "REQUIRED_COMPONENT_MISSING"
   ) {
-    commands.push(describeResourceCommand(issue.resource));
-  } else {
     commands.push(describeResourceCommand(issue.resource));
   }
   return Array.from(
@@ -391,15 +383,40 @@ export function IssueDetailPanel({
 
       <section className="detail-section" aria-labelledby="impact-title">
         <h2 id="impact-title">结论与影响范围</h2>
-        <p>{issue.reason}</p>
-        <dl className="detail-grid">
-          <div><dt>集群</dt><dd>{issue.cluster_id}</dd></div>
-          <div><dt>范围</dt><dd>{issue.scope}</dd></div>
-          <div><dt>首次发现</dt><dd>{formatDateTime(issue.first_seen_at)}</dd></div>
-          <div><dt>最后发现</dt><dd>{formatDateTime(issue.last_seen_at)}</dd></div>
-          <div><dt>出现次数</dt><dd>{issue.occurrence_count}</dd></div>
-          <div><dt>确认状态</dt><dd>{issue.acknowledged_at ? "已确认" : "未确认"}</dd></div>
-        </dl>
+        <p className="issue-primary-reason">{issue.reason}</p>
+        <div className="issue-primary-summary" aria-label="问题重点">
+          <div>
+            <span>资源</span>
+            <strong>{resourceLabel(issue.resource)}</strong>
+          </div>
+          <div>
+            <span>最后发现</span>
+            <strong>{formatDateTime(issue.last_seen_at)}</strong>
+          </div>
+          <div>
+            <span>出现次数</span>
+            <strong>{issue.occurrence_count}</strong>
+          </div>
+          <div>
+            <span>确认状态</span>
+            <strong>{issue.acknowledged_at ? "已确认" : "未确认"}</strong>
+          </div>
+        </div>
+        <div className="issue-next-action">
+          <strong>建议动作</strong>
+          <p>{issue.suggestion}</p>
+        </div>
+        <details className="evidence-drawer-details">
+          <summary>查看技术字段</summary>
+          <dl className="detail-grid">
+            <div><dt>集群</dt><dd>{issue.cluster_id}</dd></div>
+            <div><dt>范围</dt><dd>{issue.scope}</dd></div>
+            <div><dt>首次发现</dt><dd>{formatDateTime(issue.first_seen_at)}</dd></div>
+            <div><dt>最后发现</dt><dd>{formatDateTime(issue.last_seen_at)}</dd></div>
+            <div><dt>出现次数</dt><dd>{issue.occurrence_count}</dd></div>
+            <div><dt>确认状态</dt><dd>{issue.acknowledged_at ? "已确认" : "未确认"}</dd></div>
+          </dl>
+        </details>
       </section>
 
       {chainResources.length > 1 ? (
@@ -423,7 +440,10 @@ export function IssueDetailPanel({
       ) : null}
 
       <section className="detail-section" aria-labelledby="evidence-title">
-        <h2 id="evidence-title">证据</h2>
+        <div className="section-header">
+          <h2 id="evidence-title">证据</h2>
+          <span className="section-tip">{issue.evidence.length} 条</span>
+        </div>
         {issue.evidence.length === 0 ? (
           <p className="empty-copy">本问题没有可展示的持久化证据。</p>
         ) : (
@@ -454,11 +474,6 @@ export function IssueDetailPanel({
             ))}
           </div>
         )}
-      </section>
-
-      <section className="detail-section suggestion-section" aria-labelledby="suggestion-title">
-        <h2 id="suggestion-title">处理建议</h2>
-        <p>{issue.suggestion}</p>
       </section>
 
       {commands.length > 0 ? (
@@ -570,7 +585,7 @@ export function IssueDetailPanel({
               disabled={unignoring}
               onClick={() => void handleUnignore()}
             >
-              {unignoring ? "取消中…" : "取消忽略"}
+              {unignoring ? "恢复中…" : "恢复显示"}
             </button>
           </>
         ) : (

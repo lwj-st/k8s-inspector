@@ -534,4 +534,26 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("基础配置已保存")).toBeInTheDocument();
     expect((updatedSettings as SettingsResponse | null)?.cluster_id).toBe("dev-cluster");
   });
+
+  it("keeps settings copy concise and primary actions blue", async () => {
+    fetchMock.mockImplementation(baseFetch(() => null));
+    const noisyEyebrow = `管理${"区"}`;
+    const noisySettingsCopy = `计划、通知和巡检策略不会占用日常${"排障工作台。"} `;
+    const noisyWorkbenchCopy = `可信${"巡检"}与${"主动"}${"发现"}`;
+
+    render(<MemoryRouter initialEntries={["/settings?tab=policy"]}><SettingsPage /></MemoryRouter>);
+
+    expect(await screen.findByRole("heading", { name: "系统设置" })).toBeInTheDocument();
+    expect(screen.queryByText(noisyEyebrow)).not.toBeInTheDocument();
+    expect(screen.queryByText(noisySettingsCopy.trim())).not.toBeInTheDocument();
+    expect(screen.queryByText(noisyWorkbenchCopy)).not.toBeInTheDocument();
+
+    const componentSelect = await screen.findByLabelText("选择组件");
+    expect(componentSelect.tagName).toBe("SELECT");
+    expect(screen.queryByLabelText("名称空间")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Label Selector")).not.toBeInTheDocument();
+
+    const saveButton = screen.getByRole("button", { name: "保存巡检策略" });
+    expect(saveButton).toHaveClass("primary-action");
+  });
 });

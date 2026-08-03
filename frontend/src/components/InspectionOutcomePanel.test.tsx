@@ -19,6 +19,22 @@ function coverage(status: Coverage["status"]): Coverage[] {
 }
 
 describe("InspectionOutcomePanel", () => {
+  it("summarizes coverage with success skipped failed and abnormal counts", () => {
+    render(
+      <InspectionOutcomePanel
+        healthStatus="warning"
+        coverage={[
+          ...coverage("passed"),
+          ...coverage("skipped"),
+          ...coverage("failed"),
+          ...coverage("abnormal"),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("本次检查项 4；成功 1，跳过 1，失败 1，异常 1。")).toBeInTheDocument();
+  });
+
   it.each(["failed", "skipped"] as const)(
     "does not present healthy when coverage is %s",
     (coverageStatus) => {

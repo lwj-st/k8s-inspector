@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.core.pathing import normalize_base_path
 from app.models import (
     InspectionRun as InspectionRunModel,
     Issue as IssueModel,
@@ -498,7 +499,8 @@ def _mask_endpoint(value: str) -> str:
 
 def _detail_url(settings: Settings, path: str) -> str:
     base = (settings.trusted_detail_base_url or "http://localhost").rstrip("/")
-    return f"{base}{settings.base_path.rstrip('/')}{path}"
+    detail_path = path if path.startswith("/") else f"/{path}"
+    return f"{base}{normalize_base_path(settings.base_path)}{detail_path}"
 
 
 def _normalize_name(value: str) -> str:

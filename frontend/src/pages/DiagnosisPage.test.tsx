@@ -173,21 +173,14 @@ describe("DiagnosisPage", () => {
     expect(within(panel).getAllByText("CrashLoop 模板").length).toBeGreaterThan(0);
     expect(await screen.findByText("已命中模板（1）")).toBeInTheDocument();
     expect(within(panel).getByRole("heading", { name: "无法判断（1）" })).toBeInTheDocument();
-    expect(within(panel).getByText("未命中模板（1）")).toBeInTheDocument();
+    expect(within(panel).queryByText("未命中模板（1）")).not.toBeInTheDocument();
     expect(within(panel).getByText("命中条件 2")).toBeInTheDocument();
     expect(within(panel).getByText(/对象组 api 的 Pod 状态/)).toBeInTheDocument();
     expect(within(panel).getByText(/对象组 api 在日志中包含 connection refused/)).toBeInTheDocument();
     expect(within(panel).getByText("API 采集失败模板")).toBeInTheDocument();
     expect(within(panel).getByText("无法判断：采集 demo/app=api 失败，错误：Forbidden。")).toBeInTheDocument();
 
-    const unmatchedDetails = within(panel).getByText("未命中模板（1）").closest("details");
-    expect(unmatchedDetails).not.toHaveAttribute("open");
-    expect(within(unmatchedDetails as HTMLDetailsElement).getAllByText("Redis 连接失败模板").length).toBeGreaterThan(0);
-
-    await user.click(within(unmatchedDetails as HTMLDetailsElement).getByText("未命中模板（1）"));
-    expect(unmatchedDetails).toHaveAttribute("open");
-    expect(within(unmatchedDetails as HTMLDetailsElement).getByText(/对象组 redis 在日志中包含 redis timeout/)).toBeInTheDocument();
-    expect(within(unmatchedDetails as HTMLDetailsElement).getByText("当前没有发现 redis timeout 日志")).toBeInTheDocument();
+    expect(within(panel).queryByText("Redis 连接失败模板")).not.toBeInTheDocument();
 
     await user.click(within(panel).getByText("查看证据（2）"));
     expect(within(panel).queryByText("全局证据摘要")).not.toBeInTheDocument();
@@ -287,6 +280,6 @@ describe("DiagnosisPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "运行模板检查" }));
 
-    expect(await screen.findByText("本次未命中任何故障模板。")).toBeInTheDocument();
+    expect(await screen.findByText("本次没有命中故障模板。")).toBeInTheDocument();
   });
 });

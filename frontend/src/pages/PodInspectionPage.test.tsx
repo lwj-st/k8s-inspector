@@ -816,7 +816,11 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
     fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
-    expect(await screen.findByText("命中上下文")).toBeInTheDocument();
+    expect(await screen.findByText("命中上下文（不是完整日志）")).toBeInTheDocument();
+    expect(screen.getByText("Pod：demo-api-1")).toBeInTheDocument();
+    expect(screen.getByText("容器：demo-api")).toBeInTheDocument();
+    expect(screen.getByText("关键字：connection refused")).toBeInTheDocument();
+    expect(screen.getByText("时间：服务端未返回")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "booting app\ndial tcp db:5432\ndatabase connection refused\nretry in 3s\npanic: dependency unavailable")).toBeInTheDocument();
     expect(screen.getAllByText("connection refused").some((element) => element.tagName.toLowerCase() === "mark")).toBe(true);
     expect(screen.queryByText((_, element) => element?.textContent === "{\"error\":\"invalid_client\",\"error_description\":\"Client authentication failed\"}")).not.toBeInTheDocument();
@@ -896,7 +900,9 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
     fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
 
-    expect(await screen.findByText("命中上下文")).toBeInTheDocument();
+    expect(await screen.findByText("命中上下文（不是完整日志）")).toBeInTheDocument();
+    expect(screen.getByText("原始日志已截断")).toBeInTheDocument();
+    expect(screen.getByText("容器：api")).toBeInTheDocument();
     expect(screen.getAllByText((_, element) =>
       element?.tagName.toLowerCase() === "pre"
       && Boolean(element.textContent?.includes("命中行：level=error msg=database failed")),

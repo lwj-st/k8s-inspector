@@ -56,6 +56,26 @@ def test_base_path_serves_index_html(tmp_path: Path) -> None:
     assert "base-path" in response.text
 
 
+def test_base_path_spa_route_refresh_serves_index_html(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><body>issue-detail</body></html>", encoding="utf-8")
+
+    app = create_app(
+        Settings(
+            base_path="/inspector/",
+            database_url=f"sqlite:///{tmp_path / 'test.db'}",
+            frontend_dist_path=str(dist),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/inspector/issues/12")
+
+    assert response.status_code == 200
+    assert "issue-detail" in response.text
+
+
 def test_spa_fallback_does_not_capture_api_paths(tmp_path: Path) -> None:
     dist = tmp_path / "dist"
     dist.mkdir()

@@ -39,6 +39,8 @@ const ABNORMAL_CATEGORY_LABELS = {
   related_object: "关联对象",
 } as const;
 
+type ResourceUsageSummary = Record<string, string>;
+
 function namespaceStatus(summary: NamespaceSummary) {
   if (summary.status) {
     return summary.status;
@@ -90,6 +92,20 @@ function logHitContext(hit: KeywordHit) {
   return normalizeTerminalLogText(hit.context_text?.trim() || hit.matched_text);
 }
 
+function logHitTime(hit: KeywordHit) {
+  const timedHit = hit as KeywordHit & {
+    matched_at?: string | null;
+    log_time?: string | null;
+    timestamp?: string | null;
+    observed_at?: string | null;
+  };
+  return timedHit.matched_at ?? timedHit.log_time ?? timedHit.timestamp ?? timedHit.observed_at ?? "服务端未返回";
+}
+
+function isLogContextTruncated(hit: KeywordHit) {
+  return /已截断|已省略|省略/.test(hit.context_text ?? "");
+}
+
 function resourceUsageItems(resourceUsage: Record<string, string> | undefined) {
   if (!resourceUsage || Object.keys(resourceUsage).length === 0) {
     return [];
@@ -133,7 +149,7 @@ function formatMemoryMi(value: number) {
   return value >= 1024 ? `${(value / 1024).toFixed(1)}Gi` : `${Math.round(value)}Mi`;
 }
 
-function summarizePodsResourceUsage(pods: InspectedPod[]) {
+function summarizePodsResourceUsage(pods: InspectedPod[]): ResourceUsageSummary {
   let cpu = 0;
   let memory = 0;
   let sampledPods = 0;
@@ -165,13 +181,15 @@ function summarizePodsResourceUsage(pods: InspectedPod[]) {
 function ResourceUsageBlock({
   title,
   resourceUsage,
+  showEmpty = true,
 }: {
   title: string;
   resourceUsage: Record<string, string> | undefined;
+  showEmpty?: boolean;
 }) {
   const items = resourceUsageItems(resourceUsage);
   if (items.length === 0) {
-    return <p className="inline-note">{title}：未采集到 Metrics 样本</p>;
+    return showEmpty ? <p className="inline-note">{title}：未采集到 Metrics 样本</p> : null;
   }
   return (
     <div>
@@ -274,7 +292,7 @@ function EvidencePodCard({
             </ul>
           ) : <p className="inline-note">暂无容器状态</p>}
         </div>
-        <ResourceUsageBlock title="资源使用" resourceUsage={pod.resource_usage} />
+        <ResourceUsageBlock title="资源使用" resourceUsage={pod.resource_usage} showEmpty={false} />
         <div>
           <span className="evidence-label">事件摘要</span>
           {pod.events.length > 0 ? <pre className="log-block code-block-scroll">{pod.events.join("\n")}</pre> : <p className="inline-note">暂无事件</p>}
@@ -294,7 +312,14 @@ function EvidencePodCard({
                 return (
                   <li key={hitKey}>
                     <div>{hit.keyword}</div>
+                    <div className="diagnosis-inline-metrics">
+                      <span>Pod：{pod.name}</span>
+                      <span>容器：{hit.container_name ?? "服务端未返回"}</span>
+                      <span>关键字：{hit.keyword}</span>
+                      <span>时间：{logHitTime(hit)}</span>
+                    </div>
                     <span className="inline-note">命中上下文（不是完整日志）</span>
+                    {isLogContextTruncated(hit) ? <span className="inline-note">原始日志已截断</span> : null}
                     <pre className="log-block code-block-scroll">{logHitContext(hit)}</pre>
                     <div className="button-row">
                       <button
@@ -364,6 +389,9 @@ function NamespaceEvidenceDrawer({
   const daemonsets = data?.daemonsets ?? [];
   const tlsSecrets = data?.tls_secrets ?? [];
   const hasNamespaceObjects = services.length > 0 || ingresses.length > 0 || daemonsets.length > 0 || tlsSecrets.length > 0;
+  const podCount = data?.pods.length ?? summary.pod_count;
+  const abnormalPodCount = data ? abnormalPods.length : summary.abnormal_pod_count;
+  const resourceUsage = data ? summarizePodsResourceUsage(data.pods) : summary.resource_usage;
 
   return (
     <div className="evidence-drawer-backdrop" role="presentation" onMouseDown={onClose}>
@@ -380,36 +408,48 @@ function NamespaceEvidenceDrawer({
             <h4>结论</h4>
             <StatusBadge status={data?.health_status ?? summary.status} />
           </div>
-          <div className="evidence-drawer-summary">
-            <span>Pod {data?.pods.length ?? summary.pod_count}</span>
-            <span>异常 Pod {data ? abnormalPods.length : summary.abnormal_pod_count}</span>
+          <div className="evidence-drawer-summary evidence-drawer-summary-priority" aria-label="重点摘要">
+            <div>
+              <span>Pod</span>
+              <strong>{podCount}</strong>
+            </div>
+            <div className={abnormalPodCount > 0 ? "summary-metric-danger" : "summary-metric-ok"}>
+              <span>异常 Pod</span>
+              <strong>{abnormalPodCount}</strong>
+            </div>
+            <div>
+              <span>CPU</span>
+              <strong>{resourceUsage?.cpu ?? "未采集"}</strong>
+            </div>
+            <div>
+              <span>内存</span>
+              <strong>{resourceUsage?.memory ?? "未采集"}</strong>
+            </div>
           </div>
-          <KeyValueList
-            items={[
-              { label: "名称空间", value: namespace },
-              { label: "Label Selector", value: data?.inspection_target.label_selector ?? item.detail_target.label_selector ?? "未设置" },
-              { label: "健康状态", value: data?.health_status ?? summary.status },
-              { label: "异常分类数", value: String(abnormalCategoryLabels.length) },
-            ]}
-          />
-          <ResourceUsageBlock
-            title="名称空间资源使用"
-            resourceUsage={data ? summarizePodsResourceUsage(data.pods) : summary.resource_usage}
-          />
-          <div className="batch-category-block">
-            <span className="inline-note">异常分类</span>
-            <div className="batch-category-list">
-              {abnormalCategoryLabels.length > 0 ? (
-                abnormalCategoryLabels.map((label) => (
+          {abnormalCategoryLabels.length > 0 ? (
+            <div className="batch-category-block">
+              <span className="inline-note">异常分类</span>
+              <div className="batch-category-list">
+                {abnormalCategoryLabels.map((label) => (
                   <span key={`${namespace}-${label}`} className="batch-category-chip">
                     {label}
                   </span>
-                ))
-              ) : (
-                <span className="batch-category-chip batch-category-chip-muted">无异常分类</span>
-              )}
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
+          <details className="evidence-drawer-details">
+            <summary>查看详细字段</summary>
+            <KeyValueList
+              items={[
+                { label: "名称空间", value: namespace },
+                { label: "Label Selector", value: data?.inspection_target.label_selector ?? item.detail_target.label_selector ?? "未设置" },
+                { label: "健康状态", value: data?.health_status ?? summary.status },
+                { label: "异常分类数", value: String(abnormalCategoryLabels.length) },
+              ]}
+            />
+            <ResourceUsageBlock title="资源样本详情" resourceUsage={resourceUsage} />
+          </details>
         </section>
         {!loading && !error && data ? (
           <InspectionOutcomePanel
@@ -577,6 +617,76 @@ function NamespaceEvidenceDrawer({
   );
 }
 
+function BatchResultTable({
+  results,
+  onViewEvidence,
+}: {
+  results: NamespaceBatchInspectionResult[];
+  onViewEvidence: (item: NamespaceBatchInspectionResult) => void;
+}) {
+  if (results.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="table-scroll-shell batch-result-table-shell">
+      <table className="compact-table batch-result-table">
+        <thead>
+          <tr>
+            <th>分类</th>
+            <th>名称空间</th>
+            <th>状态</th>
+            <th>Pod</th>
+            <th>异常 Pod</th>
+            <th>CPU</th>
+            <th>内存</th>
+            <th>异常分类</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((item) => (
+            <tr key={item.summary.name} aria-label={`批量结果 ${item.summary.name}`}>
+              <td>{batchRowType(item.health_status)}</td>
+              <td>
+                <div className="copyable-cell">
+                  <span className="ellipsis-cell" title={item.summary.name}>{item.summary.name}</span>
+                  <button type="button" className="copy-button" onClick={() => void navigator.clipboard?.writeText(item.summary.name)}>
+                    复制
+                  </button>
+                </div>
+              </td>
+              <td><StatusBadge status={item.health_status} /></td>
+              <td>{item.summary.pod_count}</td>
+              <td>{item.summary.abnormal_pod_count}</td>
+              <td>{item.summary.resource_usage?.cpu ?? "-"}</td>
+              <td>{item.summary.resource_usage?.memory ?? "-"}</td>
+              <td>
+                <div className="batch-category-list batch-category-list-inline">
+                  {item.summary.abnormal_categories.length > 0 ? (
+                    item.summary.abnormal_categories.map((category) => (
+                      <span key={`${item.summary.name}-${category}`} className="batch-category-chip">
+                        {abnormalCategoryLabel(category)}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="batch-category-chip batch-category-chip-muted">无</span>
+                  )}
+                </div>
+              </td>
+              <td>
+                <button type="button" className="mini-button" onClick={() => onViewEvidence(item)} disabled={item.health_status === "error"}>
+                  查看证据
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function AutoInspectionPage() {
   const [search, setSearch] = useState("");
   const [selectedNamespace, setSelectedNamespace] = useState("");
@@ -740,6 +850,8 @@ export function AutoInspectionPage() {
   const warningBatchCount = batchResults.filter((item) => batchHealthRank(item.health_status) === 1).length;
   const unknownBatchCount = batchResults.filter((item) => batchHealthRank(item.health_status) === 2).length;
   const healthyBatchCount = batchResults.filter((item) => batchHealthRank(item.health_status) === 3).length;
+  const attentionBatchResults = sortedBatchResults.filter((item) => batchHealthRank(item.health_status) !== 3);
+  const healthyBatchResults = sortedBatchResults.filter((item) => batchHealthRank(item.health_status) === 3);
   const batchSummaryStatus = errorBatchCount > 0
     ? "critical"
     : warningBatchCount > 0
@@ -872,61 +984,17 @@ export function AutoInspectionPage() {
             <span>无法判断 {unknownBatchCount}</span>
             <span>正常 {healthyBatchCount}</span>
           </div>
-          <div className="table-scroll-shell batch-result-table-shell">
-            <table className="compact-table batch-result-table">
-              <thead>
-                <tr>
-                  <th>分类</th>
-                  <th>名称空间</th>
-                  <th>状态</th>
-                  <th>Pod</th>
-                  <th>异常 Pod</th>
-                  <th>CPU</th>
-                  <th>内存</th>
-                  <th>异常分类</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedBatchResults.map((item) => (
-                  <tr key={item.summary.name} aria-label={`批量结果 ${item.summary.name}`}>
-                    <td>{batchRowType(item.health_status)}</td>
-                    <td>
-                      <div className="copyable-cell">
-                        <span className="ellipsis-cell" title={item.summary.name}>{item.summary.name}</span>
-                        <button type="button" className="copy-button" onClick={() => void navigator.clipboard?.writeText(item.summary.name)}>
-                          复制
-                        </button>
-                      </div>
-                    </td>
-                    <td><StatusBadge status={item.health_status} /></td>
-                    <td>{item.summary.pod_count}</td>
-                    <td>{item.summary.abnormal_pod_count}</td>
-                    <td>{item.summary.resource_usage?.cpu ?? "-"}</td>
-                    <td>{item.summary.resource_usage?.memory ?? "-"}</td>
-                    <td>
-                      <div className="batch-category-list batch-category-list-inline">
-                        {item.summary.abnormal_categories.length > 0 ? (
-                          item.summary.abnormal_categories.map((category) => (
-                            <span key={`${item.summary.name}-${category}`} className="batch-category-chip">
-                              {abnormalCategoryLabel(category)}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="batch-category-chip batch-category-chip-muted">无</span>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <button type="button" className="mini-button" onClick={() => handleViewEvidence(item)} disabled={item.health_status === "error"}>
-                        查看证据
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {attentionBatchResults.length > 0 ? (
+            <BatchResultTable results={attentionBatchResults} onViewEvidence={handleViewEvidence} />
+          ) : (
+            <p className="success-copy">本次状态巡检未发现需要处理的名称空间。</p>
+          )}
+          {healthyBatchResults.length > 0 ? (
+            <details className="normal-details">
+              <summary>正常名称空间（{healthyBatchResults.length}）</summary>
+              <BatchResultTable results={healthyBatchResults} onViewEvidence={handleViewEvidence} />
+            </details>
+          ) : null}
           <details className="batch-outcome-details">
             <summary>展开批量巡检整体结论与覆盖</summary>
             <InspectionOutcomePanel

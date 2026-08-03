@@ -19,7 +19,8 @@ spec:
       http:
         paths:
           {{- range .paths }}
-          - path: {{ .path }}
+          {{- $basePath := include "k8s-inspector.basePath" $ }}
+          - path: {{ default (ternary "/" $basePath (eq $basePath "")) .path }}
             pathType: {{ .pathType }}
             backend:
               service:

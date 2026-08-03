@@ -1,8 +1,8 @@
 # K8s Inspector
 
-K8s Inspector v1.1.0 是面向单个 Kubernetes 集群的只读巡检与排障系统。它将资源状态、对象关系、事件、受限日志证据和问题生命周期集中到一个工作台，帮助运维人员更快定位问题，但不会自动修改集群资源。
+K8s Inspector v1.2.0 是面向单个 Kubernetes 集群的只读巡检与排障系统。它将资源状态、对象关系、事件、受限日志证据和问题生命周期集中到一个工作台，帮助运维人员更快定位问题，但不会自动修改集群资源。
 
-## v1.1.0 能力
+## v1.2.0 能力
 
 - 巡检 Deployment、StatefulSet、DaemonSet、Job、CronJob、Pod、Service、EndpointSlice、Ingress、PVC、PV、Node 和可选 Metrics API。
 - 区分正常、异常、跳过和采集失败；采集失败不会显示为健康。
@@ -10,7 +10,8 @@ K8s Inspector v1.1.0 是面向单个 Kubernetes 集群的只读巡检与排障�
 - 支持手动巡检和单进程定时计划，执行记录保存 API 调用量、日志读取量和耗时。
 - 支持飞书群机器人 V2 Webhook 和通用 Webhook 告警，包含签名、失败重试、消息裁剪和目标访问控制。
 - 支持本地单管理员登录、服务端 Session、CSRF、登录限流和安全审计。
-- 使用 Alembic 将 v1.0.0 SQLite 数据库升级到 v1.1.0。
+- 支持根路径和 `/inspector/` 子路径两种部署形态，部署时二选一。
+- 使用 Alembic 将 v1.0.0 SQLite 数据库升级到当前版本。
 - 提供 `/health/live`、`/health/ready` 和系统状态页面。
 
 飞书范围仅包括告警通知，不需要 App ID 或 App Secret，也不包含飞书应用机器人、消息接收、卡片按钮回调和远程操作。
@@ -22,7 +23,8 @@ frontend/                     React + Vite + TypeScript
 backend/                      FastAPI + SQLite + Provider
 deploy/helm/k8s-inspector/    单副本 Helm Chart
 deploy/kk/                    Kubernetes E2E 配置
-docs/v1.1.0/                 PRD、架构、验收和升级文档
+docs/v1.1.0/                 v1.1.0 PRD、架构、验收和升级文档
+docs/v1.2.0/                 v1.2.0 PRD 和验收文档
 examples/                     模板与白名单示例
 ```
 
@@ -69,7 +71,7 @@ CI 还配置了 Kubernetes 1.34 和 1.36 的 KubeKey 单节点 E2E。支持范�
 
 ## 生产部署
 
-v1.1.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart 会拒绝 `replicaCount` 不等于 `1` 的部署。
+v1.2.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart 会拒绝 `replicaCount` 不等于 `1` 的部署。
 
 > 必须使用与镜像相同版本的完整 Helm Chart 部署。禁止只修改 Deployment
 > 镜像而不执行 Helm upgrade，否则应用能力与 ServiceAccount RBAC 可能不一致，
@@ -90,7 +92,7 @@ v1.1.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart
 kubectl version
 ```
 
-v1.1.0 当前经过验证的 Kubernetes 范围是 1.34 至 1.36。目标集群不在该范围时，
+v1.2.0 当前沿用 Kubernetes 1.34 至 1.36 支持范围。目标集群不在该范围时，
 不能直接作为商用环境部署，应先完成该版本的兼容性验证。
 
 可用以下命令生成随机密钥：
@@ -110,7 +112,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/your-org/k8s-inspector
-  tag: v1.1.0
+  tag: v1.2.0
 
 env:
   appEnv: production
@@ -129,19 +131,43 @@ secretEnv:
   configEncryptionKey: replace-with-fernet-key
 ```
 
+访问路径由 `basePath` 控制。空字符串或 `/` 表示根路径；`/inspector` 表示子路径。
+默认 Ingress path、健康探针、后端 API 前缀和通知详情链接都会使用该值。`env.trustedDetailBaseUrl`
+只填写协议和域名，例如 `https://inspector.example.com`。
+
 `env.clusterId` 只作为首次初始化系统配置的默认集群标识。系统启动后可在“系统设置 → 基础配置 → 集群标识”中修改；运行时的问题去重、问题工作台过滤和通知来源以数据库中的系统配置为准，不再长期依赖环境变量。
 
 `secretEnv.adminPasswordHash` 只作为首次初始化管理员密码的默认哈希。登录后可在页面左下角“更改密码”中修改；修改后的密码哈希保存在数据库中，后续登录以数据库中的密码哈希为准。
 
 部署：
 
+根路径部署：
+
 ```bash
 helm lint ./deploy/helm/k8s-inspector \
+  -f ./deploy/helm/k8s-inspector/values-root.yaml \
   -f /secure/path/values-production.yaml
 
 helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
+  -f ./deploy/helm/k8s-inspector/values-root.yaml \
+  -f /secure/path/values-production.yaml \
+  --atomic \
+  --timeout 15m
+```
+
+子路径部署：
+
+```bash
+helm lint ./deploy/helm/k8s-inspector \
+  -f ./deploy/helm/k8s-inspector/values-subpath.yaml \
+  -f /secure/path/values-production.yaml
+
+helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
+  --namespace k8s-inspector \
+  --create-namespace \
+  -f ./deploy/helm/k8s-inspector/values-subpath.yaml \
   -f /secure/path/values-production.yaml \
   --atomic \
   --timeout 15m
@@ -153,7 +179,8 @@ Chart 默认：
 - 创建只读 RBAC，不授予 `create`、`update`、`patch`、`delete` 或 Pod exec。
 - 创建 `ReadWriteOnce` PVC，并将 SQLite 文件保存到 `/data/k8s_inspector.db`。
 - 在应用启动前由 init container 执行 migration；迁移失败时应用不会启动。
-- 就绪探针访问 `/health/ready`，存活探针访问 `/health/live`。
+- 根路径模式就绪探针访问 `/health/ready`，存活探针访问 `/health/live`。
+- 子路径模式会在探针和 API 前缀前加上 `basePath`，例如 `/inspector/health/ready` 和 `/inspector/api/v1`。
 
 首次生产部署后应检查：
 
@@ -221,27 +248,28 @@ kubectl get secret TLS_SECRET -n INGRESS_NAMESPACE \
 
 确认 SAN 包含 Ingress host 或合法的单级通配符域名。
 
-## 子路径部署
+## 子路径镜像构建
 
-后端和前端必须使用同一个路径。构建镜像时：
+后端和前端必须使用同一个路径。子路径镜像构建时：
 
 ```bash
 docker build \
   --build-arg VITE_BASE_PATH=/inspector \
-  -t ghcr.io/your-org/k8s-inspector:v1.1.0 .
+  -t ghcr.io/your-org/k8s-inspector:v1.2.0 .
 ```
 
-部署时：
+部署时使用：
 
 ```yaml
 basePath: /inspector
 ```
 
-根路径使用空字符串。反向代理是否剥离前缀必须与 `BASE_PATH` 的配置一致。
+根路径镜像构建可省略 `VITE_BASE_PATH` 或显式传空值，部署 values 使用 `basePath: ""`。
+默认要求反向代理不剥离前缀；如果网关剥离 `/inspector`，应用自身应按根路径部署。
 
 ## 重要运行边界
 
-- Kubernetes 1.34 至 1.36 是 v1.1.0 计划支持范围；1.33 及以下不承诺商用支持。
+- Kubernetes 1.34 至 1.36 是 v1.2.0 计划支持范围；1.33 及以下不承诺商用支持。
 - Metrics API 是可选能力，缺失时相应检查显示为 skipped，不影响基础巡检。
 - 资源链路检查基于 Kubernetes 对象关系，只能表示“配置链路正常/异常”，不代表真实网络请求成功。
 - 日志只用于用户主动巡检、异常对象或模板明确要求的证据，不应默认读取全部正常 Pod。
@@ -252,6 +280,6 @@ basePath: /inspector
 
 ## 数据升级与回退
 
-从 v1.0.0 升级前必须停止写入并备份 SQLite 数据库、当前镜像、values 和所有安全密钥。完整步骤见 [v1.1.0 升级与回退指南](docs/v1.1.0/upgrade-guide.md)。
+从 v1.0.0 或 v1.1.0 升级前必须停止写入并备份 SQLite 数据库、当前镜像、values 和所有安全密钥。v1.1.0 详细步骤见 [v1.1.0 升级与回退指南](docs/v1.1.0/upgrade-guide.md)。
 
-发布验收状态见 [v1.1.0 验收报告](docs/v1.1.0/acceptance-report.md)。
+v1.2.0 发布验收状态见 [v1.2.0 验收报告](docs/v1.2.0/acceptance-report.md)。

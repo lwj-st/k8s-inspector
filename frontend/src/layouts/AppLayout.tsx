@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { changePassword } from "../api/client";
@@ -25,6 +25,7 @@ function displayExpiry(value?: string | null) {
 export function AppLayout() {
   const { session, logout } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -33,9 +34,39 @@ export function AppLayout() {
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const username = session?.username ?? "管理员";
+  const userInitial = username.trim().slice(0, 1).toUpperCase() || "管";
+
+  useEffect(() => {
+    if (!userMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (userMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setUserMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setUserMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [userMenuOpen]);
 
   async function handleLogout() {
     setLogoutError(null);
+    setUserMenuOpen(false);
     try {
       await logout();
     } catch (reason) {
@@ -100,7 +131,6 @@ export function AppLayout() {
           </span>
           <div>
             <h1>K8s 巡检台</h1>
-            <small>可信巡检 · 只读排障</small>
           </div>
         </div>
         <nav id="main-navigation" aria-label="主导航">
@@ -119,11 +149,37 @@ export function AppLayout() {
             ))}
           </ul>
         </nav>
-        <div className="session-summary">
-          <strong>{session?.username ?? "管理员"}</strong>
-          <small>Session 最长有效至 {displayExpiry(session?.absolute_expires_at)}</small>
-          <button type="button" onClick={() => setPasswordDialogOpen(true)}>更改密码</button>
-          <button type="button" onClick={() => void handleLogout()}>退出登录</button>
+        <div className="session-summary" ref={userMenuRef}>
+          <button
+            type="button"
+            className="user-card-button"
+            aria-haspopup="menu"
+            aria-expanded={userMenuOpen}
+            onClick={() => setUserMenuOpen((current) => !current)}
+          >
+            <span className="user-avatar" aria-hidden="true">{userInitial}</span>
+            <span className="user-card-text">
+              <strong>{username}</strong>
+              <small>有效至 {displayExpiry(session?.absolute_expires_at) || "--"}</small>
+            </span>
+          </button>
+          {userMenuOpen ? (
+            <div className="user-menu" role="menu" aria-label="用户菜单">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  setPasswordDialogOpen(true);
+                }}
+              >
+                更改密码
+              </button>
+              <button type="button" role="menuitem" onClick={() => void handleLogout()}>
+                注销
+              </button>
+            </div>
+          ) : null}
           {logoutError ? <span role="alert">{logoutError}</span> : null}
         </div>
       </aside>

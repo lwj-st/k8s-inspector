@@ -40,6 +40,20 @@ function logHitContext(hit: KeywordHit) {
     : `命中行：${hit.matched_text}\n\n上下文：\n${context}`;
 }
 
+function logHitTime(hit: KeywordHit) {
+  const timedHit = hit as KeywordHit & {
+    matched_at?: string | null;
+    log_time?: string | null;
+    timestamp?: string | null;
+    observed_at?: string | null;
+  };
+  return timedHit.matched_at ?? timedHit.log_time ?? timedHit.timestamp ?? timedHit.observed_at ?? "服务端未返回";
+}
+
+function isLogContextTruncated(hit: KeywordHit) {
+  return /已截断|已省略|省略/.test(hit.context_text ?? "");
+}
+
 function normalizeLogText(value: string) {
   return normalizeTerminalLogText(value);
 }
@@ -818,7 +832,14 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                               <strong>{hit.keyword}</strong>
                               <StatusBadge status={hit.severity} />
                             </div>
-                            <span className="inline-note">命中上下文</span>
+                            <div className="diagnosis-inline-metrics">
+                              <span>Pod：{currentPod.name}</span>
+                              <span>容器：{hit.container_name ?? "服务端未返回"}</span>
+                              <span>关键字：{hit.keyword}</span>
+                              <span>时间：{logHitTime(hit)}</span>
+                            </div>
+                            <span className="inline-note">命中上下文（不是完整日志）</span>
+                            {isLogContextTruncated(hit) ? <span className="inline-note">原始日志已截断</span> : null}
                             <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                             <div className="log-hit-actions">
                               <button type="button" onClick={() => openIgnoreLogHit(hit)} disabled={ignoring}>
@@ -893,7 +914,14 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                                 <strong>{hit.keyword}</strong>
                                 <StatusBadge status={hit.severity} />
                               </div>
-                              <span className="inline-note">命中上下文</span>
+                              <div className="diagnosis-inline-metrics">
+                                <span>Pod：{currentPod.name}</span>
+                                <span>容器：{hit.container_name ?? "服务端未返回"}</span>
+                                <span>关键字：{hit.keyword}</span>
+                                <span>时间：{logHitTime(hit)}</span>
+                              </div>
+                              <span className="inline-note">命中上下文（不是完整日志）</span>
+                              {isLogContextTruncated(hit) ? <span className="inline-note">原始日志已截断</span> : null}
                               <pre className="log-block code-block-scroll terminal-log-block">{renderHighlightedLog(logHitContext(hit), hit.keyword)}</pre>
                               <div className="log-hit-actions">
                                 <button type="button" onClick={() => openIgnoreLogHit(hit)} disabled={ignoring}>

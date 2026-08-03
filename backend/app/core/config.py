@@ -3,6 +3,8 @@ from os import getenv
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.pathing import normalize_base_path
+
 
 def _split_csv(value: str | None) -> list[str]:
     if not value:
@@ -12,7 +14,7 @@ def _split_csv(value: str | None) -> list[str]:
 
 class Settings(BaseModel):
     app_name: str = "K8s Inspector API"
-    app_version: str = "1.1.0"
+    app_version: str = "1.2.0"
     app_env: str = "development"
     cluster_id: str = "local"
     base_path: str = ""
@@ -49,6 +51,11 @@ class Settings(BaseModel):
     @classmethod
     def normalize_mode(cls, value: str) -> str:
         return value.strip().lower()
+
+    @field_validator("base_path")
+    @classmethod
+    def normalize_base_path_value(cls, value: str) -> str:
+        return normalize_base_path(value)
 
     @property
     def is_production(self) -> bool:
@@ -108,7 +115,7 @@ class Settings(BaseModel):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings(
-        app_version=getenv("APP_VERSION", "1.1.0"),
+        app_version=getenv("APP_VERSION", "1.2.0"),
         app_env=getenv("APP_ENV", "development"),
         cluster_id=getenv("CLUSTER_ID", "local"),
         base_path=getenv("BASE_PATH", ""),

@@ -26,6 +26,9 @@ describe("App", () => {
       if (url.endsWith("/api/v1/auth/session")) {
         return new Response(JSON.stringify(authenticatedSession()), { status: 200 });
       }
+      if (url.endsWith("/api/v1/auth/logout")) {
+        return new Promise<Response>(() => {});
+      }
       if (url.includes("/api/v1/issues?")) {
         return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: url.includes("page_size=1") ? 1 : 20 }), { status: 200 });
       }
@@ -134,7 +137,8 @@ describe("App", () => {
 
     render(<RouterProvider router={router} />);
 
-    await user.click(await screen.findByRole("button", { name: "更改密码" }));
+    await user.click(await screen.findByRole("button", { name: /admin/ }));
+    await user.click(screen.getByRole("menuitem", { name: "更改密码" }));
     await user.type(screen.getByLabelText("当前密码"), "old-password");
     await user.type(screen.getByLabelText("新密码"), "123456");
     await user.type(screen.getByLabelText("确认新密码"), "123456");
@@ -143,4 +147,62 @@ describe("App", () => {
     expect(await screen.findByText("密码已更新，其他已登录会话会失效。")).toBeInTheDocument();
   });
 
+  it("uses a light sidebar theme with restrained nav typography", async () => {
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+      basename: getRouterBasename(""),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    await screen.findByRole("heading", { name: "K8s 巡检台" });
+    const sidebar = document.querySelector(".app-sidebar") as HTMLElement;
+    const activeLink = screen.getByRole("link", { name: "问题工作台" });
+
+    expect(sidebar).toHaveClass("app-sidebar");
+    expect(activeLink).toHaveClass("nav-link-active");
+    expect(document.body.scrollWidth).toBeLessThanOrEqual(window.innerWidth);
+  });
+
+  it("opens the user menu and closes it from outside click or Escape", async () => {
+    const user = userEvent.setup();
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+      basename: getRouterBasename(""),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    const userCard = await screen.findByRole("button", { name: /admin/ });
+    await user.click(userCard);
+    expect(screen.getByRole("menuitem", { name: "更改密码" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "注销" })).toBeInTheDocument();
+
+    await user.click(document.body);
+    expect(screen.queryByRole("menuitem", { name: "注销" })).not.toBeInTheDocument();
+
+    userCard.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "注销" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menuitem", { name: "注销" })).not.toBeInTheDocument();
+  });
+
+  it("logs out from the user menu", async () => {
+    const user = userEvent.setup();
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+      basename: getRouterBasename(""),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    await user.click(await screen.findByRole("button", { name: /admin/ }));
+    await user.click(screen.getByRole("menuitem", { name: "注销" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/auth/logout"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
 });

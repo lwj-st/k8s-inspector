@@ -156,9 +156,15 @@ describe("ProblemWorkbenchPage", () => {
     render(<MemoryRouter><ProblemWorkbenchPage /></MemoryRouter>);
 
     const table = await screen.findByRole("table");
+    expect(requestedUrls.some((url) => {
+      const query = new URL(url, "http://localhost").searchParams;
+      return url.includes("/issues?") && query.get("page_size") === "20" && query.get("status") === "open";
+    })).toBe(true);
     const rows = within(table).getAllByRole("row");
     expect(rows[1]).toHaveTextContent("结算入口没有可用后端");
     expect(rows[2]).toHaveTextContent("Worker 重启次数突增");
+    expect(within(table).queryByText("结算入口已恢复")).not.toBeInTheDocument();
+    expect(within(table).queryByText("临时忽略的证书问题")).not.toBeInTheDocument();
     const summaryCell = within(table).getByText("结算入口没有可用后端").closest(".issue-table-text-cell");
     expect(summaryCell).toHaveClass("issue-table-text-cell-wrap");
     expect(summaryCell).toHaveAttribute("title", "结算入口没有可用后端");
@@ -173,7 +179,8 @@ describe("ProblemWorkbenchPage", () => {
     expect(screen.getByText("存储检查").closest(".coverage-row")).toHaveClass("coverage-failed");
     expect(screen.getAllByText("部分完成").length).toBeGreaterThan(0);
     expect(screen.getByTestId("issue-mobile-list")).toBeInTheDocument();
-    expect(screen.getByText("汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。")).toBeInTheDocument();
+    expect(screen.queryByText("可信巡检与主动发现")).not.toBeInTheDocument();
+    expect(screen.queryByText("汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "最近一次定时巡检覆盖（全集群）" })).toBeInTheDocument();
     const requestCountBeforeRefresh = requestedUrls.length;
     await userEvent.click(screen.getByRole("button", { name: "刷新" }));
@@ -344,8 +351,45 @@ describe("ProblemWorkbenchPage", () => {
     expect(confirmSpy).toHaveBeenCalled();
     expect(await screen.findByText("此问题已忽略")).toBeInTheDocument();
     expect(screen.getByText("已忽略")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "取消忽略" }));
+    await user.click(screen.getByRole("button", { name: "恢复显示" }));
     expect(confirmSpy).toHaveBeenCalledTimes(2);
     expect(await screen.findByRole("button", { name: "忽略此问题" })).toBeInTheDocument();
+  });
+
+  it("hides command section when issue code has no deterministic resource command", async () => {
+    const unknownIssue = issue({
+      issue_code: "CUSTOM_PATTERN_MATCHED",
+      resource: { kind: "CustomThing", namespace: "prod", name: "checkout-rule" },
+      evidence: [],
+    });
+
+    fetchMock.mockImplementation(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/issues/1")) {
+        return new Response(JSON.stringify(unknownIssue), { status: 200 });
+      }
+      if (url.includes("/issues/1/events")) {
+        return new Response(JSON.stringify({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 20,
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/issues/1"]}>
+        <Routes>
+          <Route path="/issues/:id" element={<IssueDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "结算入口没有可用后端" })).toBeInTheDocument();
+    expect(screen.getByText("0 条")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "查看命令" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/kubectl describe customthing/)).not.toBeInTheDocument();
   });
 });

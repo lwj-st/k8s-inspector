@@ -404,7 +404,7 @@ export function DiagnosisResultPanel({
   const results = normalizeResults(data);
   const matchedResults = results.filter((item) => getResultKind(item) === "matched");
   const undeterminedResults = results.filter((item) => getResultKind(item) === "undetermined");
-  const unmatchedResults = results.filter((item) => getResultKind(item) === "unmatched");
+  const visibleResults = matchedResults.length + undeterminedResults.length;
 
   return (
     <section className="page-section" aria-label={title}>
@@ -417,25 +417,19 @@ export function DiagnosisResultPanel({
           本次执行方式：{data.direction}
           {data.executed_at ? ` / ${data.executed_at}` : ""}
         </p>
-        <p className="inline-note">
-          命中模板 {matchedResults.length} / 未命中模板 {unmatchedResults.length} / 无法判断 {undeterminedResults.length}
-        </p>
+        <div className="diagnosis-inline-metrics">
+          <span>命中 {matchedResults.length}</span>
+          <span>无法判断 {undeterminedResults.length}</span>
+          <span>已检查 {results.length}</span>
+        </div>
       </section>
       {matchedResults.length > 0 ? <MatchResultList title="已命中模板" items={matchedResults} kind="matched" /> : null}
-      {results.length === 0 ? (
+      {visibleResults === 0 ? (
         <section className="panel">
-          <p>本次未命中任何故障模板。</p>
+          <p>本次没有命中故障模板。</p>
         </section>
       ) : null}
       {undeterminedResults.length > 0 ? <MatchResultList title="无法判断" items={undeterminedResults} kind="undetermined" /> : null}
-      {unmatchedResults.length > 0 ? (
-        <details className="diagnosis-collapsible">
-          <summary>未命中模板（{unmatchedResults.length}）</summary>
-          <div className="page-section diagnosis-collapsible-body">
-            <MatchResultList title="未命中模板" items={unmatchedResults} kind="unmatched" showHeader={false} />
-          </div>
-        </details>
-      ) : null}
     </section>
   );
 }

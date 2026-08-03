@@ -276,9 +276,7 @@ export function ProblemWorkbenchPage() {
     <section className="page-section problem-workbench">
       <header className="workbench-heading">
         <div>
-          <p className="eyebrow">可信巡检与主动发现</p>
           <h1>问题工作台</h1>
-          <p>汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。</p>
         </div>
         <div className="status-pair">
           {summary.latestRun ? <StatusBadge status={summary.latestRun.status} /> : null}

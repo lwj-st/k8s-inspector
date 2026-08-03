@@ -51,12 +51,19 @@ export function CoveragePanel({
   const attention = ordered.filter((item) => item.status !== "passed");
   const passed = ordered.filter((item) => item.status === "passed");
   const completed = coverage.filter((item) => item.status === "passed" || item.status === "abnormal").length;
+  const passedCount = coverage.filter((item) => item.status === "passed").length;
+  const skippedCount = coverage.filter((item) => item.status === "skipped").length;
+  const failedCount = coverage.filter((item) => item.status === "failed").length;
+  const abnormalCount = coverage.filter((item) => item.status === "abnormal").length;
 
   return (
     <section className="panel coverage-panel" aria-labelledby={titleId}>
       <div className="section-header">
         <div>
           <h3 id={titleId}>{title}</h3>
+          <p className="inline-note">
+            本次检查项 {coverage.length}；成功 {passedCount}，跳过 {skippedCount}，失败 {failedCount}，异常 {abnormalCount}。
+          </p>
           <p className="inline-note">检查完成 {completed}/{coverage.length}；完成率不代表集群健康分。</p>
         </div>
       </div>

@@ -722,9 +722,7 @@ export function SettingsPage() {
     <section className="page-section settings-page">
       <header className="workbench-heading">
         <div>
-          <p className="eyebrow">管理区</p>
           <h1>系统设置</h1>
-          <p>计划、通知和巡检策略不会占用日常排障工作台。</p>
         </div>
         <button type="button" onClick={() => void reload()} disabled={loading}>刷新</button>
       </header>

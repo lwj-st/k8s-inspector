@@ -409,6 +409,13 @@ def test_ignored_issue_recovers_when_next_successful_check_no_longer_reports_it(
         assert event.event_type == "recovered"
         assert event.previous_status == "ignored"
 
+    ignored_list = client.get("/api/v1/issues?status=ignored")
+    assert ignored_list.status_code == 200
+    assert all(item["id"] != issue_id for item in ignored_list.json()["items"])
+    recovered_list = client.get("/api/v1/issues?status=recovered")
+    assert recovered_list.status_code == 200
+    assert any(item["id"] == issue_id for item in recovered_list.json()["items"])
+
 
 def test_issue_priority_sort_is_stable_across_pages(client):
     client.post("/api/v1/inspections/namespace/run", json={"namespace": "demo"})
@@ -421,6 +428,40 @@ def test_issue_priority_sort_is_stable_across_pages(client):
     assert first["items"][0]["id"] != second["items"][0]["id"]
     severity_rank = {"critical": 0, "warning": 1, "info": 2}
     assert severity_rank[first["items"][0]["severity"]] <= severity_rank[second["items"][0]["severity"]]
+
+
+def test_issue_api_keeps_v1_1_response_fields(client):
+    inspected = client.post("/api/v1/inspections/namespace/run", json={"namespace": "demo"})
+    assert inspected.status_code == 200
+    issue_id = inspected.json()["issues"][0]["id"]
+
+    response = client.get(f"/api/v1/issues/{issue_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert {
+        "id",
+        "cluster_id",
+        "issue_code",
+        "fingerprint",
+        "severity",
+        "status",
+        "scope",
+        "resource",
+        "summary",
+        "reason",
+        "suggestion",
+        "evidence",
+        "first_seen_at",
+        "last_seen_at",
+        "recovered_at",
+        "occurrence_count",
+        "source_check",
+        "correlation_key",
+        "acknowledged_at",
+        "acknowledge_note",
+    }.issubset(body)
+    assert {"api_version", "kind", "namespace", "name", "uid"}.issubset(body["resource"])
 
 
 def test_issue_filter_options_are_generated_from_existing_issues(client):
