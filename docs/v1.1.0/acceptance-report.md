@@ -2,17 +2,17 @@
 
 ## 1. 结论
 
-**不通过，当前不能作为商用 v1.1.0 发布。**
+**代码侧候选发布通过；正式 v1.1.0 tag 前仍需关闭真实环境门禁。**
 
-报告日期：2026-07-26。
+报告日期：2026-08-03。
 
-当前主要阻塞：
+当前状态：
 
-1. 尚未在真实 Kubernetes 1.34 和 1.36 环境执行 E2E；CI 矩阵已配置，但配置不等于执行通过。
-2. 尚未完成真实 v1.0.0 PVC 的备份、升级、完整性校验和回退演练。
-3. 尚未在代表性大集群记录定时全局巡检的 API 调用量、日志读取量和耗时。
+1. 本地后端全量测试、前端全量测试、前端生产构建、Helm lint 和 Helm template 均已通过。
+2. 2026-07-26 后新增的集群标识系统配置、管理员改密、问题忽略、必需组件、问题工作台 UI 和 readiness 修复均已纳入测试。
+3. 正式 tag 前仍需在真实环境完成 Kubernetes E2E、v1.0.0 数据库/PVC 升级回退演练和大集群定时巡检负载基线。
 
-在以上阻塞关闭前，即使单元测试、前端构建和 Helm lint 通过，也不能给出“可以商用发布”的结论。
+在真实环境门禁关闭前，可以进入 release candidate 验收阶段，但不建议直接宣布商用发布完成。
 
 ## 2. 状态说明
 
@@ -87,12 +87,14 @@
 
 ### 4.1 已执行
 
-- 所有实现 Agent 停止写入后，后端全量测试重新执行：354 项通过；仅有 1 个既有 Starlette/httpx 弃用警告。
+- 2026-08-03 后端全量测试：`python3 -m pytest -q backend/tests`，377 项通过；仅有 1 个既有 Starlette/httpx 弃用警告。
 - 日志分层、轻量发现、动态上限、诊断脱敏、契约和独立验收合并切片：182 项通过。
 - 独立 PRD 资源目录与敏感证据全链路 fixture：17 项通过。
-- 前端全量：14 个测试文件、80 项测试通过。
-- 前端生产构建：75 个模块转换，构建通过。
-- Helm lint：通过，仅有 Chart icon 建议信息。
+- 2026-08-03 前端全量：`npm test -- --run`，14 个测试文件、87 项测试通过。
+- 2026-08-03 前端生产构建：`npm run build`，75 个模块转换，构建通过。
+- 2026-08-03 Helm lint：`helm lint deploy/helm/k8s-inspector`，通过，仅有 Chart icon 建议信息。
+- 2026-08-03 Helm template：`helm template k8s-inspector deploy/helm/k8s-inspector -f deploy/helm/k8s-inspector/values-dev.yaml >/tmp/k8s-inspector-rendered.yaml`，渲染通过。
+- 2026-08-03 静态 diff 检查：`git diff --check`，通过。
 - Helm `replicaCount=2`：按预期被模板拒绝。
 - RBAC 渲染审计：10 组规则，只有 `get/list`，不含 `watch/create/update/patch/delete` 和 `pods/exec`。
 - API 兼容：旧 `/api/v1` 路径保留，旧巡检响应仅新增 `issues` 和 `coverage`。
@@ -101,6 +103,9 @@
 - 真实浏览器：登录、问题工作台、问题详情、计划、通知配置、系统状态和退出已检查；日志上限从 Settings 保存后立即生效，超限范围无绕过按钮且未发送巡检请求，单 Pod 下拉只调用轻量 discovery，单 Pod 巡检不受范围上限影响；最终构建在 390×844 下 `scrollWidth=clientWidth=390`，控制台无错误或警告。
 - 飞书协议级 Mock：非交互卡片、签名、30 KB 裁剪、测试通知、失败重试、脱敏和 critical @all 已执行。
 - 独立 PRD 资源目录 fixture：15 项通过，覆盖此前缺少的精确异常与正常边界。
+- 集群标识系统配置：环境变量只作为初始化默认值，运行时问题过滤、巡检落库、通知和系统状态使用数据库配置，相关设置、迁移和问题生命周期测试通过。
+- 管理员改密：左下角更改密码入口、CSRF、当前密码校验、数据库密码哈希、其他会话撤销和 readiness 配置校验测试通过。
+- readiness 回归：`/health/ready` 成功路径已补测试，避免初始化成功后因配置读取错误返回 503。
 
 ### 4.2 尚未执行
 
