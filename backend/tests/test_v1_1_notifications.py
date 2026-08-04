@@ -225,16 +225,16 @@ def test_channel_api_masks_secrets_and_test_does_not_create_issue(client, monkey
 def test_notification_detail_url_uses_normalized_base_path() -> None:
     settings = notification_service.Settings(
         base_path="/inspector/",
-        trusted_detail_base_url="https://inspector.example.com",
+        trusted_detail_base_url="https://inspector.example.com:31443",
     )
 
     assert (
         str(notification_service._detail_url(settings, "/issues/12"))
-        == "https://inspector.example.com/inspector/issues/12"
+        == "https://inspector.example.com:31443/inspector/issues/12"
     )
     assert (
         str(notification_service._detail_url(settings, "issues/12"))
-        == "https://inspector.example.com/inspector/issues/12"
+        == "https://inspector.example.com:31443/inspector/issues/12"
     )
 
 

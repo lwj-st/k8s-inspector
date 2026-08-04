@@ -133,7 +133,8 @@ secretEnv:
 
 访问路径由 `basePath` 控制。空字符串或 `/` 表示根路径；`/inspector` 表示子路径。
 默认 Ingress path、健康探针、后端 API 前缀和通知详情链接都会使用该值。`env.trustedDetailBaseUrl`
-只填写协议和域名，例如 `https://inspector.example.com`。
+必须填写用户浏览器实际访问的外部基础地址，不包含路径，但要包含非默认端口。例如：
+`https://inspector.example.com` 或 `https://test-inspector.sensecore.dev:31443`。
 
 `env.clusterId` 只作为首次初始化系统配置的默认集群标识。系统启动后可在“系统设置 → 基础配置 → 集群标识”中修改；运行时的问题去重、问题工作台过滤和通知来源以数据库中的系统配置为准，不再长期依赖环境变量。
 

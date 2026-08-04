@@ -80,6 +80,7 @@ Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会�
 - `basePath`：访问路径；空字符串或 `/` 表示根路径，`/inspector` 表示子路径。默认 Ingress path、健康探针和后端 API 前缀都会使用该值
 - `ingress.className`：默认 `nginx`，其他环境可改成 `kong`、`traefik`，或显式置空
 - `ingress.hosts[0].host`：访问域名
+- `env.trustedDetailBaseUrl`：告警详情链接使用的外部基础地址。填写用户浏览器实际访问的协议、域名和非默认端口，不包含路径；例如 `https://test-inspector.sensecore.dev:31443`
 - `ingress.tls`：TLS 证书配置，示例默认使用 `sensecore-tls`
 - `ingress.annotations`：可填 Kong 注解，后续配合 `strip-path`
 - `persistence.enabled`：是否为 SQLite 启用持久化，默认 `true`
