@@ -99,6 +99,8 @@ def suppress_delivery(
     event_type: NotificationEventType,
     issue_event_id: int | None = None,
     run_id: int | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
 ) -> NotificationDeliveryModel:
     row = create_delivery(
         session,
@@ -110,6 +112,8 @@ def suppress_delivery(
     )
     if row.status == NotificationDeliveryStatus.pending.value:
         row.status = NotificationDeliveryStatus.suppressed.value
+        row.error_code = error_code
+        row.error_message = error_message[:1000] if error_message else None
         row.updated_at = utcnow()
         session.commit()
     return row

@@ -14,6 +14,17 @@ const navItems = [
   { to: "/settings", label: "系统设置" },
 ];
 
+const themeStorageKey = "k8s-inspector:theme";
+type AppTheme = "light" | "dark";
+
+function readStoredTheme(): AppTheme {
+  try {
+    return window.localStorage?.getItem(themeStorageKey) === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
 function displayExpiry(value?: string | null) {
   if (!value) {
     return "";
@@ -26,6 +37,7 @@ export function AppLayout() {
   const { session, logout } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<AppTheme>(readStoredTheme);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -37,6 +49,15 @@ export function AppLayout() {
   const userMenuRef = useRef<HTMLDivElement | null>(null);
   const username = session?.username ?? "管理员";
   const userInitial = username.trim().slice(0, 1).toUpperCase() || "管";
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage?.setItem(themeStorageKey, theme);
+    } catch {
+      // 主题切换仍然对当前页面生效。
+    }
+  }, [theme]);
 
   useEffect(() => {
     if (!userMenuOpen) {
@@ -165,6 +186,29 @@ export function AppLayout() {
           </button>
           {userMenuOpen ? (
             <div className="user-menu" role="menu" aria-label="用户菜单">
+              <div className="theme-menu-group" aria-label="主题切换">
+                <span>主题切换</span>
+                <div className="theme-segment" role="group" aria-label="主题切换">
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={theme === "light"}
+                    className={theme === "light" ? "theme-segment-option theme-segment-option-active" : "theme-segment-option"}
+                    onClick={() => setTheme("light")}
+                  >
+                    亮色
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={theme === "dark"}
+                    className={theme === "dark" ? "theme-segment-option theme-segment-option-active" : "theme-segment-option"}
+                    onClick={() => setTheme("dark")}
+                  >
+                    暗色
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
                 role="menuitem"

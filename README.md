@@ -10,7 +10,7 @@ K8s Inspector v1.2.0 是面向单个 Kubernetes 集群的只读巡检与排障�
 - 支持手动巡检和单进程定时计划，执行记录保存 API 调用量、日志读取量和耗时。
 - 支持飞书群机器人 V2 Webhook 和通用 Webhook 告警，包含签名、失败重试、消息裁剪和目标访问控制。
 - 支持本地单管理员登录、服务端 Session、CSRF、登录限流和安全审计。
-- 支持根路径和 `/inspector/` 子路径两种部署形态，部署时二选一。
+- 支持根路径、`/inspector/` 子路径，以及同实例根路径 + `/inspector/` 双入口部署。
 - 使用 Alembic 将 v1.0.0 SQLite 数据库升级到当前版本。
 - 提供 `/health/live`、`/health/ready` 和系统状态页面。
 
@@ -132,7 +132,7 @@ secretEnv:
 ```
 
 访问路径由 `basePath` 控制。空字符串或 `/` 表示根路径；`/inspector` 表示子路径。
-默认 Ingress path、健康探针、后端 API 前缀和通知详情链接都会使用该值。`env.trustedDetailBaseUrl`
+默认 Ingress path、健康探针和后端 API 前缀都会使用该值。`env.trustedDetailBaseUrl`
 必须填写用户浏览器实际访问的外部基础地址，不包含路径，但要包含非默认端口。例如：
 `https://inspector.example.com` 或 `https://test-inspector.sensecore.dev:31443`。
 
@@ -174,6 +174,26 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --timeout 15m
 ```
 
+同实例双入口部署：
+
+```bash
+helm lint ./deploy/helm/k8s-inspector \
+  -f ./deploy/helm/k8s-inspector/values-dual.yaml \
+  -f /secure/path/values-production.yaml
+
+helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
+  --namespace k8s-inspector \
+  --create-namespace \
+  -f ./deploy/helm/k8s-inspector/values-dual.yaml \
+  -f /secure/path/values-production.yaml \
+  --atomic \
+  --timeout 15m
+```
+
+`values-dual.yaml` 让应用按根路径运行，主 Ingress 暴露 `/`，额外 Ingress 暴露
+`/inspector`。`/inspector` 入口必须由网关 rewrite/strip path 到根路径后再转发给
+Service；如果网关不剥离前缀，应使用子路径部署，不要使用双入口。
+
 Chart 默认：
 
 - 使用 `K8S_PROVIDER_MODE=kubernetes` 和集群内 ServiceAccount。
@@ -182,6 +202,7 @@ Chart 默认：
 - 在应用启动前由 init container 执行 migration；迁移失败时应用不会启动。
 - 根路径模式就绪探针访问 `/health/ready`，存活探针访问 `/health/live`。
 - 子路径模式会在探针和 API 前缀前加上 `basePath`，例如 `/inspector/health/ready` 和 `/inspector/api/v1`。
+- 双入口模式下探针仍访问根路径；`/inspector` 仅是外部入口，依赖 Ingress 或网关剥离前缀。
 
 首次生产部署后应检查：
 
@@ -258,6 +279,9 @@ docker build \
   --build-arg VITE_BASE_PATH=/inspector \
   -t ghcr.io/your-org/k8s-inspector:v1.2.0 .
 ```
+
+双入口部署使用根路径镜像，不设置 `VITE_BASE_PATH=/inspector`。子路径入口由网关
+rewrite/strip path 到根路径，应用内部仍生成根路径资源和 API 地址。
 
 部署时使用：
 

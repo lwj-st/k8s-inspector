@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,6 +59,7 @@ describe("ProblemWorkbenchPage", () => {
   afterEach(() => {
     cleanup();
     fetchMock.mockReset();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -182,8 +183,9 @@ describe("ProblemWorkbenchPage", () => {
     expect(screen.queryByText("可信巡检与主动发现")).not.toBeInTheDocument();
     expect(screen.queryByText("汇总手动巡检和定时巡检发现的当前问题；同一问题会自动去重和更新状态。")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "最近一次定时巡检覆盖（全集群）" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新问题工作台" })).toHaveClass("page-refresh-button");
     const requestCountBeforeRefresh = requestedUrls.length;
-    await userEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await userEvent.click(screen.getByRole("button", { name: "刷新问题工作台" }));
     await waitFor(() => {
       expect(requestedUrls.length).toBeGreaterThan(requestCountBeforeRefresh);
     });
@@ -256,15 +258,194 @@ describe("ProblemWorkbenchPage", () => {
     });
   });
 
+  it("auto refreshes at the configured interval without clearing batch input", async () => {
+    const requestedUrls: string[] = [];
+    const localStorageData = new Map<string, string>();
+    let intervalHandler: TimerHandler | undefined;
+    vi.spyOn(window, "setInterval").mockImplementation((handler: TimerHandler) => {
+      intervalHandler = handler;
+      return 1;
+    });
+    vi.spyOn(window, "clearInterval").mockImplementation(() => undefined);
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn((key: string) => localStorageData.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        localStorageData.set(key, value);
+      }),
+    });
+
+    fetchMock.mockImplementation(async (input: string | URL | Request) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.endsWith("/issues/filter-options")) {
+        return new Response(JSON.stringify({ namespaces: [], resource_kinds: [], source_checks: [] }), { status: 200 });
+      }
+      if (url.includes("/issues?")) {
+        return new Response(JSON.stringify(page([issue()], 1)), { status: 200 });
+      }
+      if (url.includes("/inspection-runs?")) {
+        return new Response(JSON.stringify({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 1,
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<MemoryRouter><ProblemWorkbenchPage /></MemoryRouter>);
+
+    expect((await screen.findAllByText("结算入口没有可用后端")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("checkbox", { name: "自动刷新" }));
+    fireEvent.change(screen.getByLabelText("自动刷新间隔秒数"), { target: { value: "5" } });
+    fireEvent.click(screen.getByLabelText("选择问题 1"));
+    fireEvent.change(screen.getByPlaceholderText("填写批量确认备注"), { target: { value: "值班同学处理中" } });
+    const requestCountBeforeTimer = requestedUrls.length;
+
+    if (typeof intervalHandler === "function") {
+      intervalHandler();
+    }
+
+    await waitFor(() => {
+      expect(requestedUrls.length).toBeGreaterThan(requestCountBeforeTimer);
+    });
+    expect(screen.getByPlaceholderText("填写批量确认备注")).toHaveValue("值班同学处理中");
+    expect(localStorageData.get("k8s-inspector:problem-workbench-auto-refresh")).toBe("true");
+    expect(localStorageData.get("k8s-inspector:problem-workbench-auto-refresh-interval")).toBe("5");
+  });
+
+  it("runs batch acknowledge, ignore and unignore actions for selected issues", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const requestedBodies: Array<{ url: string; body: unknown }> = [];
+    const first = issue({ id: 1, fingerprint: "a".repeat(64), summary: "结算入口没有可用后端" });
+    const second = issue({
+      id: 2,
+      fingerprint: "b".repeat(64),
+      issue_code: "POD_RESTART_SPIKE",
+      resource: { kind: "Pod", namespace: "prod", name: "worker-0" },
+      summary: "Worker 重启次数突增",
+    });
+    const ignoredFirst = issue({ ...first, status: "ignored" });
+    const ignoredSecond = issue({ ...second, status: "ignored" });
+
+    fetchMock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.body) {
+        requestedBodies.push({ url, body: JSON.parse(String(init.body)) });
+      }
+      if (url.endsWith("/issues/filter-options")) {
+        return new Response(JSON.stringify({ namespaces: [], resource_kinds: [], source_checks: [] }), { status: 200 });
+      }
+      if (url.includes("/inspection-runs?")) {
+        return new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: 1 }), { status: 200 });
+      }
+      if (url.includes("/issues/batch/acknowledge")) {
+        return new Response(JSON.stringify({
+          succeeded_count: 2,
+          failed_count: 0,
+          results: [
+            { issue_id: 1, succeeded: true, issue: { ...first, acknowledged_at: "2026-07-26T10:00:00Z", acknowledge_note: "统一处理" } },
+            { issue_id: 2, succeeded: true, issue: { ...second, acknowledged_at: "2026-07-26T10:00:00Z", acknowledge_note: "统一处理" } },
+          ],
+        }), { status: 200 });
+      }
+      if (url.includes("/issues/batch/ignore")) {
+        return new Response(JSON.stringify({
+          succeeded_count: 2,
+          failed_count: 0,
+          results: [
+            { issue_id: 1, succeeded: true, issue: ignoredFirst },
+            { issue_id: 2, succeeded: true, issue: ignoredSecond },
+          ],
+        }), { status: 200 });
+      }
+      if (url.includes("/issues/batch/unignore")) {
+        return new Response(JSON.stringify({
+          succeeded_count: 2,
+          failed_count: 0,
+          results: [
+            { issue_id: 1, succeeded: true, issue: first },
+            { issue_id: 2, succeeded: true, issue: second },
+          ],
+        }), { status: 200 });
+      }
+      if (url.includes("/issues?")) {
+        const query = new URL(url, "http://localhost").searchParams;
+        if (query.get("page_size") === "1") {
+          return new Response(JSON.stringify(page([], query.get("severity") ? 1 : 2)), { status: 200 });
+        }
+        if (query.get("status") === "ignored") {
+          return new Response(JSON.stringify(page([ignoredFirst, ignoredSecond], 2)), { status: 200 });
+        }
+        return new Response(JSON.stringify(page([first, second], 2)), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<MemoryRouter><ProblemWorkbenchPage /></MemoryRouter>);
+
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("选择问题 1"));
+    await user.click(screen.getByLabelText("选择问题 2"));
+    await user.type(screen.getByLabelText("统一确认备注"), "统一处理");
+    await user.click(screen.getByRole("button", { name: "批量确认" }));
+
+    expect(await screen.findByText("批量操作完成：成功 2 项。")).toBeInTheDocument();
+    expect(requestedBodies.some((item) => (
+      item.url.includes("/issues/batch/acknowledge")
+      && JSON.stringify(item.body) === JSON.stringify({ issue_ids: [1, 2], note: "统一处理" })
+    ))).toBe(true);
+
+    await user.click(screen.getByLabelText("选择问题 1"));
+    await user.click(screen.getByLabelText("选择问题 2"));
+    await user.click(screen.getByRole("button", { name: "批量忽略" }));
+    expect(confirmSpy).toHaveBeenCalledWith("确认忽略选中的 2 个问题？");
+    expect(requestedBodies.some((item) => (
+      item.url.includes("/issues/batch/ignore")
+      && JSON.stringify(item.body) === JSON.stringify({ issue_ids: [1, 2] })
+    ))).toBe(true);
+
+    await user.selectOptions(screen.getByLabelText("状态"), "ignored");
+    expect(await screen.findByRole("heading", { name: "已忽略问题" })).toBeInTheDocument();
+    await user.click(screen.getByLabelText("选择当前页全部问题"));
+    await user.click(screen.getByRole("button", { name: "批量恢复显示" }));
+    expect(confirmSpy).toHaveBeenCalledWith("确认恢复显示选中的 2 个问题？");
+    expect(requestedBodies.some((item) => (
+      item.url.includes("/issues/batch/unignore")
+      && JSON.stringify(item.body) === JSON.stringify({ issue_ids: [1, 2] })
+    ))).toBe(true);
+  });
+
   it("renders the evidence chain and paged timeline, and keeps the note after a 403", async () => {
     const user = userEvent.setup();
-    const targetIssue = issue();
+    const targetIssue = issue({
+      evidence: [
+        ...issue().evidence,
+        {
+          code: "LOG_MATCH",
+          source: "log_match",
+          summary: "日志命中 error",
+          facts: { context: "error token=abc123 password=secret-value" },
+          related_resources: [{ kind: "Pod", namespace: "prod", name: "checkout-0" }],
+          observed_at: "2026-07-26T10:01:00Z",
+          truncated: false,
+        },
+      ],
+    });
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const writeText = vi.fn().mockResolvedValue(undefined);
+    const createObjectUrl = vi.fn(() => "blob:issue-md");
+    const revokeObjectUrl = vi.fn();
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    let noteCreated = false;
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText },
     });
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
     fetchMock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/issues/1")) {
@@ -272,6 +453,28 @@ describe("ProblemWorkbenchPage", () => {
       }
       if (url.includes("/issues/1/events")) {
         const currentPage = new URL(url, "http://localhost").searchParams.get("page");
+        if (noteCreated && currentPage === "1") {
+          return new Response(JSON.stringify({
+            items: [{
+              id: 3,
+              issue_id: 1,
+              run_id: null,
+              event_type: "note_added",
+              trigger: "manual",
+              previous_status: "open",
+              new_status: "open",
+              previous_severity: "critical",
+              new_severity: "critical",
+              occurred_at: "2026-07-26T10:05:00Z",
+              summary: "已联系二线处理",
+              actor: "admin",
+              evidence_codes: [],
+            }],
+            total: 22,
+            page: 1,
+            page_size: 20,
+          }), { status: 200 });
+        }
         return new Response(JSON.stringify({
           items: [{
             id: currentPage === "2" ? 1 : 2,
@@ -291,6 +494,25 @@ describe("ProblemWorkbenchPage", () => {
           page: Number(currentPage),
           page_size: 20,
         }), { status: 200 });
+      }
+      if (url.endsWith("/issues/1/notes") && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ content: "已联系二线处理" });
+        noteCreated = true;
+        return new Response(JSON.stringify({
+          id: 3,
+          issue_id: 1,
+          run_id: null,
+          event_type: "note_added",
+          trigger: "manual",
+          previous_status: "open",
+          new_status: "open",
+          previous_severity: "critical",
+          new_severity: "critical",
+          occurred_at: "2026-07-26T10:05:00Z",
+          summary: "已联系二线处理",
+          actor: "admin",
+          evidence_codes: [],
+        }), { status: 201 });
       }
       if (url.endsWith("/issues/1/acknowledge") && init?.method === "POST") {
         return new Response(JSON.stringify({
@@ -324,6 +546,13 @@ describe("ProblemWorkbenchPage", () => {
     const chain = screen.getByRole("list", { name: "访问配置链路" });
     expect(within(chain).getByText("Ingress")).toBeInTheDocument();
     expect(screen.getByText("配置链路在 Service 后端处中断")).toBeInTheDocument();
+    expect(screen.getByText("日志命中 error")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("证据类型"), "log_match");
+    expect(screen.queryByText("配置链路在 Service 后端处中断")).not.toBeInTheDocument();
+    expect(screen.getByText("日志命中 error")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("证据类型"), "kubernetes_api");
+    expect(screen.getByText("配置链路在 Service 后端处中断")).toBeInTheDocument();
+    expect(screen.queryByText("日志命中 error")).not.toBeInTheDocument();
     expect(screen.getAllByText("问题仍在持续")).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "查看命令" })).toBeInTheDocument();
     expect(screen.getByText("kubectl describe service -n 'prod' 'checkout'")).toBeInTheDocument();
@@ -332,10 +561,32 @@ describe("ProblemWorkbenchPage", () => {
     expect(screen.queryByText("kubectl get endpointslices.discovery.k8s.io -n 'prod' 'checkout-x1' -o yaml")).not.toBeInTheDocument();
     expect(screen.queryByText("kubectl logs -n 'prod' 'checkout-0' --all-containers --tail=200")).not.toBeInTheDocument();
 
+    await user.type(screen.getByLabelText("新增记录"), "已联系二线处理");
+    await user.click(screen.getByRole("button", { name: "添加记录" }));
+    expect(await screen.findByText("处理记录已添加。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "处理记录" })).toBeInTheDocument();
+    expect(screen.getByText("已联系二线处理")).toBeInTheDocument();
+    expect(screen.getByText("admin")).toBeInTheDocument();
+
     const copyButtons = screen.getAllByRole("button", { name: "复制命令" });
     await user.click(copyButtons[0]);
     expect(writeText).toHaveBeenCalledWith("kubectl describe service -n 'prod' 'checkout'");
     expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "复制 Markdown" }));
+    const markdown = String(writeText.mock.calls.at(-1)?.[0] ?? "");
+    expect(markdown).toContain("# 结算入口没有可用后端");
+    expect(markdown).toContain("日志命中 error");
+    expect(markdown).toContain("token=***");
+    expect(markdown).toContain("password=***");
+    expect(markdown).not.toContain("abc123");
+    expect(markdown).not.toContain("secret-value");
+    expect(await screen.findByText("Markdown 已复制。")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "下载 Markdown" }));
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(anchorClick).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:issue-md");
 
     await user.click(screen.getByRole("button", { name: "加载更早记录" }));
     expect(await screen.findByText("首次发现问题")).toBeInTheDocument();
@@ -388,7 +639,7 @@ describe("ProblemWorkbenchPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "结算入口没有可用后端" })).toBeInTheDocument();
-    expect(screen.getByText("0 条")).toBeInTheDocument();
+    expect(screen.getByText("0/0 条")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "查看命令" })).not.toBeInTheDocument();
     expect(screen.queryByText(/kubectl describe customthing/)).not.toBeInTheDocument();
   });

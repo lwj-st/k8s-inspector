@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 
-import { ApiClientError, getIssueFilterOptions, listInspectionRuns, listIssues } from "../api/client";
+import {
+  ApiClientError,
+  batchAcknowledgeIssues,
+  batchIgnoreIssues,
+  batchUnignoreIssues,
+  getIssueFilterOptions,
+  listInspectionRuns,
+  listIssues,
+} from "../api/client";
 import type {
   InspectionRun,
   Issue,
+  IssueBatchResponse,
   IssueFilterOption,
   IssueFilterOptions,
   IssueListParams,
@@ -20,12 +29,50 @@ const allowedSeverities = new Set<IssueSeverity>(["critical", "warning", "info"]
 const allowedStatuses = new Set<IssueStatus>(["open", "recovered", "ignored"]);
 const allowedSorts = new Set<IssueSortMode>(["priority", "duration", "last_changed"]);
 const problemWorkbenchRefreshKey = "k8s-inspector:problem-workbench-refresh";
+const autoRefreshEnabledKey = "k8s-inspector:problem-workbench-auto-refresh";
+const autoRefreshIntervalKey = "k8s-inspector:problem-workbench-auto-refresh-interval";
+const defaultAutoRefreshIntervalSeconds = 30;
 
 function getProblemWorkbenchRefreshMarker() {
   try {
     return window.localStorage?.getItem?.(problemWorkbenchRefreshKey) ?? null;
   } catch {
     return null;
+  }
+}
+
+function readStoredBoolean(key: string, fallback: boolean) {
+  try {
+    const value = window.localStorage?.getItem?.(key);
+    if (value === "true") {
+      return true;
+    }
+    if (value === "false") {
+      return false;
+    }
+  } catch {
+    // localStorage 不可用时使用默认值。
+  }
+  return fallback;
+}
+
+function readStoredIntervalSeconds() {
+  try {
+    const value = Number(window.localStorage?.getItem?.(autoRefreshIntervalKey));
+    if (Number.isInteger(value) && value >= 5 && value <= 600) {
+      return value;
+    }
+  } catch {
+    // localStorage 不可用时使用默认值。
+  }
+  return defaultAutoRefreshIntervalSeconds;
+}
+
+function persistSetting(key: string, value: string) {
+  try {
+    window.localStorage?.setItem?.(key, value);
+  } catch {
+    // 设置持久化失败不影响当前页面操作。
   }
 }
 
@@ -116,6 +163,13 @@ export function ProblemWorkbenchPage() {
   const [issues, setIssues] = useState<Page<Issue> | null>(null);
   const [issuesLoading, setIssuesLoading] = useState(true);
   const [issuesError, setIssuesError] = useState<string | null>(null);
+  const [selectedIssueIds, setSelectedIssueIds] = useState<Set<number>>(() => new Set());
+  const [batchNote, setBatchNote] = useState("");
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [batchMessage, setBatchMessage] = useState<string | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(() => readStoredBoolean(autoRefreshEnabledKey, false));
+  const [autoRefreshIntervalSeconds, setAutoRefreshIntervalSeconds] = useState(readStoredIntervalSeconds);
   const [filterOptions, setFilterOptions] = useState<IssueFilterOptions>({
     namespaces: [],
     resource_kinds: [],
@@ -186,6 +240,12 @@ export function ProblemWorkbenchPage() {
   }, [loadIssues]);
 
   useEffect(() => {
+    setSelectedIssueIds(new Set());
+    setBatchMessage(null);
+    setBatchError(null);
+  }, [query]);
+
+  useEffect(() => {
     void getIssueFilterOptions()
       .then(setFilterOptions)
       .catch(() => {
@@ -226,6 +286,26 @@ export function ProblemWorkbenchPage() {
   }, [loadIssues, loadSummary]);
 
   useEffect(() => {
+    persistSetting(autoRefreshEnabledKey, String(autoRefreshEnabled));
+  }, [autoRefreshEnabled]);
+
+  useEffect(() => {
+    persistSetting(autoRefreshIntervalKey, String(autoRefreshIntervalSeconds));
+  }, [autoRefreshIntervalSeconds]);
+
+  useEffect(() => {
+    if (!autoRefreshEnabled) {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") {
+        refreshWorkbench();
+      }
+    }, autoRefreshIntervalSeconds * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [autoRefreshEnabled, autoRefreshIntervalSeconds, refreshWorkbench]);
+
+  useEffect(() => {
     let lastRefreshMarker = getProblemWorkbenchRefreshMarker();
     function refreshIfMarkerChanged() {
       const marker = getProblemWorkbenchRefreshMarker();
@@ -256,6 +336,9 @@ export function ProblemWorkbenchPage() {
     (item) => item.status === "skipped" || item.status === "failed",
   ) ?? false;
   const totalPages = issues ? Math.max(1, Math.ceil(issues.total / issues.page_size)) : 1;
+  const visibleIssueIds = issues?.items.map((issue) => issue.id) ?? [];
+  const selectedCount = selectedIssueIds.size;
+  const allVisibleSelected = visibleIssueIds.length > 0 && visibleIssueIds.every((id) => selectedIssueIds.has(id));
   const namespaceOptions = selectableOptions(filterOptions.namespaces, namespace);
   const resourceKindOptions = selectableOptions(filterOptions.resource_kinds, resourceKind);
   const sourceCheckOptions = selectableOptions(filterOptions.source_checks, sourceCheck);
@@ -272,6 +355,78 @@ export function ProblemWorkbenchPage() {
     { label: "检查完成率", value: coveragePercent === null ? null : `${coveragePercent}%` },
   ];
 
+  function toggleIssue(issueId: number, checked: boolean) {
+    setSelectedIssueIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(issueId);
+      } else {
+        next.delete(issueId);
+      }
+      return next;
+    });
+  }
+
+  function toggleVisibleIssues(checked: boolean) {
+    setSelectedIssueIds((current) => {
+      const next = new Set(current);
+      for (const issueId of visibleIssueIds) {
+        if (checked) {
+          next.add(issueId);
+        } else {
+          next.delete(issueId);
+        }
+      }
+      return next;
+    });
+  }
+
+  function batchSummary(result: IssueBatchResponse) {
+    if (result.failed_count > 0) {
+      return `批量操作完成：成功 ${result.succeeded_count} 项，失败 ${result.failed_count} 项。`;
+    }
+    return `批量操作完成：成功 ${result.succeeded_count} 项。`;
+  }
+
+  async function runBatchAction(action: "acknowledge" | "ignore" | "unignore") {
+    const issueIds = Array.from(selectedIssueIds);
+    if (issueIds.length === 0) {
+      return;
+    }
+    setBatchError(null);
+    setBatchMessage(null);
+    if (action === "acknowledge" && !batchNote.trim()) {
+      setBatchError("请填写批量确认备注");
+      return;
+    }
+    if (action === "ignore" && !window.confirm(`确认忽略选中的 ${issueIds.length} 个问题？`)) {
+      return;
+    }
+    if (action === "unignore" && !window.confirm(`确认恢复显示选中的 ${issueIds.length} 个问题？`)) {
+      return;
+    }
+    setBatchSaving(true);
+    try {
+      const result = action === "acknowledge"
+        ? await batchAcknowledgeIssues(issueIds, batchNote.trim())
+        : action === "ignore"
+          ? await batchIgnoreIssues(issueIds)
+          : await batchUnignoreIssues(issueIds);
+      setBatchMessage(batchSummary(result));
+      setSelectedIssueIds(new Set());
+      setBatchNote("");
+      refreshWorkbench();
+      if (result.failed_count > 0) {
+        const failed = result.results.filter((item) => !item.succeeded);
+        setBatchError(failed.map((item) => `#${item.issue_id}：${item.error ?? "操作失败"}`).join("；"));
+      }
+    } catch (reason) {
+      setBatchError(displayError(reason));
+    } finally {
+      setBatchSaving(false);
+    }
+  }
+
   return (
     <section className="page-section problem-workbench">
       <header className="workbench-heading">
@@ -282,12 +437,47 @@ export function ProblemWorkbenchPage() {
           {summary.latestRun ? <StatusBadge status={summary.latestRun.status} /> : null}
           <button
             type="button"
-            className="workbench-refresh-button"
+            className="page-refresh-button"
             onClick={refreshWorkbench}
             disabled={issuesLoading || summary.loading}
+            aria-label="刷新问题工作台"
           >
-            刷新
+            <span
+              aria-hidden="true"
+              className={issuesLoading || summary.loading ? "page-refresh-icon page-refresh-icon-spinning" : "page-refresh-icon"}
+            >
+              ↻
+            </span>
+            {issuesLoading || summary.loading ? "刷新中…" : "刷新"}
           </button>
+          <div className="auto-refresh-controls" aria-label="自动刷新">
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={autoRefreshEnabled}
+                onChange={(event) => setAutoRefreshEnabled(event.target.checked)}
+              />
+              自动刷新
+            </label>
+            <label>
+              间隔
+              <input
+                type="number"
+                min={5}
+                max={600}
+                step={5}
+                value={autoRefreshIntervalSeconds}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (Number.isInteger(value) && value >= 5 && value <= 600) {
+                    setAutoRefreshIntervalSeconds(value);
+                  }
+                }}
+                aria-label="自动刷新间隔秒数"
+              />
+              秒
+            </label>
+          </div>
         </div>
       </header>
 
@@ -380,6 +570,50 @@ export function ProblemWorkbenchPage() {
           清除筛选
         </button>
 
+        <div className="batch-action-bar" aria-label="批量操作">
+          <strong>已选择 {selectedCount} 项</strong>
+          <label>
+            统一确认备注
+            <input
+              value={batchNote}
+              onChange={(event) => setBatchNote(event.target.value)}
+              placeholder="填写批量确认备注"
+              disabled={batchSaving || selectedCount === 0}
+            />
+          </label>
+          <div className="button-row">
+            <button
+              type="button"
+              className="primary-action"
+              disabled={batchSaving || selectedCount === 0}
+              onClick={() => void runBatchAction("acknowledge")}
+            >
+              批量确认
+            </button>
+            {status !== "ignored" ? (
+              <button
+                type="button"
+                className="danger-action"
+                disabled={batchSaving || selectedCount === 0}
+                onClick={() => void runBatchAction("ignore")}
+              >
+                批量忽略
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="primary-action"
+                disabled={batchSaving || selectedCount === 0}
+                onClick={() => void runBatchAction("unignore")}
+              >
+                批量恢复显示
+              </button>
+            )}
+          </div>
+        </div>
+        {batchMessage ? <div className="feedback-banner feedback-success" role="status">{batchMessage}</div> : null}
+        {batchError ? <div className="feedback-banner feedback-error" role="alert">{batchError}</div> : null}
+
         {issuesLoading ? <p aria-live="polite">正在加载问题…</p> : null}
         {issuesError ? (
           <div className="feedback-banner feedback-error" role="alert">
@@ -399,6 +633,7 @@ export function ProblemWorkbenchPage() {
             <div className="responsive-table-shell issue-desktop-table">
               <table className="compact-table issue-workbench-table">
                 <colgroup>
+                  <col className="issue-col-select" />
                   <col className="issue-col-severity" />
                   <col className="issue-col-summary" />
                   <col className="issue-col-resource" />
@@ -412,6 +647,14 @@ export function ProblemWorkbenchPage() {
                 </colgroup>
                 <thead>
                   <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        aria-label="选择当前页全部问题"
+                        checked={allVisibleSelected}
+                        onChange={(event) => toggleVisibleIssues(event.target.checked)}
+                      />
+                    </th>
                     <th>严重程度</th>
                     <th>结论</th>
                     <th>资源</th>
@@ -427,6 +670,14 @@ export function ProblemWorkbenchPage() {
                 <tbody>
                   {issues.items.map((issue) => (
                     <tr key={issue.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`选择问题 ${issue.id}`}
+                          checked={selectedIssueIds.has(issue.id)}
+                          onChange={(event) => toggleIssue(issue.id, event.target.checked)}
+                        />
+                      </td>
                       <td className="issue-cell-badge"><StatusBadge status={issue.severity} /></td>
                       <td className="issue-cell-summary"><IssueTableTextCell value={issue.summary} wrap /></td>
                       <td><IssueTableTextCell value={resourceLabel(issue)} /></td>
@@ -458,8 +709,18 @@ export function ProblemWorkbenchPage() {
               {issues.items.map((issue) => (
                 <article className="issue-mobile-card" key={issue.id}>
                   <div className="section-header">
-                    <StatusBadge status={issue.severity} />
-                    <StatusBadge status={issue.status} />
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={selectedIssueIds.has(issue.id)}
+                        onChange={(event) => toggleIssue(issue.id, event.target.checked)}
+                      />
+                      选择
+                    </label>
+                    <div className="status-pair">
+                      <StatusBadge status={issue.severity} />
+                      <StatusBadge status={issue.status} />
+                    </div>
                   </div>
                   <strong>{issue.summary}</strong>
                   <p>{resourceLabel(issue)} · {issue.resource.namespace ?? "集群级"}</p>

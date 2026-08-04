@@ -1,0 +1,23 @@
+basePath: ""
+
+ingress:
+  enabled: true
+  hosts:
+    - host: inspector.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: inspector-tls
+      hosts:
+        - inspector.example.com
+  dualEntry:
+    enabled: true
+    path: /inspector
+    pathType: Prefix
+    annotations: {}
+    hosts: []
+    tls: []
+
+env:
+  trustedDetailBaseUrl: https://inspector.example.com

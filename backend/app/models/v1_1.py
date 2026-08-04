@@ -130,6 +130,7 @@ class IssueEvent(Base):
     new_severity: Mapped[str | None] = mapped_column(String(16))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    actor: Mapped[str | None] = mapped_column(String(128))
     evidence_codes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
 
@@ -265,6 +266,30 @@ class NotificationDelivery(Base):
     )
 
 
+class MaintenanceSilenceWindow(Base):
+    __tablename__ = "maintenance_silence_windows"
+    __table_args__ = (
+        Index("ix_maintenance_silence_enabled_time", "enabled", "start_at", "end_at"),
+        Index("ix_maintenance_silence_scope_type", "scope_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    namespace: Mapped[str | None] = mapped_column(String(253))
+    resource_kind: Mapped[str | None] = mapped_column(String(128))
+    label_selector: Mapped[str | None] = mapped_column(String(512))
+    note: Mapped[str | None] = mapped_column(String(1000))
+    pending_summary_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+
 class ResourceMetricState(Base):
     __tablename__ = "resource_metric_states"
     __table_args__ = (
@@ -340,6 +365,7 @@ __all__ = [
     "Issue",
     "IssueEvent",
     "IssueScopeMembership",
+    "MaintenanceSilenceWindow",
     "NotificationChannel",
     "NotificationDelivery",
     "ResourceMetricState",

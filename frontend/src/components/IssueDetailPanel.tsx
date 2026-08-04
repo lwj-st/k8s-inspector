@@ -12,13 +12,26 @@ const sourceLabels: Record<string, string> = {
   derived: "规则计算",
 };
 
+const evidenceFilterOptions = [
+  { value: "all", label: "全部证据" },
+  { value: "kubernetes_api", label: "Kubernetes API" },
+  { value: "event", label: "Event" },
+  { value: "log_match", label: "Log" },
+  { value: "metrics_api", label: "Metrics" },
+  { value: "config", label: "Config" },
+] as const;
+
+type EvidenceFilter = typeof evidenceFilterOptions[number]["value"];
+
 const eventLabels: Record<IssueEvent["event_type"], string> = {
   opened: "问题首次发现",
   observed: "问题仍在持续",
   severity_escalated: "严重程度升级",
   acknowledged: "问题已确认",
+  note_added: "处理记录",
   ignored: "问题已忽略",
   unignored: "已取消忽略",
+  notification_silenced: "通知已静默",
   recovered: "问题已恢复",
   reopened: "问题重新出现",
 };
@@ -71,12 +84,30 @@ function resourceLabel(resource: ResourceRef) {
 
 function factValue(value: unknown) {
   if (Array.isArray(value)) {
-    return value.map(String).join("、");
+    return sanitizeMarkdown(value.map(String).join("、"));
   }
   if (value === null || value === undefined || value === "") {
     return "--";
   }
-  return String(value);
+  return sanitizeMarkdown(String(value));
+}
+
+function sanitizeMarkdown(value: string) {
+  return value
+    .replace(/(authorization\s*[:=]\s*)([^\s,;]+)/gi, "$1***")
+    .replace(/(cookie\s*[:=]\s*)([^\n]+)/gi, "$1***")
+    .replace(/((?:password|token|secret|webhook|api[_-]?key)\s*[:=]\s*)([^\s,;]+)/gi, "$1***")
+    .replace(/(https?:\/\/[^/\s]+\/(?:open-apis\/bot\/v2\/hook|webhook|hooks?)\/)[^\s)]+/gi, "$1***");
+}
+
+function evidenceMatchesFilter(source: string, filter: EvidenceFilter) {
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "config") {
+    return source === "template" || source === "derived";
+  }
+  return source === filter;
 }
 
 function shellQuote(value: string) {
@@ -272,6 +303,56 @@ function issueCommands(issue: Issue): IssueCommand[] {
   );
 }
 
+function buildIssueMarkdown(issue: Issue, events: IssueEvent[], commands: IssueCommand[]) {
+  const lines = [
+    `# ${issue.summary}`,
+    "",
+    "## 问题概览",
+    "",
+    `- 资源：${resourceLabel(issue.resource)}`,
+    `- 名称空间：${issue.resource.namespace ?? "集群级"}`,
+    `- 严重程度：${issue.severity}`,
+    `- 当前状态：${issue.status}`,
+    `- 判断原因：${issue.reason}`,
+    `- 建议动作：${issue.suggestion}`,
+    "",
+    "## 关键证据",
+    "",
+    ...(issue.evidence.length > 0
+      ? issue.evidence.flatMap((item) => [
+          `### ${item.summary}`,
+          "",
+          `- 类型：${sourceLabels[item.source] ?? item.source}`,
+          `- 观测时间：${formatDateTime(item.observed_at)}`,
+          `- 截断：${item.truncated ? "是" : "否"}`,
+          ...Object.entries(item.facts).map(([key, value]) => `- ${key}：${factValue(value)}`),
+          "",
+        ])
+      : ["暂无持久化证据。", ""]),
+    "## 查看命令",
+    "",
+    ...(commands.length > 0
+      ? commands.flatMap((command) => [
+          `### ${command.title}`,
+          "",
+          "```bash",
+          command.command,
+          "```",
+          "",
+        ])
+      : ["无确定命令。", ""]),
+    "## 处理记录",
+    "",
+    ...(events.length > 0
+      ? events.flatMap((event) => [
+          `- ${formatDateTime(event.occurred_at)} ${event.actor ?? "系统"} ${eventLabels[event.event_type] ?? event.event_type}：${event.summary}`,
+        ])
+      : ["暂无处理记录。"]),
+    "",
+  ];
+  return sanitizeMarkdown(lines.join("\n"));
+}
+
 export function IssueDetailPanel({
   issue,
   events,
@@ -279,6 +360,7 @@ export function IssueDetailPanel({
   eventsLoading,
   eventsError,
   onLoadMore,
+  onAddNote,
   onAcknowledge,
   onIgnore,
   onUnignore,
@@ -289,6 +371,7 @@ export function IssueDetailPanel({
   eventsLoading: boolean;
   eventsError: string | null;
   onLoadMore: () => void;
+  onAddNote: (content: string) => Promise<void>;
   onAcknowledge: (note: string) => Promise<void>;
   onIgnore: () => Promise<void>;
   onUnignore: () => Promise<void>;
@@ -296,11 +379,18 @@ export function IssueDetailPanel({
   const [note, setNote] = useState("");
   const [acknowledging, setAcknowledging] = useState(false);
   const [acknowledgeError, setAcknowledgeError] = useState<string | null>(null);
+  const [handlingNote, setHandlingNote] = useState("");
+  const [savingHandlingNote, setSavingHandlingNote] = useState(false);
+  const [handlingNoteMessage, setHandlingNoteMessage] = useState<string | null>(null);
+  const [handlingNoteError, setHandlingNoteError] = useState<string | null>(null);
   const [ignoring, setIgnoring] = useState(false);
   const [ignoreError, setIgnoreError] = useState<string | null>(null);
   const [unignoring, setUnignoring] = useState(false);
   const [unignoreError, setUnignoreError] = useState<string | null>(null);
   const [copiedCommandKey, setCopiedCommandKey] = useState<string | null>(null);
+  const [evidenceFilter, setEvidenceFilter] = useState<EvidenceFilter>("all");
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const chainResources = useMemo(() => {
     const resources = [issue.resource, ...issue.evidence.flatMap((item) => item.related_resources)];
@@ -311,6 +401,11 @@ export function IssueDetailPanel({
   }, [issue]);
 
   const commands = useMemo(() => issueCommands(issue), [issue]);
+  const filteredEvidence = useMemo(
+    () => issue.evidence.filter((item) => evidenceMatchesFilter(item.source, evidenceFilter)),
+    [issue.evidence, evidenceFilter],
+  );
+  const markdown = useMemo(() => buildIssueMarkdown(issue, events, commands), [issue, events, commands]);
 
   async function handleAcknowledge(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -330,9 +425,58 @@ export function IssueDetailPanel({
     }
   }
 
+  async function handleAddNote(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!handlingNote.trim()) {
+      setHandlingNoteError("请填写处理记录");
+      return;
+    }
+    setSavingHandlingNote(true);
+    setHandlingNoteError(null);
+    setHandlingNoteMessage(null);
+    try {
+      await onAddNote(handlingNote.trim());
+      setHandlingNote("");
+      setHandlingNoteMessage("处理记录已添加。");
+    } catch (reason) {
+      setHandlingNoteError(reason instanceof Error ? reason.message : "处理记录保存失败，请重试");
+    } finally {
+      setSavingHandlingNote(false);
+    }
+  }
+
   async function copyCommand(command: IssueCommand) {
     await navigator.clipboard?.writeText(command.command);
     setCopiedCommandKey(commandKey(command));
+  }
+
+  async function copyMarkdown() {
+    setExportError(null);
+    setExportMessage(null);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        setExportError("当前浏览器不支持复制，请下载 Markdown 文件。");
+        return;
+      }
+      await navigator.clipboard.writeText(markdown);
+      setExportMessage("Markdown 已复制。");
+    } catch {
+      setExportError("复制 Markdown 失败，请下载文件。");
+    }
+  }
+
+  function downloadMarkdown() {
+    setExportError(null);
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `issue-${issue.id}.md`;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setExportMessage("Markdown 文件已生成。");
   }
 
   async function handleIgnore() {
@@ -442,13 +586,25 @@ export function IssueDetailPanel({
       <section className="detail-section" aria-labelledby="evidence-title">
         <div className="section-header">
           <h2 id="evidence-title">证据</h2>
-          <span className="section-tip">{issue.evidence.length} 条</span>
+          <span className="section-tip">{filteredEvidence.length}/{issue.evidence.length} 条</span>
+        </div>
+        <div className="evidence-toolbar">
+          <label>
+            证据类型
+            <select value={evidenceFilter} onChange={(event) => setEvidenceFilter(event.target.value as EvidenceFilter)}>
+              {evidenceFilterOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
         {issue.evidence.length === 0 ? (
           <p className="empty-copy">本问题没有可展示的持久化证据。</p>
+        ) : filteredEvidence.length === 0 ? (
+          <p className="empty-copy">当前证据类型没有结果。</p>
         ) : (
           <div className="evidence-card-list">
-            {issue.evidence.map((item) => (
+            {filteredEvidence.map((item) => (
               <article className="evidence-card" key={`${item.code}-${item.observed_at}`}>
                 <div className="section-header">
                   <strong>{item.summary}</strong>
@@ -503,18 +659,64 @@ export function IssueDetailPanel({
         </section>
       ) : null}
 
+      <section className="detail-section" aria-labelledby="export-title">
+        <div className="section-header">
+          <div>
+            <h2 id="export-title">导出 Markdown</h2>
+            <p className="inline-note">导出内容会脱敏，包含问题结论、证据、命令和处理记录。</p>
+          </div>
+        </div>
+        <div className="button-row">
+          <button type="button" className="primary-action" onClick={() => void copyMarkdown()}>
+            复制 Markdown
+          </button>
+          <button type="button" className="modal-secondary-button" onClick={downloadMarkdown}>
+            下载 Markdown
+          </button>
+        </div>
+        {exportMessage ? <p className="feedback-banner feedback-success" role="status">{exportMessage}</p> : null}
+        {exportError ? <p className="feedback-banner feedback-error" role="alert">{exportError}</p> : null}
+      </section>
+
       <section className="detail-section" aria-labelledby="timeline-title">
         <div className="section-header">
-          <h2 id="timeline-title">问题时间线</h2>
-          <span className="section-tip">最新动态在前</span>
+          <div>
+            <h2 id="timeline-title">处理记录</h2>
+            <p className="inline-note">记录交接、排查进展或临时处置，不会改变问题状态。</p>
+          </div>
+          <span className="section-tip">最新在前</span>
         </div>
+        <form className="acknowledge-form handling-note-form" onSubmit={handleAddNote}>
+          <label>
+            新增记录
+            <textarea
+              value={handlingNote}
+              maxLength={1000}
+              rows={4}
+              onChange={(event) => {
+                setHandlingNote(event.target.value);
+                setHandlingNoteMessage(null);
+                setHandlingNoteError(null);
+              }}
+              aria-describedby="handling-note-help"
+            />
+          </label>
+          <div id="handling-note-help" className="field-help">支持普通文本，还可输入 {1000 - handlingNote.length} 字。</div>
+          <div className="button-row">
+            <button type="submit" className="primary-action" disabled={savingHandlingNote}>
+              {savingHandlingNote ? "保存中…" : "添加记录"}
+            </button>
+          </div>
+          {handlingNoteMessage ? <p className="feedback-banner feedback-success" role="status">{handlingNoteMessage}</p> : null}
+          {handlingNoteError ? <p className="field-error" role="alert">{handlingNoteError}</p> : null}
+        </form>
         {eventsError ? (
           <div className="feedback-banner feedback-error" role="alert">
-            时间线读取失败：{eventsError}
+            处理记录读取失败：{eventsError}
           </div>
         ) : null}
         {events.length === 0 && !eventsLoading && !eventsError ? (
-          <p className="empty-copy">暂无生命周期记录。</p>
+          <p className="empty-copy">暂无处理记录。</p>
         ) : (
           <ol className="issue-timeline">
             {events.map((item) => (
@@ -526,7 +728,7 @@ export function IssueDetailPanel({
                     <time dateTime={item.occurred_at}>{formatDateTime(item.occurred_at)}</time>
                   </div>
                   <p>{item.summary}</p>
-                  <small>{item.trigger === "scheduled" ? "定时巡检" : "手动巡检"}</small>
+                  <small>{item.actor ?? (item.trigger === "scheduled" ? "定时巡检" : "系统")}</small>
                 </div>
               </li>
             ))}

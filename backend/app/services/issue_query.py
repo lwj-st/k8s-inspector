@@ -106,6 +106,7 @@ def issue_event_from_model(row: IssueEventModel) -> IssueEvent:
         "new_severity": row.new_severity,
         "occurred_at": _utc(row.occurred_at),
         "summary": row.summary,
+        "actor": row.actor,
         "evidence_codes": list(row.evidence_codes or []),
     }
     return IssueEvent.model_validate(sanitize_public_payload(payload))

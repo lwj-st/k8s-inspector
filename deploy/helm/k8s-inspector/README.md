@@ -5,7 +5,7 @@
 必须使用与应用镜像相同版本的 Chart 完整安装或升级，不能只替换 Deployment
 中的镜像。Chart 同时管理 ServiceAccount、ClusterRole 和 ClusterRoleBinding。
 
-根路径部署：
+### 根路径部署
 
 ```bash
 helm lint ./deploy/helm/k8s-inspector \
@@ -22,7 +22,7 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
 
 `values-root.yaml` 使用 `basePath: ""`，页面入口为 `/`，API 前缀为 `/api/v1`。
 
-子路径部署：
+### 子路径部署
 
 ```bash
 helm lint ./deploy/helm/k8s-inspector \
@@ -38,6 +38,26 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
 ```
 
 `values-subpath.yaml` 使用 `basePath: /inspector`，页面入口为 `/inspector/`，API 前缀为 `/inspector/api/v1`。
+
+### 同实例双入口部署
+
+```bash
+helm lint ./deploy/helm/k8s-inspector \
+  -f ./deploy/helm/k8s-inspector/values-dual.yaml
+
+helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
+  --namespace k8s-inspector \
+  --create-namespace \
+  -f ./deploy/helm/k8s-inspector/values-dual.yaml \
+  --set image.tag=v1.2.0 \
+  --atomic \
+  --timeout 15m
+```
+
+`values-dual.yaml` 使用 `basePath: ""`，应用按根路径运行。Chart 会渲染主 Ingress
+暴露 `/`，并通过 `ingress.dualEntry` 额外渲染一个 Ingress 暴露 `/inspector`。
+`/inspector` 入口必须在 Ingress 或上层网关执行 rewrite/strip path，把请求剥离为根路径后再转发给 Service。
+如果网关不剥离 `/inspector`，应改用 `values-subpath.yaml`。
 
 ## 安装后权限验收
 
@@ -80,6 +100,9 @@ Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会�
 - `basePath`：访问路径；空字符串或 `/` 表示根路径，`/inspector` 表示子路径。默认 Ingress path、健康探针和后端 API 前缀都会使用该值
 - `ingress.className`：默认 `nginx`，其他环境可改成 `kong`、`traefik`，或显式置空
 - `ingress.hosts[0].host`：访问域名
+- `ingress.dualEntry.enabled`：是否额外渲染同实例第二入口；默认 `false`
+- `ingress.dualEntry.path`：第二入口路径，默认 `/inspector`
+- `ingress.dualEntry.annotations`：第二入口 Ingress 的专用注解，用于配置 rewrite/strip path
 - `env.trustedDetailBaseUrl`：告警详情链接使用的外部基础地址。填写用户浏览器实际访问的协议、域名和非默认端口，不包含路径；例如 `https://test-inspector.sensecore.dev:31443`
 - `ingress.tls`：TLS 证书配置，示例默认使用 `sensecore-tls`
 - `ingress.annotations`：可填 Kong 注解，后续配合 `strip-path`
@@ -106,10 +129,15 @@ Metrics API 为可选能力；未安装 Metrics Server 时资源指标检查会�
 私有 values 文件并重新生成全部密钥。CI 不使用此文件，CI 仍然只使用
 `ci-values.yaml` 和 `e2e-values.yaml`。
 
-## Kong strip-path 示例
+## rewrite/strip path 注意事项
 
-当前 Chart 默认要求网关不剥离访问前缀。只有网关会剥离 `/inspector` 时才使用以下写法；
-此时应用自身仍以根路径接收请求，应把 `basePath` 留空。
+子路径部署和双入口部署的 path 处理方式不同：
+
+- 子路径部署：`basePath: /inspector`，网关不要剥离 `/inspector`。
+- 双入口部署：`basePath: ""`，`/inspector` 入口必须剥离 `/inspector` 后转发。
+- 根路径部署：`basePath: ""`，不需要 rewrite。
+
+Kong strip-path 示例：
 
 ```yaml
 basePath: ""
@@ -123,3 +151,31 @@ ingress:
         - path: /inspector
           pathType: Prefix
 ```
+
+同实例双入口推荐把 strip-path 注解放到 `ingress.dualEntry.annotations`，避免影响根路径入口：
+
+```yaml
+basePath: ""
+ingress:
+  enabled: true
+  hosts:
+    - host: your-domain.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  dualEntry:
+    enabled: true
+    path: /inspector
+    annotations:
+      konghq.com/strip-path: "true"
+```
+
+## Helm template 校验
+
+Chart 提供本地渲染检查脚本：
+
+```bash
+deploy/helm/k8s-inspector/test-template.sh
+```
+
+脚本会检查根路径、子路径和同实例双入口三种 values 的 Ingress path 与健康探针 path。

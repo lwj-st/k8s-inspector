@@ -14,6 +14,7 @@ from app.models import (
     InspectionRun as InspectionRunModel,
     Issue as IssueModel,
     IssueEvent as IssueEventModel,
+    MaintenanceSilenceWindow as MaintenanceSilenceWindowModel,
     NotificationChannel as NotificationChannelModel,
     NotificationDelivery as NotificationDeliveryModel,
 )
@@ -40,7 +41,7 @@ from app.schemas.v1_1 import (
 from app.security.component_status import ComponentStatusRegistry
 from app.security.crypto import SensitiveValueCipher
 from app.security.outbound import validate_outbound_target
-from app.services import notification_delivery
+from app.services import maintenance_silence_service, notification_delivery
 from app.services.notification_delivery import WebhookSender
 from app.services.settings_service import get_effective_cluster_id
 from app.services.notification_transport import (
@@ -237,6 +238,12 @@ def dispatch_lifecycle_changes(
     registry: ComponentStatusRegistry | None = None,
     sender: WebhookSender | None = None,
 ) -> None:
+    dispatch_due_maintenance_silence_summaries(
+        session,
+        settings=settings,
+        registry=registry,
+        sender=sender,
+    )
     if not plan_id or not changes:
         return
     channels = _plan_channels(session, plan_id)
@@ -280,6 +287,39 @@ def dispatch_lifecycle_changes(
             continue
         else:
             effective_event = event_type
+        silence_window = maintenance_silence_service.find_matching_window(
+            session,
+            issue=issue,
+            now=now,
+        )
+        silence_breakthrough = (
+            settings.notification_escalation_breaks_silence
+            and effective_event == NotificationEventType.severity_escalated
+        )
+        if silence_window is not None and not silence_breakthrough:
+            _record_silenced_issue_event(
+                session,
+                issue=issue,
+                source_event=change.event,
+                window=silence_window,
+            )
+            maintenance_silence_service.mark_pending_summary_recorded(
+                session,
+                silence_window,
+                occurred_at=now,
+            )
+            for channel in channels:
+                notification_delivery.suppress_delivery(
+                    session,
+                    channel_id=channel.id,
+                    deduplication_key=f"issue-event:{change.event.id}:channel:{channel.id}",
+                    issue_event_id=change.event.id,
+                    run_id=change.event.run_id,
+                    event_type=effective_event,
+                    error_code="MAINTENANCE_SILENCE",
+                    error_message=f"命中维护静默窗口：{silence_window.name}",
+                )
+            continue
         for channel in channels:
             delivery = notification_delivery.create_delivery(
                 session,
@@ -305,6 +345,39 @@ def dispatch_lifecycle_changes(
     refresh_notification_registry(session, registry)
 
 
+def _record_silenced_issue_event(
+    session: Session,
+    *,
+    issue: IssueModel,
+    source_event: IssueEventModel,
+    window: MaintenanceSilenceWindowModel,
+) -> None:
+    existing = session.scalar(
+        select(IssueEventModel.id).where(
+            IssueEventModel.issue_id == issue.id,
+            IssueEventModel.event_type == IssueEventType.notification_silenced.value,
+            IssueEventModel.evidence_codes == [str(source_event.id), str(window.id)],
+        )
+    )
+    if existing is not None:
+        return
+    event = IssueEventModel(
+        issue_id=issue.id,
+        run_id=source_event.run_id,
+        event_type=IssueEventType.notification_silenced.value,
+        trigger=source_event.trigger,
+        previous_status=issue.status,
+        new_status=issue.status,
+        previous_severity=issue.severity,
+        new_severity=issue.severity,
+        occurred_at=utcnow(),
+        summary=f"通知已静默：命中维护窗口“{window.name}”；静默结束后保留摘要待处理记录",
+        evidence_codes=[str(source_event.id), str(window.id)],
+    )
+    session.add(event)
+    session.commit()
+
+
 def dispatch_inspection_failure(
     session: Session,
     *,
@@ -314,6 +387,12 @@ def dispatch_inspection_failure(
     registry: ComponentStatusRegistry | None = None,
     sender: WebhookSender | None = None,
 ) -> None:
+    dispatch_due_maintenance_silence_summaries(
+        session,
+        settings=settings,
+        registry=registry,
+        sender=sender,
+    )
     if not plan_id:
         return
     channels = _plan_channels(session, plan_id)
@@ -347,6 +426,57 @@ def dispatch_inspection_failure(
     refresh_notification_registry(session, registry)
 
 
+def dispatch_due_maintenance_silence_summaries(
+    session: Session,
+    *,
+    settings: Settings,
+    registry: ComponentStatusRegistry | None = None,
+    sender: WebhookSender | None = None,
+) -> None:
+    windows = maintenance_silence_service.list_expired_pending_summary_windows(session)
+    if not windows:
+        return
+    channels = _enabled_channels(session)
+    cluster_id = get_effective_cluster_id(session, settings)
+    for window in windows:
+        issues = maintenance_silence_service.list_open_issues_for_window(session, window)
+        if issues and channels:
+            message = NotificationMessage(
+                event_type=NotificationEventType.maintenance_summary,
+                cluster_id=cluster_id,
+                summary=f"维护静默窗口“{window.name}”已结束，仍有 {len(issues)} 个开放问题",
+                last_seen_at=utcnow(),
+                evidence_summaries=[
+                    f"#{issue.id} {issue.severity} {issue.resource_kind}/{issue.resource_namespace or '集群级'}/{issue.resource_name}：{issue.summary}"
+                    for issue in issues
+                ],
+                suggestion="请进入问题工作台查看当前仍开放的问题。",
+                detail_url=_detail_url(settings, "/?status=open"),
+                truncated=len(issues) >= 20,
+            )
+            for channel in channels:
+                delivery = notification_delivery.create_delivery(
+                    session,
+                    channel_id=channel.id,
+                    deduplication_key=(
+                        f"maintenance-summary:{window.id}:"
+                        f"{window.pending_summary_recorded_at.isoformat()}:channel:{channel.id}"
+                    ),
+                    event_type=NotificationEventType.maintenance_summary,
+                )
+                notification_delivery.deliver(
+                    session,
+                    row=channel,
+                    delivery=delivery,
+                    message=message,
+                    settings=settings,
+                    target_policy=_target_policy(settings),
+                    sender=sender,
+                )
+        maintenance_silence_service.clear_pending_summary_recorded(session, window)
+    refresh_notification_registry(session, registry)
+
+
 def _plan_channels(session: Session, plan_id: int) -> list[NotificationChannelModel]:
     return list(
         session.scalars(
@@ -357,6 +487,19 @@ def _plan_channels(session: Session, plan_id: int) -> list[NotificationChannelMo
             )
             .where(
                 inspection_plan_channels.c.plan_id == plan_id,
+                NotificationChannelModel.enabled.is_(True),
+                NotificationChannelModel.deleted_at.is_(None),
+            )
+            .order_by(NotificationChannelModel.id)
+        ).all()
+    )
+
+
+def _enabled_channels(session: Session) -> list[NotificationChannelModel]:
+    return list(
+        session.scalars(
+            select(NotificationChannelModel)
+            .where(
                 NotificationChannelModel.enabled.is_(True),
                 NotificationChannelModel.deleted_at.is_(None),
             )

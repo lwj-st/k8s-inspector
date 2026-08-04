@@ -4,18 +4,22 @@ import { useSearchParams } from "react-router-dom";
 import {
   ApiClientError,
   createInspectionPlan,
+  createMaintenanceSilenceWindow,
   createNotificationChannel,
   deleteInspectionPlan,
+  deleteMaintenanceSilenceWindow,
   deleteNotificationChannel,
   getInspectionRun,
   getSettings,
   getSystemStatus,
   listRequiredComponentCandidates,
   listInspectionPlans,
+  listMaintenanceSilenceWindows,
   listNotificationChannels,
   runInspectionPlan,
   testNotificationChannel,
   updateInspectionPlan,
+  updateMaintenanceSilenceWindow,
   updateNotificationChannel,
   updateSettings,
 } from "../api/client";
@@ -26,6 +30,9 @@ import type {
   InspectionRun,
   InspectionRunDetail,
   InspectionThresholds,
+  MaintenanceSilenceScopeType,
+  MaintenanceSilenceWindow,
+  MaintenanceSilenceWindowCreate,
   NotificationChannel,
   NotificationChannelCreate,
   NotificationChannelType,
@@ -38,7 +45,7 @@ import type {
 import { CoveragePanel } from "../components/CoveragePanel";
 import { StatusBadge } from "../components/StatusBadge";
 
-type SettingsTab = "plans" | "notifications" | "policy" | "status" | "basic";
+type SettingsTab = "plans" | "notifications" | "silence" | "policy" | "status" | "basic";
 type VisibleInspectionRun = InspectionRun & {
   check_results?: InspectionRunDetail["check_results"];
 };
@@ -46,6 +53,7 @@ type VisibleInspectionRun = InspectionRun & {
 const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: "plans", label: "巡检计划" },
   { id: "notifications", label: "通知渠道" },
+  { id: "silence", label: "静默窗口" },
   { id: "policy", label: "巡检策略" },
   { id: "status", label: "系统状态" },
   { id: "basic", label: "基础配置" },
@@ -137,6 +145,45 @@ function emptyChannelDraft(): NotificationChannelCreate {
   };
 }
 
+function toLocalInputValue(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function defaultSilenceEnd() {
+  return new Date(Date.now() + 60 * 60_000);
+}
+
+function emptySilenceDraft(): MaintenanceSilenceWindowCreate {
+  const now = new Date();
+  return {
+    name: "",
+    enabled: true,
+    start_at: now.toISOString(),
+    end_at: defaultSilenceEnd().toISOString(),
+    scope: { type: "global" },
+    note: "",
+  };
+}
+
+function scopeLabel(window: MaintenanceSilenceWindow) {
+  const scope = window.scope;
+  if (scope.type === "namespace") {
+    return `Namespace：${scope.namespace}`;
+  }
+  if (scope.type === "resource_kind") {
+    return `资源类型：${scope.resource_kind}`;
+  }
+  if (scope.type === "label_selector") {
+    return `Label：${scope.label_selector}`;
+  }
+  return "全部集群";
+}
+
 function SystemComponentCard({
   label,
   component,
@@ -174,6 +221,7 @@ export function SettingsPage() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [plans, setPlans] = useState<InspectionPlan[]>([]);
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
+  const [silenceWindows, setSilenceWindows] = useState<MaintenanceSilenceWindow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadErrors, setLoadErrors] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -186,6 +234,8 @@ export function SettingsPage() {
   const [channelEditingId, setChannelEditingId] = useState<number | null>(null);
   const [channelDraft, setChannelDraft] = useState<NotificationChannelCreate>(emptyChannelDraft);
   const [clearSigningSecret, setClearSigningSecret] = useState(false);
+  const [silenceEditingId, setSilenceEditingId] = useState<number | null>(null);
+  const [silenceDraft, setSilenceDraft] = useState<MaintenanceSilenceWindowCreate>(emptySilenceDraft);
   const [componentCandidates, setComponentCandidates] = useState<RequiredComponentCandidate[]>([]);
   const [componentCandidateLoading, setComponentCandidateLoading] = useState(false);
   const [componentCandidateError, setComponentCandidateError] = useState<string | null>(null);
@@ -206,6 +256,7 @@ export function SettingsPage() {
       getSystemStatus(),
       listInspectionPlans(),
       listNotificationChannels(),
+      listMaintenanceSilenceWindows(),
     ]);
     const errors: string[] = [];
     if (results[0].status === "fulfilled") {
@@ -227,6 +278,11 @@ export function SettingsPage() {
       setChannels(results[3].value.items);
     } else {
       errors.push(`通知渠道：${readableError(results[3].reason)}`);
+    }
+    if (results[4].status === "fulfilled") {
+      setSilenceWindows(results[4].value.items);
+    } else {
+      errors.push(`静默窗口：${readableError(results[4].reason)}`);
     }
     setLoadErrors(errors);
     setLoading(false);
@@ -568,6 +624,114 @@ export function SettingsPage() {
     }
   }
 
+  function updateSilenceScope(type: MaintenanceSilenceScopeType) {
+    setSilenceDraft((current) => ({
+      ...current,
+      scope: type === "global"
+        ? { type }
+        : type === "namespace"
+          ? { type, namespace: "" }
+          : type === "resource_kind"
+            ? { type, resource_kind: "" }
+            : { type, label_selector: "" },
+    }));
+  }
+
+  async function saveSilenceWindow(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = silenceDraft.name.trim();
+    if (!name) {
+      setActionError("请填写静默窗口名称");
+      return;
+    }
+    const start = new Date(silenceDraft.start_at);
+    const end = new Date(silenceDraft.end_at);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      setActionError("静默结束时间必须晚于开始时间");
+      return;
+    }
+    const scope = silenceDraft.scope;
+    if (scope.type === "namespace" && !scope.namespace?.trim()) {
+      setActionError("请填写名称空间");
+      return;
+    }
+    if (scope.type === "resource_kind" && !scope.resource_kind?.trim()) {
+      setActionError("请填写资源类型");
+      return;
+    }
+    if (scope.type === "label_selector" && !scope.label_selector?.trim()) {
+      setActionError("请填写 Label Selector");
+      return;
+    }
+    const payload: MaintenanceSilenceWindowCreate = {
+      name,
+      enabled: silenceDraft.enabled,
+      start_at: start.toISOString(),
+      end_at: end.toISOString(),
+      scope: scope.type === "global"
+        ? { type: "global" }
+        : scope.type === "namespace"
+          ? { type: "namespace", namespace: scope.namespace?.trim() }
+          : scope.type === "resource_kind"
+            ? { type: "resource_kind", resource_kind: scope.resource_kind?.trim() }
+            : { type: "label_selector", label_selector: scope.label_selector?.trim() },
+      note: silenceDraft.note?.trim() || null,
+    };
+    try {
+      await perform(async () => {
+        if (silenceEditingId) {
+          const updated = await updateMaintenanceSilenceWindow(silenceEditingId, payload);
+          setSilenceWindows((current) => current.map((item) => item.id === updated.id ? updated : item));
+        } else {
+          const created = await createMaintenanceSilenceWindow(payload);
+          setSilenceWindows((current) => [created, ...current]);
+        }
+        setSilenceEditingId(null);
+        setSilenceDraft(emptySilenceDraft());
+      }, silenceEditingId ? "静默窗口已更新" : "静默窗口已创建");
+    } catch {
+      // 错误已展示。
+    }
+  }
+
+  function editSilenceWindow(window: MaintenanceSilenceWindow) {
+    setSilenceEditingId(window.id);
+    setSilenceDraft({
+      name: window.name,
+      enabled: window.enabled,
+      start_at: toLocalInputValue(window.start_at),
+      end_at: toLocalInputValue(window.end_at),
+      scope: window.scope,
+      note: window.note ?? "",
+    });
+    setActionError(null);
+  }
+
+  async function toggleSilenceWindow(window: MaintenanceSilenceWindow) {
+    try {
+      await perform(async () => {
+        const updated = await updateMaintenanceSilenceWindow(window.id, { enabled: !window.enabled });
+        setSilenceWindows((current) => current.map((item) => item.id === window.id ? updated : item));
+      }, window.enabled ? "静默窗口已停用" : "静默窗口已启用");
+    } catch {
+      // 错误已展示。
+    }
+  }
+
+  async function removeSilenceWindow(item: MaintenanceSilenceWindow) {
+    if (!window.confirm(`删除静默窗口“${item.name}”？`)) {
+      return;
+    }
+    try {
+      await perform(async () => {
+        await deleteMaintenanceSilenceWindow(item.id);
+        setSilenceWindows((current) => current.filter((windowItem) => windowItem.id !== item.id));
+      }, "静默窗口已删除");
+    } catch {
+      // 错误已展示。
+    }
+  }
+
   function addRequiredComponent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!settings) {
@@ -724,7 +888,16 @@ export function SettingsPage() {
         <div>
           <h1>系统设置</h1>
         </div>
-        <button type="button" onClick={() => void reload()} disabled={loading}>刷新</button>
+        <button
+          type="button"
+          className="page-refresh-button"
+          onClick={() => void reload()}
+          disabled={loading}
+          aria-label="刷新系统设置"
+        >
+          <span aria-hidden="true" className={loading ? "page-refresh-icon page-refresh-icon-spinning" : "page-refresh-icon"}>↻</span>
+          {loading ? "刷新中…" : "刷新设置"}
+        </button>
       </header>
 
       <nav className="settings-tabs" aria-label="系统设置分类">
@@ -952,6 +1125,72 @@ export function SettingsPage() {
               <div className="button-row">
                 <button className="primary-action" type="submit" disabled={saving}>{saving ? "保存中…" : "保存渠道"}</button>
                 {channelEditingId ? <button type="button" onClick={() => { setChannelEditingId(null); setChannelDraft(emptyChannelDraft()); setClearSigningSecret(false); }}>取消编辑</button> : null}
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === "silence" ? (
+        <div className="settings-two-column">
+          <section className="panel" aria-labelledby="silence-list-title">
+            <div className="section-header">
+              <h2 id="silence-list-title">维护静默窗口</h2>
+              <span>{silenceWindows.length} 个</span>
+            </div>
+            {silenceWindows.length === 0 ? <p className="empty-copy">还没有静默窗口。</p> : (
+              <div className="management-list">
+                {silenceWindows.map((item) => (
+                  <article className="management-card" key={item.id}>
+                    <div className="section-header">
+                      <strong>{item.name}</strong>
+                      <StatusBadge status={item.enabled ? "enabled" : "disabled"} />
+                    </div>
+                    <p>{scopeLabel(item)}</p>
+                    <small>{displayTime(item.start_at)} 至 {displayTime(item.end_at)}</small>
+                    {item.note ? <small>备注：{item.note}</small> : null}
+                    {item.pending_summary_recorded_at ? (
+                      <small>摘要待处理记录：{displayTime(item.pending_summary_recorded_at)}</small>
+                    ) : null}
+                    <div className="button-row">
+                      <button type="button" onClick={() => editSilenceWindow(item)} disabled={saving}>编辑</button>
+                      <button type="button" onClick={() => void toggleSilenceWindow(item)} disabled={saving}>{item.enabled ? "停用" : "启用"}</button>
+                      <button type="button" className="danger-button" onClick={() => void removeSilenceWindow(item)} disabled={saving}>删除</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="panel" aria-labelledby="silence-form-title">
+            <h2 id="silence-form-title">{silenceEditingId ? "编辑静默窗口" : "创建静默窗口"}</h2>
+            <form className="management-form" onSubmit={saveSilenceWindow}>
+              <label>窗口名称<input value={silenceDraft.name} onChange={(event) => setSilenceDraft({ ...silenceDraft, name: event.target.value })} /></label>
+              <label>开始时间<input type="datetime-local" value={toLocalInputValue(silenceDraft.start_at)} onChange={(event) => setSilenceDraft({ ...silenceDraft, start_at: event.target.value })} /></label>
+              <label>结束时间<input type="datetime-local" value={toLocalInputValue(silenceDraft.end_at)} onChange={(event) => setSilenceDraft({ ...silenceDraft, end_at: event.target.value })} /></label>
+              <label>
+                静默范围
+                <select value={silenceDraft.scope.type} onChange={(event) => updateSilenceScope(event.target.value as MaintenanceSilenceScopeType)}>
+                  <option value="global">全部集群</option>
+                  <option value="namespace">Namespace</option>
+                  <option value="resource_kind">资源类型</option>
+                  <option value="label_selector">Label Selector</option>
+                </select>
+              </label>
+              {silenceDraft.scope.type === "namespace" ? (
+                <label>名称空间<input value={silenceDraft.scope.namespace ?? ""} onChange={(event) => setSilenceDraft({ ...silenceDraft, scope: { ...silenceDraft.scope, namespace: event.target.value } })} placeholder="prod" /></label>
+              ) : null}
+              {silenceDraft.scope.type === "resource_kind" ? (
+                <label>资源类型<input value={silenceDraft.scope.resource_kind ?? ""} onChange={(event) => setSilenceDraft({ ...silenceDraft, scope: { ...silenceDraft.scope, resource_kind: event.target.value } })} placeholder="Deployment、Pod、Service" /></label>
+              ) : null}
+              {silenceDraft.scope.type === "label_selector" ? (
+                <label>Label Selector<input value={silenceDraft.scope.label_selector ?? ""} onChange={(event) => setSilenceDraft({ ...silenceDraft, scope: { ...silenceDraft.scope, label_selector: event.target.value } })} placeholder="app=api,tier=backend" /></label>
+              ) : null}
+              <label>备注<textarea rows={3} value={silenceDraft.note ?? ""} onChange={(event) => setSilenceDraft({ ...silenceDraft, note: event.target.value })} /></label>
+              <label className="checkbox-label"><input type="checkbox" checked={silenceDraft.enabled} onChange={(event) => setSilenceDraft({ ...silenceDraft, enabled: event.target.checked })} />启用静默窗口</label>
+              <div className="button-row">
+                <button className="primary-action" type="submit" disabled={saving}>{saving ? "保存中…" : "保存静默窗口"}</button>
+                {silenceEditingId ? <button type="button" onClick={() => { setSilenceEditingId(null); setSilenceDraft(emptySilenceDraft()); }}>取消编辑</button> : null}
               </div>
             </form>
           </section>

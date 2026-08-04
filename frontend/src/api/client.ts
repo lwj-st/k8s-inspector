@@ -22,6 +22,7 @@ import type {
   AdminSession,
   ApiError,
   Issue,
+  IssueBatchResponse,
   IssueEvent,
   IssueFilterOptions,
   IssueListParams,
@@ -31,6 +32,9 @@ import type {
   InspectionPlan,
   InspectionPlanCreate,
   InspectionPlanUpdate,
+  MaintenanceSilenceWindow,
+  MaintenanceSilenceWindowCreate,
+  MaintenanceSilenceWindowUpdate,
   NotificationChannel,
   NotificationChannelCreate,
   NotificationChannelUpdate,
@@ -195,6 +199,13 @@ export function listIssueEvents(issueId: number, page = 1, pageSize = 20): Promi
   return request(`/issues/${issueId}/events${queryString({ page, page_size: pageSize })}`);
 }
 
+export function addIssueNote(issueId: number, content: string): Promise<IssueEvent> {
+  return request(`/issues/${issueId}/notes`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
 export function acknowledgeIssue(issueId: number, note: string): Promise<Issue> {
   return request(`/issues/${issueId}/acknowledge`, {
     method: "POST",
@@ -211,6 +222,27 @@ export function ignoreIssue(issueId: number): Promise<Issue> {
 export function unignoreIssue(issueId: number): Promise<Issue> {
   return request(`/issues/${issueId}/unignore`, {
     method: "POST",
+  });
+}
+
+export function batchAcknowledgeIssues(issueIds: number[], note: string): Promise<IssueBatchResponse> {
+  return request("/issues/batch/acknowledge", {
+    method: "POST",
+    body: JSON.stringify({ issue_ids: issueIds, note }),
+  });
+}
+
+export function batchIgnoreIssues(issueIds: number[]): Promise<IssueBatchResponse> {
+  return request("/issues/batch/ignore", {
+    method: "POST",
+    body: JSON.stringify({ issue_ids: issueIds }),
+  });
+}
+
+export function batchUnignoreIssues(issueIds: number[]): Promise<IssueBatchResponse> {
+  return request("/issues/batch/unignore", {
+    method: "POST",
+    body: JSON.stringify({ issue_ids: issueIds }),
   });
 }
 
@@ -281,6 +313,33 @@ export function deleteNotificationChannel(channelId: number): Promise<void> {
 
 export function testNotificationChannel(channelId: number): Promise<NotificationTestResponse> {
   return request(`/notification-channels/${channelId}/test`, { method: "POST" });
+}
+
+export function listMaintenanceSilenceWindows(page = 1, pageSize = 100): Promise<Page<MaintenanceSilenceWindow>> {
+  return request(`/maintenance-silence-windows${queryString({ page, page_size: pageSize })}`);
+}
+
+export function createMaintenanceSilenceWindow(
+  payload: MaintenanceSilenceWindowCreate,
+): Promise<MaintenanceSilenceWindow> {
+  return request("/maintenance-silence-windows", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateMaintenanceSilenceWindow(
+  windowId: number,
+  payload: MaintenanceSilenceWindowUpdate,
+): Promise<MaintenanceSilenceWindow> {
+  return request(`/maintenance-silence-windows/${windowId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteMaintenanceSilenceWindow(windowId: number): Promise<void> {
+  return requestVoid(`/maintenance-silence-windows/${windowId}`, { method: "DELETE" });
 }
 
 export function runClusterInspection(): Promise<ClusterInspectionResponse> {

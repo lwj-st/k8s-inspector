@@ -165,6 +165,7 @@ def _event_title(event_type: NotificationEventType) -> str:
         NotificationEventType.issue_recovered: "问题已恢复",
         NotificationEventType.inspection_failed: "巡检任务失败",
         NotificationEventType.flapping: "问题频繁抖动",
+        NotificationEventType.maintenance_summary: "维护静默结束摘要",
         NotificationEventType.notification_test: "测试通知",
     }[event_type]
 

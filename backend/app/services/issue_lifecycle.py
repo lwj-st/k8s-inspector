@@ -17,6 +17,7 @@ from app.schemas.v1_1 import (
     IssueAcknowledgeRequest,
     IssueCandidate,
     IssueEventType,
+    IssueNoteCreate,
     IssueSeverity,
     IssueStatus,
     build_issue_fingerprint,
@@ -132,6 +133,7 @@ def acknowledge_issue(
     *,
     issue_id: int,
     payload: IssueAcknowledgeRequest,
+    actor: str | None = None,
     trigger: InspectionTrigger = InspectionTrigger.manual,
     occurred_at: datetime | None = None,
 ):
@@ -151,6 +153,7 @@ def acknowledge_issue(
         new_severity=row.severity,
         occurred_at=now,
         summary="问题已确认；确认不改变实际健康状态",
+        actor=sanitize_public_payload(actor) if actor else None,
         evidence_codes=[],
     )
     session.add(event)
@@ -163,6 +166,7 @@ def ignore_issue(
     session: Session,
     *,
     issue_id: int,
+    actor: str | None = None,
     trigger: InspectionTrigger = InspectionTrigger.manual,
     occurred_at: datetime | None = None,
 ):
@@ -185,6 +189,7 @@ def ignore_issue(
         new_severity=row.severity,
         occurred_at=now,
         summary="问题已忽略；默认不再开放问题列表显示",
+        actor=sanitize_public_payload(actor) if actor else None,
         evidence_codes=[],
     )
     session.add(event)
@@ -197,6 +202,7 @@ def unignore_issue(
     session: Session,
     *,
     issue_id: int,
+    actor: str | None = None,
     trigger: InspectionTrigger = InspectionTrigger.manual,
     occurred_at: datetime | None = None,
 ):
@@ -218,12 +224,45 @@ def unignore_issue(
         new_severity=row.severity,
         occurred_at=now,
         summary="已取消忽略；问题重新进入开放问题列表",
+        actor=sanitize_public_payload(actor) if actor else None,
         evidence_codes=[],
     )
     session.add(event)
     session.commit()
     session.refresh(row)
     return issue_from_model(row)
+
+
+def add_issue_note(
+    session: Session,
+    *,
+    issue_id: int,
+    payload: IssueNoteCreate,
+    actor: str,
+    trigger: InspectionTrigger = InspectionTrigger.manual,
+    occurred_at: datetime | None = None,
+) -> IssueEventModel | None:
+    row = session.get(IssueModel, issue_id)
+    if row is None:
+        return None
+    now = occurred_at or datetime.now(timezone.utc)
+    event = IssueEventModel(
+        issue_id=row.id,
+        event_type=IssueEventType.note_added.value,
+        trigger=trigger.value,
+        previous_status=row.status,
+        new_status=row.status,
+        previous_severity=row.severity,
+        new_severity=row.severity,
+        occurred_at=now,
+        summary=sanitize_public_payload(payload.content),
+        actor=sanitize_public_payload(actor),
+        evidence_codes=[],
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event
 
 
 def _observe_candidate(

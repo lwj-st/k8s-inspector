@@ -75,7 +75,7 @@ export type IssueEvent = {
   id: number;
   issue_id: number;
   run_id?: number | null;
-  event_type: "opened" | "observed" | "severity_escalated" | "acknowledged" | "ignored" | "unignored" | "recovered" | "reopened";
+  event_type: "opened" | "observed" | "severity_escalated" | "acknowledged" | "note_added" | "ignored" | "unignored" | "notification_silenced" | "recovered" | "reopened";
   trigger: InspectionTrigger;
   previous_status?: IssueStatus | null;
   new_status?: IssueStatus | null;
@@ -83,6 +83,7 @@ export type IssueEvent = {
   new_severity?: IssueSeverity | null;
   occurred_at: string;
   summary: string;
+  actor?: string | null;
   evidence_codes: string[];
 };
 
@@ -106,6 +107,19 @@ export type IssueFilterOptions = {
   namespaces: IssueFilterOption[];
   resource_kinds: IssueFilterOption[];
   source_checks: IssueFilterOption[];
+};
+
+export type IssueBatchItemResult = {
+  issue_id: number;
+  succeeded: boolean;
+  issue?: Issue | null;
+  error?: string | null;
+};
+
+export type IssueBatchResponse = {
+  succeeded_count: number;
+  failed_count: number;
+  results: IssueBatchItemResult[];
 };
 
 export type Coverage = {
@@ -221,6 +235,33 @@ export type NotificationChannel = {
   signing_secret_configured: boolean;
   mention_all_on_critical: boolean;
   timeout_seconds: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MaintenanceSilenceScopeType = "global" | "namespace" | "resource_kind" | "label_selector";
+
+export type MaintenanceSilenceScope = {
+  type: MaintenanceSilenceScopeType;
+  namespace?: string | null;
+  resource_kind?: string | null;
+  label_selector?: string | null;
+};
+
+export type MaintenanceSilenceWindowCreate = {
+  name: string;
+  enabled: boolean;
+  start_at: string;
+  end_at: string;
+  scope: MaintenanceSilenceScope;
+  note?: string | null;
+};
+
+export type MaintenanceSilenceWindowUpdate = Partial<MaintenanceSilenceWindowCreate>;
+
+export type MaintenanceSilenceWindow = MaintenanceSilenceWindowCreate & {
+  id: number;
+  pending_summary_recorded_at?: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -335,8 +335,10 @@ class IssueEventType(str, Enum):
     observed = "observed"
     severity_escalated = "severity_escalated"
     acknowledged = "acknowledged"
+    note_added = "note_added"
     ignored = "ignored"
     unignored = "unignored"
+    notification_silenced = "notification_silenced"
     recovered = "recovered"
     reopened = "reopened"
 
@@ -358,11 +360,37 @@ class IssueEvent(ContractModel):
     new_severity: IssueSeverity | None = None
     occurred_at: datetime
     summary: str = Field(min_length=1, max_length=1000)
+    actor: str | None = Field(default=None, max_length=128)
     evidence_codes: list[str] = Field(default_factory=list, max_length=32)
 
 
 class IssueAcknowledgeRequest(ContractModel):
     note: str = Field(min_length=1, max_length=1000)
+
+
+class IssueNoteCreate(ContractModel):
+    content: str = Field(min_length=1, max_length=1000)
+
+
+class IssueBatchRequest(ContractModel):
+    issue_ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class IssueBatchAcknowledgeRequest(IssueBatchRequest):
+    note: str = Field(min_length=1, max_length=1000)
+
+
+class IssueBatchItemResult(ContractModel):
+    issue_id: int = Field(gt=0)
+    succeeded: bool
+    issue: Issue | None = None
+    error: str | None = Field(default=None, max_length=1000)
+
+
+class IssueBatchResponse(ContractModel):
+    succeeded_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    results: list[IssueBatchItemResult] = Field(default_factory=list)
 
 
 class Coverage(ContractModel):
@@ -906,6 +934,88 @@ class NotificationChannel(ContractModel):
     updated_at: datetime
 
 
+class MaintenanceSilenceScopeType(str, Enum):
+    global_scope = "global"
+    namespace = "namespace"
+    resource_kind = "resource_kind"
+    label_selector = "label_selector"
+
+
+class MaintenanceSilenceScope(ContractModel):
+    type: MaintenanceSilenceScopeType = MaintenanceSilenceScopeType.global_scope
+    namespace: str | None = Field(default=None, max_length=253)
+    resource_kind: str | None = Field(default=None, max_length=128)
+    label_selector: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_scope_value(self) -> "MaintenanceSilenceScope":
+        if self.type == MaintenanceSilenceScopeType.global_scope:
+            object.__setattr__(self, "namespace", None)
+            object.__setattr__(self, "resource_kind", None)
+            object.__setattr__(self, "label_selector", None)
+        elif self.type == MaintenanceSilenceScopeType.namespace:
+            if not self.namespace:
+                raise ValueError("namespace silence requires namespace")
+            object.__setattr__(self, "resource_kind", None)
+            object.__setattr__(self, "label_selector", None)
+        elif self.type == MaintenanceSilenceScopeType.resource_kind:
+            if not self.resource_kind:
+                raise ValueError("resource_kind silence requires resource_kind")
+            object.__setattr__(self, "namespace", None)
+            object.__setattr__(self, "label_selector", None)
+        elif self.type == MaintenanceSilenceScopeType.label_selector:
+            if not self.label_selector:
+                raise ValueError("label_selector silence requires label_selector")
+        return self
+
+
+class MaintenanceSilenceWindowCreate(ContractModel):
+    name: str = Field(min_length=1, max_length=128)
+    enabled: bool = True
+    start_at: datetime
+    end_at: datetime
+    scope: MaintenanceSilenceScope = Field(default_factory=MaintenanceSilenceScope)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> "MaintenanceSilenceWindowCreate":
+        if self.end_at <= self.start_at:
+            raise ValueError("end_at must be later than start_at")
+        return self
+
+
+class MaintenanceSilenceWindowUpdate(ContractModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    enabled: bool | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    scope: MaintenanceSilenceScope | None = None
+    note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def require_change(self) -> "MaintenanceSilenceWindowUpdate":
+        if not self.model_fields_set:
+            raise ValueError("at least one field is required")
+        if (self.start_at is None) != (self.end_at is None):
+            raise ValueError("start_at and end_at must be updated together")
+        if self.start_at is not None and self.end_at is not None and self.end_at <= self.start_at:
+            raise ValueError("end_at must be later than start_at")
+        return self
+
+
+class MaintenanceSilenceWindow(ContractModel):
+    id: int = Field(gt=0)
+    name: str
+    enabled: bool
+    start_at: datetime
+    end_at: datetime
+    scope: MaintenanceSilenceScope
+    note: str | None = None
+    pending_summary_recorded_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class WebhookTargetPolicy(ContractModel):
     allowed_hosts: list[str] = Field(default_factory=list, max_length=100)
     allowed_cidrs: list[str] = Field(default_factory=list, max_length=100)
@@ -954,6 +1064,7 @@ class NotificationEventType(str, Enum):
     issue_recovered = "issue_recovered"
     inspection_failed = "inspection_failed"
     flapping = "flapping"
+    maintenance_summary = "maintenance_summary"
     notification_test = "notification_test"
 
 

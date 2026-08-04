@@ -7,6 +7,7 @@ import { appRoutes } from "../routes";
 import { getRouterBasename } from "./config";
 
 const fetchMock = vi.fn();
+let localStorageData: Record<string, string> = {};
 
 function authenticatedSession() {
   return {
@@ -20,7 +21,23 @@ function authenticatedSession() {
 
 describe("App", () => {
   beforeEach(() => {
+    localStorageData = {};
     vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => localStorageData[key] ?? null),
+        setItem: vi.fn((key: string, value: string) => {
+          localStorageData[key] = value;
+        }),
+        removeItem: vi.fn((key: string) => {
+          delete localStorageData[key];
+        }),
+        clear: vi.fn(() => {
+          localStorageData = {};
+        }),
+      },
+    });
     fetchMock.mockImplementation(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith("/api/v1/auth/session")) {
@@ -65,6 +82,8 @@ describe("App", () => {
 
   afterEach(() => {
     cleanup();
+    localStorageData = {};
+    delete document.documentElement.dataset.theme;
     vi.unstubAllGlobals();
     fetchMock.mockReset();
   });
@@ -175,6 +194,9 @@ describe("App", () => {
 
     const userCard = await screen.findByRole("button", { name: /admin/ });
     await user.click(userCard);
+    expect(screen.getByText("主题切换")).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "亮色" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("menuitemradio", { name: "暗色" })).toHaveAttribute("aria-checked", "false");
     expect(screen.getByRole("menuitem", { name: "更改密码" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "注销" })).toBeInTheDocument();
 
@@ -186,6 +208,37 @@ describe("App", () => {
     expect(screen.getByRole("menuitem", { name: "注销" })).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menuitem", { name: "注销" })).not.toBeInTheDocument();
+  });
+
+  it("switches to dark theme from the user menu and keeps it after remount", async () => {
+    const user = userEvent.setup();
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+      basename: getRouterBasename(""),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBe("light");
+
+    await user.click(screen.getByRole("button", { name: /admin/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: "暗色" }));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorageData["k8s-inspector:theme"]).toBe("dark");
+    expect(screen.getByRole("menuitemradio", { name: "暗色" })).toHaveAttribute("aria-checked", "true");
+
+    cleanup();
+
+    const remountedRouter = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+      basename: getRouterBasename(""),
+    });
+    render(<RouterProvider router={remountedRouter} />);
+
+    expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
   it("logs out from the user menu", async () => {

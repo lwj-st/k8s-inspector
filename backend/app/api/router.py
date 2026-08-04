@@ -8,6 +8,7 @@ from app.api.routes import inspection_plans
 from app.api.routes import inspection_runs
 from app.api.routes import issues
 from app.api.routes import keywords
+from app.api.routes import maintenance_silence_windows
 from app.api.routes import notification_channels
 from app.api.routes import overview
 from app.api.routes import saved_targets
@@ -26,6 +27,7 @@ def build_api_router() -> APIRouter:
     router.include_router(issues.router)
     router.include_router(inspection_runs.router)
     router.include_router(inspection_plans.router)
+    router.include_router(maintenance_silence_windows.router)
     router.include_router(notification_channels.router)
     router.include_router(diagnoses.router)
     router.include_router(keywords.router)

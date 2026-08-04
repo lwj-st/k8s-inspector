@@ -49,6 +49,16 @@ ingress:
     - secretName: sensecore-tls
       hosts:
         - dev-inspector.sensecore.com
+  # 同实例双入口。默认关闭。
+  # 开启后会额外渲染一个 Ingress，把同一 Service 暴露到 dualEntry.path。
+  # 常见用法：basePath: "" 保持应用按根路径运行，网关对 /inspector 入口执行 rewrite/strip path。
+  dualEntry:
+    enabled: false
+    path: /inspector
+    pathType: Prefix
+    annotations: {}
+    hosts: []
+    tls: []
 
 # 访问路径。空字符串或 "/" 表示根路径；例如 "/inspector" 表示子路径部署。
 # 默认 Ingress path、健康探针和后端 API 前缀都会使用该值。

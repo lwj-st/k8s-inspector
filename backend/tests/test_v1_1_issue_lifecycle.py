@@ -368,6 +368,61 @@ def test_issue_ignore_hides_from_open_list_and_is_filterable(client):
     assert timeline.json()["items"][0]["event_type"] == "unignored"
 
 
+def test_issue_batch_acknowledge_ignore_and_unignore_with_partial_failure(client):
+    session_factory = client.app.state.session_factory
+    now = datetime.now(timezone.utc)
+    scope = InspectionScope(type="namespace", namespace="demo")
+    cluster_id = client.app.state.settings.cluster_id
+    with session_factory() as session:
+        run = _run(session, scope, now)
+        opened = apply_evaluations(
+            session,
+            cluster_id=cluster_id,
+            run_id=run.id,
+            trigger=InspectionTrigger.manual,
+            evaluations=[
+                _evaluation(scope, present=True),
+                _service_evaluation(scope, present=True),
+                _required_component_evaluation(scope, present=True),
+            ],
+            occurred_at=now,
+        )
+        session.commit()
+        issue_ids = sorted(opened.issue_ids)
+
+    acknowledged = client.post(
+        "/api/v1/issues/batch/acknowledge",
+        json={"issue_ids": [*issue_ids, 99999], "note": "统一备注"},
+    )
+    assert acknowledged.status_code == 200
+    body = acknowledged.json()
+    assert body["succeeded_count"] == 3
+    assert body["failed_count"] == 1
+    assert body["results"][-1] == {"issue_id": 99999, "succeeded": False, "issue": None, "error": "问题不存在"}
+    with session_factory() as session:
+        assert all(session.get(IssueModel, issue_id).acknowledge_note == "统一备注" for issue_id in issue_ids)
+        assert session.query(IssueEventModel).filter(IssueEventModel.event_type == "acknowledged").count() == 3
+
+    ignored = client.post("/api/v1/issues/batch/ignore", json={"issue_ids": issue_ids})
+    assert ignored.status_code == 200
+    assert ignored.json()["succeeded_count"] == 3
+    assert ignored.json()["failed_count"] == 0
+    open_issues = client.get("/api/v1/issues?status=open")
+    assert all(item["id"] not in issue_ids for item in open_issues.json()["items"])
+    ignored_issues = client.get("/api/v1/issues?status=ignored")
+    assert {item["id"] for item in ignored_issues.json()["items"]} >= set(issue_ids)
+
+    unignored = client.post("/api/v1/issues/batch/unignore", json={"issue_ids": issue_ids})
+    assert unignored.status_code == 200
+    assert unignored.json()["succeeded_count"] == 3
+    assert unignored.json()["failed_count"] == 0
+    open_after_unignore = client.get("/api/v1/issues?status=open")
+    assert {item["id"] for item in open_after_unignore.json()["items"]} >= set(issue_ids)
+    with session_factory() as session:
+        assert session.query(IssueEventModel).filter(IssueEventModel.event_type == "ignored").count() == 3
+        assert session.query(IssueEventModel).filter(IssueEventModel.event_type == "unignored").count() == 3
+
+
 def test_ignored_issue_recovers_when_next_successful_check_no_longer_reports_it(client):
     session_factory = client.app.state.session_factory
     now = datetime.now(timezone.utc)
@@ -462,6 +517,46 @@ def test_issue_api_keeps_v1_1_response_fields(client):
         "acknowledge_note",
     }.issubset(body)
     assert {"api_version", "kind", "namespace", "name", "uid"}.issubset(body["resource"])
+
+
+def test_issue_note_can_be_added_listed_redacted_and_does_not_change_status(client):
+    inspected = client.post("/api/v1/inspections/namespace/run", json={"namespace": "demo"})
+    assert inspected.status_code == 200
+    issue_id = inspected.json()["issues"][0]["id"]
+
+    first = client.post(
+        f"/api/v1/issues/{issue_id}/notes",
+        json={"content": "已联系业务，token=abc123 password=secret-value"},
+    )
+    assert first.status_code == 201
+    first_body = first.json()
+    assert first_body["event_type"] == "note_added"
+    assert first_body["actor"] == "development"
+    assert first_body["previous_status"] == "open"
+    assert first_body["new_status"] == "open"
+    assert "abc123" not in first_body["summary"]
+    assert "secret-value" not in first_body["summary"]
+    assert "token=[REDACTED]" in first_body["summary"]
+    assert "password=[REDACTED]" in first_body["summary"]
+
+    second = client.post(
+        f"/api/v1/issues/{issue_id}/notes",
+        json={"content": "二线处理中"},
+    )
+    assert second.status_code == 201
+
+    issue = client.get(f"/api/v1/issues/{issue_id}")
+    assert issue.status_code == 200
+    assert issue.json()["status"] == "open"
+    assert issue.json()["acknowledged_at"] is None
+
+    events = client.get(f"/api/v1/issues/{issue_id}/events")
+    assert events.status_code == 200
+    note_events = [item for item in events.json()["items"] if item["event_type"] == "note_added"]
+    assert note_events[0]["summary"] == "二线处理中"
+    assert note_events[1]["summary"].startswith("已联系业务")
+    assert "abc123" not in note_events[1]["summary"]
+    assert "secret-value" not in note_events[1]["summary"]
 
 
 def test_issue_filter_options_are_generated_from_existing_issues(client):

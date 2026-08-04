@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
 import {
+  addIssueNote,
   acknowledgeIssue,
   ApiClientError,
   getIssue,
@@ -86,6 +87,11 @@ export function IssueDetailPage() {
     await refreshEvents();
   }
 
+  async function handleAddNote(content: string) {
+    await addIssueNote(issueId, content);
+    await refreshEvents();
+  }
+
   async function refreshEvents() {
     try {
       const refreshed = await listIssueEvents(issueId, 1, 20);
@@ -137,6 +143,7 @@ export function IssueDetailPage() {
         eventsLoading={eventsLoading}
         eventsError={eventsError}
         onLoadMore={() => void loadMoreEvents()}
+        onAddNote={handleAddNote}
         onAcknowledge={handleAcknowledge}
         onIgnore={handleIgnore}
         onUnignore={handleUnignore}

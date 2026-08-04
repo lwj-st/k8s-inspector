@@ -6,6 +6,7 @@ from app.models import IssueEvent as IssueEventModel
 from app.models import InspectionPlan as InspectionPlanModel
 from app.models import NotificationChannel as NotificationChannelModel
 from app.models import NotificationDelivery as NotificationDeliveryModel
+from app.models import MaintenanceSilenceWindow as MaintenanceSilenceWindowModel
 from app.schemas.v1_1 import (
     IssueSeverity,
     IssueStatus,
@@ -509,3 +510,282 @@ def test_info_open_and_recovered_are_silent_but_escalation_is_not(client, monkey
         assert len(deliveries) == 1
         assert deliveries[0].event_type == "severity_escalated"
         assert deliveries[0].status == "succeeded"
+
+
+def test_maintenance_silence_window_crud_api(client):
+    start = datetime.now(timezone.utc).replace(microsecond=0)
+    end = start + timedelta(hours=2)
+    created = client.post(
+        "/api/v1/maintenance-silence-windows",
+        json={
+            "name": "数据库维护",
+            "enabled": True,
+            "start_at": start.isoformat(),
+            "end_at": end.isoformat(),
+            "scope": {"type": "namespace", "namespace": "payments"},
+            "note": "发布期间减少重复告警",
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["name"] == "数据库维护"
+    assert body["scope"] == {"type": "namespace", "namespace": "payments", "resource_kind": None, "label_selector": None}
+
+    listed = client.get("/api/v1/maintenance-silence-windows")
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+
+    updated = client.put(
+        f"/api/v1/maintenance-silence-windows/{body['id']}",
+        json={
+            "enabled": False,
+            "scope": {"type": "resource_kind", "resource_kind": "Deployment"},
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["enabled"] is False
+    assert updated.json()["scope"]["resource_kind"] == "Deployment"
+
+    deleted = client.delete(f"/api/v1/maintenance-silence-windows/{body['id']}")
+    assert deleted.status_code == 204
+    assert client.get("/api/v1/maintenance-silence-windows").json()["total"] == 0
+
+
+def test_maintenance_silence_suppresses_notifications_and_records_issue_event(client, monkeypatch):
+    monkeypatch.setattr(notification_delivery, "validate_outbound_target", lambda *args, **kwargs: _target())
+    sender_calls = {"count": 0}
+
+    def sender(*args, **kwargs):
+        sender_calls["count"] += 1
+        return SendResult(200)
+
+    now = datetime.now(timezone.utc)
+    with client.app.state.session_factory() as session:
+        cipher = SensitiveValueCipher.from_key(client.app.state.settings.encryption_key)
+        channel = NotificationChannelModel(
+            name="静默渠道",
+            normalized_name="静默渠道",
+            type="generic_webhook",
+            enabled=True,
+            encrypted_webhook_url=cipher.encrypt(
+                "https://hooks.example.com/v1/notify",
+                purpose="notification_webhook_url",
+            ),
+            endpoint_masked="https://hooks.example.com/***",
+            mention_all_on_critical=False,
+            timeout_seconds=1,
+        )
+        plan = InspectionPlanModel(
+            name="静默计划",
+            normalized_name="静默计划",
+            enabled=True,
+            scope={"type": "namespaces", "namespaces": ["demo"]},
+            schedule={"interval": "10m", "daily_at": None, "timezone": "UTC"},
+            include_template_matching=True,
+        )
+        issue = IssueModel(
+            cluster_id="cluster-a",
+            issue_code="POD_NOT_READY",
+            fingerprint="d" * 64,
+            severity="warning",
+            status="open",
+            scope="pod",
+            resource_kind="Pod",
+            resource_namespace="demo",
+            resource_name="api-0",
+            summary="Pod 未就绪",
+            reason="Ready=False",
+            suggestion="检查容器状态",
+            evidence=[{"facts": {"labels": {"app": "api"}}, "summary": "labels", "source": "kubernetes_api"}],
+            first_seen_at=now,
+            last_seen_at=now,
+            occurrence_count=1,
+            source_check="pod.runtime",
+        )
+        window = MaintenanceSilenceWindowModel(
+            name="demo 维护",
+            enabled=True,
+            start_at=now - timedelta(minutes=5),
+            end_at=now + timedelta(minutes=30),
+            scope_type="namespace",
+            namespace="demo",
+            note="变更窗口",
+        )
+        session.add_all([channel, plan, issue, window])
+        session.commit()
+        session.execute(
+            inspection_plan_channels.insert().values(plan_id=plan.id, channel_id=channel.id)
+        )
+        opened = IssueEventModel(
+            issue_id=issue.id,
+            event_type="opened",
+            trigger="scheduled",
+            occurred_at=now,
+            summary="opened",
+            evidence_codes=[],
+        )
+        session.add(opened)
+        session.commit()
+
+        notification_service.dispatch_lifecycle_changes(
+            session,
+            plan_id=plan.id,
+            changes=[LifecycleChange(issue, opened)],
+            settings=client.app.state.settings,
+            sender=sender,
+        )
+
+        delivery = session.query(NotificationDeliveryModel).one()
+        assert delivery.status == "suppressed"
+        assert delivery.error_code == "MAINTENANCE_SILENCE"
+        assert sender_calls["count"] == 0
+        silence_event = (
+            session.query(IssueEventModel)
+            .filter(IssueEventModel.event_type == "notification_silenced")
+            .one()
+        )
+        assert "通知已静默" in silence_event.summary
+        assert session.get(MaintenanceSilenceWindowModel, window.id).pending_summary_recorded_at is not None
+
+        escalated = IssueEventModel(
+            issue_id=issue.id,
+            event_type="severity_escalated",
+            trigger="scheduled",
+            occurred_at=now,
+            summary="severity escalated",
+            evidence_codes=[],
+        )
+        issue.severity = "critical"
+        session.add(escalated)
+        session.commit()
+        notification_service.dispatch_lifecycle_changes(
+            session,
+            plan_id=plan.id,
+            changes=[LifecycleChange(issue, escalated)],
+            settings=client.app.state.settings,
+            sender=sender,
+        )
+        latest = session.query(NotificationDeliveryModel).order_by(NotificationDeliveryModel.id.desc()).first()
+        assert latest.event_type == "severity_escalated"
+        assert latest.status == "suppressed"
+        assert sender_calls["count"] == 0
+
+        client.app.state.settings.notification_escalation_breaks_silence = True
+        escalated_again = IssueEventModel(
+            issue_id=issue.id,
+            event_type="severity_escalated",
+            trigger="scheduled",
+            occurred_at=now,
+            summary="severity escalated again",
+            evidence_codes=[],
+        )
+        session.add(escalated_again)
+        session.commit()
+        notification_service.dispatch_lifecycle_changes(
+            session,
+            plan_id=plan.id,
+            changes=[LifecycleChange(issue, escalated_again)],
+            settings=client.app.state.settings,
+            sender=sender,
+        )
+        delivered = session.query(NotificationDeliveryModel).order_by(NotificationDeliveryModel.id.desc()).first()
+        assert delivered.event_type == "severity_escalated"
+        assert delivered.status == "succeeded"
+        assert sender_calls["count"] == 1
+
+
+def test_expired_maintenance_silence_sends_one_open_issue_summary(client, monkeypatch):
+    monkeypatch.setattr(notification_delivery, "validate_outbound_target", lambda *args, **kwargs: _target())
+    sender_calls = {"count": 0}
+
+    def sender(*args, **kwargs):
+        sender_calls["count"] += 1
+        return SendResult(200)
+
+    now = datetime.now(timezone.utc)
+    with client.app.state.session_factory() as session:
+        cipher = SensitiveValueCipher.from_key(client.app.state.settings.encryption_key)
+        channel = NotificationChannelModel(
+            name="摘要渠道",
+            normalized_name="摘要渠道",
+            type="generic_webhook",
+            enabled=True,
+            encrypted_webhook_url=cipher.encrypt(
+                "https://hooks.example.com/v1/summary",
+                purpose="notification_webhook_url",
+            ),
+            endpoint_masked="https://hooks.example.com/***",
+            mention_all_on_critical=False,
+            timeout_seconds=1,
+        )
+        open_issue = IssueModel(
+            cluster_id="cluster-a",
+            issue_code="POD_NOT_READY",
+            fingerprint="e" * 64,
+            severity="warning",
+            status="open",
+            scope="pod",
+            resource_kind="Pod",
+            resource_namespace="demo",
+            resource_name="api-0",
+            summary="Pod 未就绪",
+            reason="Ready=False",
+            suggestion="检查容器状态",
+            evidence=[],
+            first_seen_at=now - timedelta(hours=1),
+            last_seen_at=now,
+            occurrence_count=1,
+            source_check="pod.runtime",
+        )
+        recovered_issue = IssueModel(
+            cluster_id="cluster-a",
+            issue_code="POD_NOT_READY",
+            fingerprint="f" * 64,
+            severity="warning",
+            status="recovered",
+            scope="pod",
+            resource_kind="Pod",
+            resource_namespace="demo",
+            resource_name="api-1",
+            summary="已恢复 Pod",
+            reason="Ready=True",
+            suggestion="无需处理",
+            evidence=[],
+            first_seen_at=now - timedelta(hours=1),
+            last_seen_at=now,
+            recovered_at=now,
+            occurrence_count=1,
+            source_check="pod.runtime",
+        )
+        window = MaintenanceSilenceWindowModel(
+            name="demo 维护结束",
+            enabled=True,
+            start_at=now - timedelta(hours=2),
+            end_at=now - timedelta(minutes=1),
+            scope_type="namespace",
+            namespace="demo",
+            note="发布完成",
+            pending_summary_recorded_at=now - timedelta(minutes=30),
+        )
+        session.add_all([channel, open_issue, recovered_issue, window])
+        session.commit()
+
+        notification_service.dispatch_due_maintenance_silence_summaries(
+            session,
+            settings=client.app.state.settings,
+            sender=sender,
+        )
+
+        delivery = session.query(NotificationDeliveryModel).one()
+        assert delivery.event_type == "maintenance_summary"
+        assert delivery.status == "succeeded"
+        assert sender_calls["count"] == 1
+        assert session.get(MaintenanceSilenceWindowModel, window.id).pending_summary_recorded_at is None
+
+        notification_service.dispatch_due_maintenance_silence_summaries(
+            session,
+            settings=client.app.state.settings,
+            sender=sender,
+        )
+        assert session.query(NotificationDeliveryModel).count() == 1
+        assert sender_calls["count"] == 1

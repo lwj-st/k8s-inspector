@@ -46,6 +46,7 @@ class Settings(BaseModel):
     trusted_detail_base_url: str | None = None
     webhook_allowed_hosts: list[str] = Field(default_factory=list)
     webhook_allowed_cidrs: list[str] = Field(default_factory=list)
+    notification_escalation_breaks_silence: bool = False
 
     @field_validator("app_env", "auth_mode", "provider_mode")
     @classmethod
@@ -147,4 +148,7 @@ def get_settings() -> Settings:
         trusted_detail_base_url=getenv("TRUSTED_DETAIL_BASE_URL"),
         webhook_allowed_hosts=_split_csv(getenv("WEBHOOK_ALLOWED_HOSTS")),
         webhook_allowed_cidrs=_split_csv(getenv("WEBHOOK_ALLOWED_CIDRS")),
+        notification_escalation_breaks_silence=(
+            getenv("NOTIFICATION_ESCALATION_BREAKS_SILENCE", "false").lower() == "true"
+        ),
     )

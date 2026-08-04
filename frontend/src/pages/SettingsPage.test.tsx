@@ -143,6 +143,25 @@ function baseFetch(
         page_size: 100,
       }), { status: 200 });
     }
+    if (url.includes("/maintenance-silence-windows") && (!init?.method || init.method === "GET")) {
+      return new Response(JSON.stringify({
+        items: [{
+          id: 1,
+          name: "发布窗口",
+          enabled: true,
+          start_at: "2026-07-26T09:00:00Z",
+          end_at: "2026-07-26T11:00:00Z",
+          scope: { type: "namespace", namespace: "demo", resource_kind: null, label_selector: null },
+          note: "版本发布",
+          pending_summary_recorded_at: null,
+          created_at: "2026-07-26T08:00:00Z",
+          updated_at: "2026-07-26T08:00:00Z",
+        }],
+        total: 1,
+        page: 1,
+        page_size: 100,
+      }), { status: 200 });
+    }
     throw new Error(`Unexpected request: ${url}`);
   };
 }
@@ -300,6 +319,73 @@ describe("SettingsPage", () => {
     await user.click(screen.getByRole("button", { name: "保存渠道" }));
 
     expect(await screen.findByText("通知渠道名称已存在（请求 ID：rid-409）")).toBeInTheDocument();
+  });
+
+  it("manages maintenance silence windows from settings", async () => {
+    const user = userEvent.setup();
+    let createdPayload: Record<string, unknown> | null = null;
+    fetchMock.mockImplementation(baseFetch((url, init) => {
+      if (url.endsWith("/maintenance-silence-windows") && init?.method === "POST") {
+        expect(new Headers(init.headers).get("X-CSRF-Token")).toBe("csrf-token-at-least-16");
+        createdPayload = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({
+          ...createdPayload,
+          id: 2,
+          pending_summary_recorded_at: null,
+          created_at: "2026-07-26T10:00:00Z",
+          updated_at: "2026-07-26T10:00:00Z",
+        }), { status: 201 });
+      }
+      if (url.endsWith("/maintenance-silence-windows/1") && init?.method === "PUT") {
+        return new Response(JSON.stringify({
+          id: 1,
+          name: "发布窗口",
+          enabled: false,
+          start_at: "2026-07-26T09:00:00Z",
+          end_at: "2026-07-26T11:00:00Z",
+          scope: { type: "namespace", namespace: "demo", resource_kind: null, label_selector: null },
+          note: "版本发布",
+          pending_summary_recorded_at: "2026-07-26T09:30:00Z",
+          created_at: "2026-07-26T08:00:00Z",
+          updated_at: "2026-07-26T10:00:00Z",
+        }), { status: 200 });
+      }
+      if (url.endsWith("/maintenance-silence-windows/1") && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      return null;
+    }));
+
+    render(<MemoryRouter initialEntries={["/settings?tab=silence"]}><SettingsPage /></MemoryRouter>);
+
+    expect(await screen.findByText("发布窗口")).toBeInTheDocument();
+    expect(screen.getByText("Namespace：demo")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("窗口名称"), "数据库维护");
+    await user.clear(screen.getByLabelText("开始时间"));
+    await user.type(screen.getByLabelText("开始时间"), "2026-07-26T12:00");
+    await user.clear(screen.getByLabelText("结束时间"));
+    await user.type(screen.getByLabelText("结束时间"), "2026-07-26T13:00");
+    await user.selectOptions(screen.getByLabelText("静默范围"), "label_selector");
+    await user.type(screen.getByLabelText("Label Selector"), "app=api");
+    await user.type(screen.getByLabelText("备注"), "发布期间静默");
+    await user.click(screen.getByRole("button", { name: "保存静默窗口" }));
+    expect(await screen.findByText("静默窗口已创建")).toBeInTheDocument();
+    expect(createdPayload).toMatchObject({
+      name: "数据库维护",
+      enabled: true,
+      scope: { type: "label_selector", label_selector: "app=api" },
+      note: "发布期间静默",
+    });
+
+    const existingCard = screen.getByText("发布窗口").closest(".management-card") as HTMLElement;
+    await user.click(within(existingCard).getByRole("button", { name: "停用" }));
+    expect(await screen.findByText("静默窗口已停用")).toBeInTheDocument();
+    expect(within(existingCard).getByText(/摘要待处理记录：/)).toBeInTheDocument();
+
+    await user.click(within(existingCard).getByRole("button", { name: "删除" }));
+    expect(await screen.findByText("静默窗口已删除")).toBeInTheDocument();
+    expect(screen.queryByText("发布窗口")).not.toBeInTheDocument();
   });
 
   it("keeps queued runs single-flight, polls to a terminal result, and exposes the run", async () => {
@@ -547,6 +633,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByText(noisyEyebrow)).not.toBeInTheDocument();
     expect(screen.queryByText(noisySettingsCopy.trim())).not.toBeInTheDocument();
     expect(screen.queryByText(noisyWorkbenchCopy)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新系统设置" })).toHaveClass("page-refresh-button");
 
     const componentSelect = await screen.findByLabelText("选择组件");
     expect(componentSelect.tagName).toBe("SELECT");
