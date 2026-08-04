@@ -608,6 +608,8 @@ export function TemplatesPage() {
   const [enabled, setTemplateEnabled] = useState(true);
   const [importText, setImportText] = useState("");
   const [exportText, setExportText] = useState("");
+  const [exportCopied, setExportCopied] = useState(false);
+  const [exportCopyError, setExportCopyError] = useState<string | null>(null);
   const [formImportOpen, setFormImportOpen] = useState(false);
   const [formImportText, setFormImportText] = useState("");
   const [formImportError, setFormImportError] = useState<string | null>(null);
@@ -848,8 +850,27 @@ export function TemplatesPage() {
   async function handleOpenExport() {
     const exported = await exportAll();
     setExportText(formatJson(exported));
+    setExportCopied(false);
+    setExportCopyError(null);
     setModalType("export");
     setMessage(`已导出 ${exported.length} 个模板`);
+  }
+
+  async function handleCopyExport() {
+    setExportCopyError(null);
+    if (!navigator.clipboard?.writeText) {
+      setExportCopied(false);
+      setExportCopyError("当前浏览器不支持自动复制，请手动选中 JSON。");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(exportText);
+      setExportCopied(true);
+    } catch {
+      setExportCopied(false);
+      setExportCopyError("复制失败，请手动选中 JSON。");
+    }
   }
 
   async function handleImport() {
@@ -1308,7 +1329,7 @@ export function TemplatesPage() {
             </div>
             <label>
               导入模板 JSON
-              <textarea className="modal-code-input code-block-scroll" aria-label="导入模板 JSON" value={importText} onChange={(event) => setImportText(event.target.value)} rows={12} placeholder='[{"name":"..."}]' />
+              <textarea className="log-block code-block-scroll modal-code-input" aria-label="导入模板 JSON" value={importText} onChange={(event) => setImportText(event.target.value)} rows={12} placeholder='[{"name":"..."}]' />
             </label>
             <div className="button-row">
               <button type="button" disabled={saving || importText.trim().length === 0} onClick={() => void handleImport()}>导入模板</button>
@@ -1330,10 +1351,11 @@ export function TemplatesPage() {
             </div>
             <label>
               已导出 JSON
-              <textarea className="modal-code-input code-block-scroll" aria-label="已导出 JSON" value={exportText} readOnly rows={14} />
+              <textarea className="log-block code-block-scroll modal-code-input" aria-label="已导出 JSON" value={exportText} readOnly rows={14} />
             </label>
-            <div className="button-row">
-              <button type="button" onClick={() => setModalType(null)}>关闭</button>
+            {exportCopyError ? <p className="inline-note">{exportCopyError}</p> : null}
+            <div className="button-row modal-action-row-left">
+              <button type="button" onClick={() => void handleCopyExport()}>{exportCopied ? "已复制" : "复制 JSON"}</button>
             </div>
           </section>
         </div>

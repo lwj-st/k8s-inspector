@@ -280,6 +280,7 @@ describe("DiagnosisPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "运行模板检查" }));
 
-    expect(await screen.findByText("本次没有命中故障模板。")).toBeInTheDocument();
+    await screen.findByText("未命中");
+    expect(screen.queryByText("本次没有命中故障模板。")).not.toBeInTheDocument();
   });
 });

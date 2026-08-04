@@ -404,7 +404,6 @@ export function DiagnosisResultPanel({
   const results = normalizeResults(data);
   const matchedResults = results.filter((item) => getResultKind(item) === "matched");
   const undeterminedResults = results.filter((item) => getResultKind(item) === "undetermined");
-  const visibleResults = matchedResults.length + undeterminedResults.length;
 
   return (
     <section className="page-section" aria-label={title}>
@@ -424,11 +423,6 @@ export function DiagnosisResultPanel({
         </div>
       </section>
       {matchedResults.length > 0 ? <MatchResultList title="已命中模板" items={matchedResults} kind="matched" /> : null}
-      {visibleResults === 0 ? (
-        <section className="panel">
-          <p>本次没有命中故障模板。</p>
-        </section>
-      ) : null}
       {undeterminedResults.length > 0 ? <MatchResultList title="无法判断" items={undeterminedResults} kind="undetermined" /> : null}
     </section>
   );

@@ -347,12 +347,22 @@ describe("WhitelistsPage", () => {
   });
 
   it("keeps import export in modals and preserves toggle plus delete actions", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     render(<WhitelistsPage />);
 
     fireEvent.click((await screen.findAllByRole("button", { name: "导出 JSON" }))[0]);
     const keywordExportDialog = await screen.findByRole("dialog", { name: "导出关键字" });
     expect((within(keywordExportDialog).getByLabelText("已导出 JSON") as HTMLTextAreaElement).value).toContain("connection refused");
-    expect(within(keywordExportDialog).getByLabelText("已导出 JSON")).toHaveClass("code-block-scroll");
+    expect(within(keywordExportDialog).getByLabelText("已导出 JSON")).toHaveClass("log-block");
+    fireEvent.click(within(keywordExportDialog).getByRole("button", { name: "复制 JSON" }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining("connection refused"));
+    });
+    expect(within(keywordExportDialog).getByRole("button", { name: "已复制" })).toBeInTheDocument();
     fireEvent.click(within(keywordExportDialog).getAllByRole("button", { name: "关闭" })[0]);
 
     fireEvent.click(screen.getByRole("button", { name: "导入关键字" }));

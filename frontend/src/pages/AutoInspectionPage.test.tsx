@@ -1037,7 +1037,8 @@ describe("AutoInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "运行模板匹配" }));
 
     const drawer = await screen.findByRole("complementary", { name: "模板匹配结果" });
-    expect(await within(drawer).findByText("本次没有命中故障模板。")).toBeInTheDocument();
+    await within(drawer).findByText("未命中");
+    expect(within(drawer).queryByText("本次没有命中故障模板。")).not.toBeInTheDocument();
   });
 
   it("opens namespace evidence with detail_target namespace and label selector, then prioritizes abnormal pods", async () => {

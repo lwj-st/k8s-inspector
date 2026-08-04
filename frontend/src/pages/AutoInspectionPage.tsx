@@ -986,9 +986,7 @@ export function AutoInspectionPage() {
           </div>
           {attentionBatchResults.length > 0 ? (
             <BatchResultTable results={attentionBatchResults} onViewEvidence={handleViewEvidence} />
-          ) : (
-            <p className="success-copy">本次状态巡检未发现需要处理的名称空间。</p>
-          )}
+          ) : null}
           {healthyBatchResults.length > 0 ? (
             <details className="normal-details">
               <summary>正常名称空间（{healthyBatchResults.length}）</summary>

@@ -112,6 +112,8 @@ export function WhitelistsPage() {
   const [description, setDescription] = useState("");
   const [keywordImportText, setKeywordImportText] = useState("");
   const [keywordExportText, setKeywordExportText] = useState("");
+  const [keywordExportCopied, setKeywordExportCopied] = useState(false);
+  const [keywordExportCopyError, setKeywordExportCopyError] = useState<string | null>(null);
   const [keywordMessage, setKeywordMessage] = useState<string | null>(null);
 
   const [whitelistEditingId, setWhitelistEditingId] = useState<number | null>(null);
@@ -246,8 +248,27 @@ export function WhitelistsPage() {
   async function handleExportKeywords() {
     const exported = await exportKeywords();
     setKeywordExportText(formatJson(exported));
+    setKeywordExportCopied(false);
+    setKeywordExportCopyError(null);
     setKeywordMessage(`已导出 ${exported.length} 条关键字`);
     setKeywordModalType("export");
+  }
+
+  async function handleCopyKeywordExport() {
+    setKeywordExportCopyError(null);
+    if (!navigator.clipboard?.writeText) {
+      setKeywordExportCopied(false);
+      setKeywordExportCopyError("当前浏览器不支持自动复制，请手动选中 JSON。");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(keywordExportText);
+      setKeywordExportCopied(true);
+    } catch {
+      setKeywordExportCopied(false);
+      setKeywordExportCopyError("复制失败，请手动选中 JSON。");
+    }
   }
 
   async function handleExportWhitelists() {
@@ -483,8 +504,9 @@ export function WhitelistsPage() {
             已导出 JSON
             <textarea aria-label="已导出 JSON" className="log-block code-block-scroll modal-code-input" value={keywordExportText} readOnly rows={12} />
           </label>
-          <div className="button-row">
-            <button type="button" className="mini-button" onClick={() => setKeywordModalType(null)}>关闭</button>
+          {keywordExportCopyError ? <p className="inline-note">{keywordExportCopyError}</p> : null}
+          <div className="button-row modal-action-row-left">
+            <button type="button" className="mini-button" onClick={() => void handleCopyKeywordExport()}>{keywordExportCopied ? "已复制" : "复制 JSON"}</button>
           </div>
         </ModalShell>
       ) : null}

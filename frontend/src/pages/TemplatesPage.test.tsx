@@ -428,11 +428,21 @@ describe("TemplatesPage", () => {
 
   it("opens import and export in modals", async () => {
     const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     render(<TemplatesPage />);
 
     await user.click(await screen.findByRole("button", { name: "导出模板" }));
     const exportDialog = await screen.findByRole("dialog", { name: "导出模板" });
-    expect(within(exportDialog).getByLabelText("已导出 JSON")).toBeInTheDocument();
+    expect(within(exportDialog).getByLabelText("已导出 JSON")).toHaveClass("log-block");
+    await user.click(within(exportDialog).getByRole("button", { name: "复制 JSON" }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining("网关 502 模板"));
+    });
+    expect(within(exportDialog).getByRole("button", { name: "已复制" })).toBeInTheDocument();
     await user.click(within(exportDialog).getAllByRole("button", { name: "关闭" })[0]);
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "导出模板" })).not.toBeInTheDocument();
@@ -440,6 +450,7 @@ describe("TemplatesPage", () => {
 
     await user.click(screen.getByRole("button", { name: "导入模板" }));
     const importDialog = await screen.findByRole("dialog", { name: "导入模板" });
+    expect(within(importDialog).getByLabelText("导入模板 JSON")).toHaveClass("log-block");
     fireEvent.change(within(importDialog).getByLabelText("导入模板 JSON"), {
       target: {
         value: JSON.stringify([
