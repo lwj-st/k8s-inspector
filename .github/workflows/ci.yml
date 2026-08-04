@@ -95,7 +95,11 @@ jobs:
           KUBERNETES_VERSION: ${{ matrix.kubernetes }}
         run: |
           chmod +x ./kk
-          ./kk version --show-supported-k8s | grep -F "$KUBERNETES_VERSION"
+          if ./kk version --help 2>&1 | grep -q -- "--show-supported-k8s"; then
+            ./kk version --show-supported-k8s | grep -F "$KUBERNETES_VERSION"
+          else
+            echo "KubeKey does not expose --show-supported-k8s; create config will validate ${KUBERNETES_VERSION}."
+          fi
           ./kk create config --with-kubernetes "$KUBERNETES_VERSION" -o /tmp
           ruby <<'RUBY'
           require "yaml"
