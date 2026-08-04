@@ -967,7 +967,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                         : "确认白名单字段和生效 Label，后续相同范围的命中会自动忽略。"}
                 </p>
               </div>
-              <button type="button" onClick={modalType === "ignore" ? closeIgnoreModal : () => setModalType(null)}>关闭</button>
+              <button type="button" className="modal-secondary-button" onClick={modalType === "ignore" ? closeIgnoreModal : () => setModalType(null)}>关闭</button>
             </div>
 
             {modalType === "save" ? (
@@ -1020,11 +1020,10 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                   <textarea aria-label="导出内容" className="log-block code-block-scroll modal-code-input" value={exportContent} readOnly rows={10} />
                 </label>
                 {copyMessage ? <p className="inline-note">{copyMessage}</p> : null}
-                <div className="button-row">
-                  <button type="button" onClick={() => void handleCopyExport()} disabled={!exportContent || exportContent === "导出失败"}>
+                <div className="button-row modal-action-row-left">
+                  <button className="modal-primary-button" type="button" onClick={() => void handleCopyExport()} disabled={!exportContent || exportContent === "导出失败"}>
                     复制
                   </button>
-                  <button type="button" onClick={() => setModalType(null)}>关闭</button>
                 </div>
               </>
             ) : null}

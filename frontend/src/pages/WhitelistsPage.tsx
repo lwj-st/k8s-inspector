@@ -68,7 +68,7 @@ function ModalShell({
             <h3>{title}</h3>
             <p className="inline-note">{note}</p>
           </div>
-          <button type="button" className="mini-button" onClick={onClose}>关闭</button>
+          <button type="button" className="modal-secondary-button" onClick={onClose}>关闭</button>
         </div>
         {children}
       </section>
@@ -126,6 +126,8 @@ export function WhitelistsPage() {
   const [note, setNote] = useState("");
   const [whitelistImportText, setWhitelistImportText] = useState("");
   const [whitelistExportText, setWhitelistExportText] = useState("");
+  const [whitelistExportCopied, setWhitelistExportCopied] = useState(false);
+  const [whitelistExportCopyError, setWhitelistExportCopyError] = useState<string | null>(null);
   const [whitelistMessage, setWhitelistMessage] = useState<string | null>(null);
   const { data: labelDiscovery, loading: labelsLoading } = useDiscoverNamespaceLabels(namespace);
 
@@ -274,8 +276,27 @@ export function WhitelistsPage() {
   async function handleExportWhitelists() {
     const exported = await exportWhitelists();
     setWhitelistExportText(formatJson(exported));
+    setWhitelistExportCopied(false);
+    setWhitelistExportCopyError(null);
     setWhitelistMessage(`已导出 ${exported.length} 条白名单`);
     setWhitelistModalType("export");
+  }
+
+  async function handleCopyWhitelistExport() {
+    setWhitelistExportCopyError(null);
+    if (!navigator.clipboard?.writeText) {
+      setWhitelistExportCopied(false);
+      setWhitelistExportCopyError("当前浏览器不支持自动复制，请手动选中 JSON。");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(whitelistExportText);
+      setWhitelistExportCopied(true);
+    } catch {
+      setWhitelistExportCopied(false);
+      setWhitelistExportCopyError("复制失败，请手动选中 JSON。");
+    }
   }
 
   async function handleImportKeywords() {
@@ -491,9 +512,9 @@ export function WhitelistsPage() {
             导入关键字 JSON
             <textarea aria-label="导入关键字 JSON" className="log-block code-block-scroll modal-code-input" value={keywordImportText} onChange={(event) => setKeywordImportText(event.target.value)} rows={10} />
           </label>
-          <div className="button-row">
-            <button type="button" className="mini-button" disabled={keywordSaving || keywordImportText.trim().length === 0} onClick={() => void handleImportKeywords()}>导入关键字</button>
-            <button type="button" className="mini-button" onClick={() => setKeywordModalType(null)}>取消</button>
+          <div className="button-row modal-action-row">
+            <button type="button" className="modal-primary-button" disabled={keywordSaving || keywordImportText.trim().length === 0} onClick={() => void handleImportKeywords()}>导入关键字</button>
+            <button type="button" className="modal-secondary-button" onClick={() => setKeywordModalType(null)}>取消</button>
           </div>
         </ModalShell>
       ) : null}
@@ -506,7 +527,7 @@ export function WhitelistsPage() {
           </label>
           {keywordExportCopyError ? <p className="inline-note">{keywordExportCopyError}</p> : null}
           <div className="button-row modal-action-row-left">
-            <button type="button" className="mini-button" onClick={() => void handleCopyKeywordExport()}>{keywordExportCopied ? "已复制" : "复制 JSON"}</button>
+            <button type="button" className="modal-primary-button" onClick={() => void handleCopyKeywordExport()}>{keywordExportCopied ? "已复制" : "复制 JSON"}</button>
           </div>
         </ModalShell>
       ) : null}
@@ -574,9 +595,9 @@ export function WhitelistsPage() {
             导入白名单 JSON
             <textarea aria-label="导入白名单 JSON" className="log-block code-block-scroll modal-code-input" value={whitelistImportText} onChange={(event) => setWhitelistImportText(event.target.value)} rows={10} />
           </label>
-          <div className="button-row">
-            <button type="button" className="mini-button" disabled={whitelistSaving || whitelistImportText.trim().length === 0} onClick={() => void handleImportWhitelists()}>导入白名单</button>
-            <button type="button" className="mini-button" onClick={() => setWhitelistModalType(null)}>取消</button>
+          <div className="button-row modal-action-row">
+            <button type="button" className="modal-primary-button" disabled={whitelistSaving || whitelistImportText.trim().length === 0} onClick={() => void handleImportWhitelists()}>导入白名单</button>
+            <button type="button" className="modal-secondary-button" onClick={() => setWhitelistModalType(null)}>取消</button>
           </div>
         </ModalShell>
       ) : null}
@@ -587,8 +608,9 @@ export function WhitelistsPage() {
             已导出 JSON
             <textarea aria-label="已导出 JSON" className="log-block code-block-scroll modal-code-input" value={whitelistExportText} readOnly rows={12} />
           </label>
-          <div className="button-row">
-            <button type="button" className="mini-button" onClick={() => setWhitelistModalType(null)}>关闭</button>
+          {whitelistExportCopyError ? <p className="inline-note">{whitelistExportCopyError}</p> : null}
+          <div className="button-row modal-action-row-left">
+            <button type="button" className="modal-primary-button" onClick={() => void handleCopyWhitelistExport()}>{whitelistExportCopied ? "已复制" : "复制 JSON"}</button>
           </div>
         </ModalShell>
       ) : null}

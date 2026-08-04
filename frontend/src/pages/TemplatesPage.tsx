@@ -1290,13 +1290,13 @@ export function TemplatesPage() {
                 <h3>通过 JSON 导入</h3>
                 <p className="inline-note">粘贴 Cursor 输出的单个模板 JSON，系统会填入当前新增表单，不会直接保存。</p>
               </div>
-              <button type="button" onClick={() => setFormImportOpen(false)}>关闭</button>
+              <button type="button" className="modal-secondary-button" onClick={() => setFormImportOpen(false)}>关闭</button>
             </div>
             {formImportError ? <p className="template-import-error">{formImportError}</p> : null}
             <label className="template-field">
               单个模板 JSON
               <textarea
-                className="modal-code-input code-block-scroll"
+                className="log-block code-block-scroll modal-code-input"
                 aria-label="单个模板 JSON"
                 value={formImportText}
                 onChange={(event) => {
@@ -1325,15 +1325,15 @@ export function TemplatesPage() {
                 <h3>导入模板</h3>
                 <p className="inline-note">只在迁移配置时使用，关闭后不会影响当前录入步骤。</p>
               </div>
-              <button type="button" onClick={() => setModalType(null)}>关闭</button>
+              <button type="button" className="modal-secondary-button" onClick={() => setModalType(null)}>关闭</button>
             </div>
             <label>
               导入模板 JSON
               <textarea className="log-block code-block-scroll modal-code-input" aria-label="导入模板 JSON" value={importText} onChange={(event) => setImportText(event.target.value)} rows={12} placeholder='[{"name":"..."}]' />
             </label>
-            <div className="button-row">
-              <button type="button" disabled={saving || importText.trim().length === 0} onClick={() => void handleImport()}>导入模板</button>
-              <button type="button" onClick={() => setModalType(null)}>取消</button>
+            <div className="button-row modal-action-row">
+              <button type="button" className="modal-primary-button" disabled={saving || importText.trim().length === 0} onClick={() => void handleImport()}>导入模板</button>
+              <button type="button" className="modal-secondary-button" onClick={() => setModalType(null)}>取消</button>
             </div>
           </section>
         </div>
@@ -1347,7 +1347,7 @@ export function TemplatesPage() {
                 <h3>导出模板</h3>
                 <p className="inline-note">导出结果只用于跨环境迁移，不会改变当前录入状态。</p>
               </div>
-              <button type="button" onClick={() => setModalType(null)}>关闭</button>
+              <button type="button" className="modal-secondary-button" onClick={() => setModalType(null)}>关闭</button>
             </div>
             <label>
               已导出 JSON
@@ -1355,7 +1355,7 @@ export function TemplatesPage() {
             </label>
             {exportCopyError ? <p className="inline-note">{exportCopyError}</p> : null}
             <div className="button-row modal-action-row-left">
-              <button type="button" onClick={() => void handleCopyExport()}>{exportCopied ? "已复制" : "复制 JSON"}</button>
+              <button type="button" className="modal-primary-button" onClick={() => void handleCopyExport()}>{exportCopied ? "已复制" : "复制 JSON"}</button>
             </div>
           </section>
         </div>

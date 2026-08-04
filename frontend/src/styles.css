@@ -17,6 +17,7 @@
   --muted: #667085;
   --line: #d9e2ec;
   --line-strong: #b8c5d6;
+  --card: #ffffff;
   --paper: #ffffff;
   --paper-strong: #ffffff;
   --navy: #172033;
@@ -43,6 +44,7 @@
   --muted: #a7b4c6;
   --line: #334155;
   --line-strong: #475569;
+  --card: #1f2937;
   --paper: #111827;
   --paper-strong: #1f2937;
   --navy: #e5edf7;
@@ -168,6 +170,86 @@ a {
 [data-theme="dark"] .nav-link:hover,
 [data-theme="dark"] .nav-link-active {
   color: #f8fafc;
+}
+
+[data-theme="dark"] .workbench-hero,
+[data-theme="dark"] .panel-muted,
+[data-theme="dark"] .quick-action-card,
+[data-theme="dark"] .quick-action-card-primary,
+[data-theme="dark"] .summary-card,
+[data-theme="dark"] .issue-mobile-card,
+[data-theme="dark"] .coverage-row,
+[data-theme="dark"] .compact-subpanel,
+[data-theme="dark"] .namespace-row,
+[data-theme="dark"] .stack-item,
+[data-theme="dark"] .alert-row,
+[data-theme="dark"] .condition-item,
+[data-theme="dark"] .log-hit-card,
+[data-theme="dark"] .batch-card-quiet,
+[data-theme="dark"] .batch-summary-metric-warning,
+[data-theme="dark"] .batch-summary-metric-error,
+[data-theme="dark"] .batch-summary-metric-healthy,
+[data-theme="dark"] .evidence-drawer-summary,
+[data-theme="dark"] .evidence-pod-card-healthy,
+[data-theme="dark"] .namespace-object-card,
+[data-theme="dark"] .template-details-card,
+[data-theme="dark"] .template-target-card,
+[data-theme="dark"] .diagnosis-card-matched,
+[data-theme="dark"] .diagnosis-card-undetermined,
+[data-theme="dark"] .diagnosis-result-row,
+[data-theme="dark"] .diagnosis-collapsible,
+[data-theme="dark"] .key-value-list,
+[data-theme="dark"] .pod-list-item,
+[data-theme="dark"] .detail-section,
+[data-theme="dark"] .issue-detail-header,
+[data-theme="dark"] .technical-details,
+[data-theme="dark"] .template-detail-row,
+[data-theme="dark"] .management-card,
+[data-theme="dark"] .system-component-card {
+  background: var(--paper-strong) !important;
+  border-color: var(--line) !important;
+  color: var(--ink);
+}
+
+[data-theme="dark"] .pod-list-item-active {
+  background: var(--sidebar-active) !important;
+  border-color: rgba(96, 165, 250, 0.58) !important;
+}
+
+[data-theme="dark"] .status-action-button,
+[data-theme="dark"] .danger-button,
+[data-theme="dark"] .issue-ignore-action-muted,
+[data-theme="dark"] .feedback-banner {
+  background: var(--paper-strong) !important;
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
+}
+
+[data-theme="dark"] .batch-card-error,
+[data-theme="dark"] .namespace-object-card-abnormal {
+  background: rgba(127, 29, 29, 0.34) !important;
+  border-color: rgba(248, 113, 113, 0.42) !important;
+}
+
+[data-theme="dark"] .batch-card-warning,
+[data-theme="dark"] .evidence-pod-card {
+  background: rgba(120, 53, 15, 0.34) !important;
+  border-color: rgba(251, 191, 36, 0.42) !important;
+}
+
+[data-theme="dark"] .batch-compact-summary span,
+[data-theme="dark"] .diagnosis-inline-metrics span,
+[data-theme="dark"] .batch-category-chip {
+  background: rgba(148, 163, 184, 0.14);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+[data-theme="dark"] .panel button:not(.modal-primary-button):not(.button-success):not(.button-danger),
+[data-theme="dark"] .section-header button:not(.modal-primary-button):not(.button-success):not(.button-danger) {
+  background: var(--paper-strong);
+  color: var(--ink);
+  border-color: var(--line);
 }
 
 .app-content {
