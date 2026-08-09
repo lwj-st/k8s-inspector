@@ -16,6 +16,24 @@ K8s Inspector v1.2.0 是面向单个 Kubernetes 集群的只读巡检与排障�
 
 飞书范围仅包括告警通知，不需要 App ID 或 App Secret，也不包含飞书应用机器人、消息接收、卡片按钮回调和远程操作。
 
+## 界面预览
+
+问题工作台集中展示开放、恢复和忽略问题，方便按严重程度、名称空间、资源类型和巡检项筛选。
+
+![问题工作台](docs/assets/screenshots/issue-workbench.png)
+
+状态巡检支持按名称空间查看资源健康、异常分类、Pod 数量和资源使用情况。
+
+![状态巡检](docs/assets/screenshots/status-inspection.png)
+
+关键字与白名单用于维护日志异常判断规则和忽略规则，减少已知无害日志带来的噪音。
+
+![关键字与白名单](docs/assets/screenshots/keyword-whitelist.png)
+
+系统设置集中管理巡检计划、通知渠道、巡检策略、系统状态和基础配置。
+
+![系统设置](docs/assets/screenshots/system-settings.png)
+
 ## 目录
 
 ```text
@@ -23,8 +41,10 @@ frontend/                     React + Vite + TypeScript
 backend/                      FastAPI + SQLite + Provider
 deploy/helm/k8s-inspector/    单副本 Helm Chart
 deploy/kk/                    Kubernetes E2E 配置
+docs/assets/screenshots/      README 界面截图
 docs/v1.1.0/                 v1.1.0 PRD、架构、验收和升级文档
 docs/v1.2.0/                 v1.2.0 PRD 和验收文档
+docs/v1.3.0/                 v1.3.0 PRD
 examples/                     模板与白名单示例
 ```
 
