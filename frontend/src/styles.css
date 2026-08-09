@@ -1099,6 +1099,209 @@ a {
   background: #f3b8b8 !important;
 }
 
+.log-recordings-page .settings-form,
+.log-recordings-page > section,
+.log-recording-detail {
+  min-width: 0;
+}
+
+.log-recording-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.log-recording-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-recording-history-header {
+  align-items: end;
+}
+
+.log-recording-history-header label {
+  min-width: 220px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.log-recording-history-header select {
+  margin-top: 6px;
+}
+
+.log-recording-detail {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.log-recording-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.log-recording-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.log-recording-meta div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(157, 182, 202, 0.24);
+  border-radius: 8px;
+  background: var(--paper-strong);
+}
+
+.log-recording-meta dt {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.log-recording-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.log-recording-workbench {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 420px;
+}
+
+.log-recording-pods {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  max-height: 560px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.log-recording-pods button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  text-align: left;
+  box-shadow: none;
+}
+
+.log-recording-pods strong,
+.log-recording-pods span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-recording-pods span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.log-recording-pods .log-recording-pod-active {
+  border-color: rgba(37, 99, 235, 0.52);
+  box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.72);
+}
+
+.log-recording-logs {
+  min-width: 0;
+}
+
+.log-recording-toolbar {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(110px, 140px) minmax(180px, 1fr) minmax(72px, auto) repeat(3, minmax(70px, auto));
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.log-recording-toolbar span {
+  min-width: 70px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.log-recording-log-block {
+  display: grid;
+  gap: 2px;
+  max-height: 560px;
+  overflow: auto;
+  white-space: normal;
+}
+
+.log-recording-line {
+  display: grid;
+  grid-template-columns: 170px 44px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+  padding: 3px 0;
+  font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
+}
+
+.log-recording-line code {
+  min-width: 0;
+  color: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.log-recording-line mark {
+  border-radius: 3px;
+  background: rgba(255, 209, 102, 0.35);
+  color: inherit;
+}
+
+.log-recording-line-active {
+  margin-inline: -6px;
+  padding-inline: 6px;
+  border-radius: 6px;
+  background: rgba(255, 209, 102, 0.12);
+}
+
+.log-recording-time,
+.log-recording-repeat {
+  color: rgba(226, 232, 240, 0.78);
+  white-space: nowrap;
+}
+
+.log-recording-repeat {
+  text-align: right;
+  font-weight: 800;
+}
+
 .text-button {
   border: none !important;
   background: transparent !important;
@@ -3430,6 +3633,35 @@ summary:focus-visible {
   .entry-form-grid.entry-form-grid-compact textarea {
     width: 100%;
     box-sizing: border-box;
+  }
+}
+
+@media (max-width: 720px) {
+  .log-recording-card,
+  .log-recordings-page .section-header,
+  .log-recording-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .log-recording-history-header label {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .log-recording-meta,
+  .log-recording-workbench,
+  .log-recording-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .log-recording-line {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .log-recording-repeat {
+    text-align: left;
   }
 }
 

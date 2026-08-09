@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { discoverNamespacePods, getSettings, ignoreWhitelistLogHit, runNamespaceLogInspection } from "../api/client";
-import type { InspectedPod, KeywordHit, SavedInspectionTarget } from "../api/types";
+import type { InspectedPod, KeywordHit, LogTimeRangeRequest, SavedInspectionTarget } from "../api/types";
 import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
@@ -20,6 +20,7 @@ type RangeInspectionConfirmation = {
   scopeMode: Exclude<PodScopeMode, "single">;
   labelSelector: string;
   podCount: number | null;
+  logTimeRange: LogTimeRangeRequest;
 };
 type IgnoreDraft = {
   pod: InspectedPod;
@@ -56,6 +57,19 @@ function isLogContextTruncated(hit: KeywordHit) {
 
 function normalizeLogText(value: string) {
   return normalizeTerminalLogText(value);
+}
+
+function toLocalInputValue(value: Date) {
+  const offsetMs = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function defaultCustomLogStart() {
+  return toLocalInputValue(new Date(Date.now() - 15 * 60_000));
+}
+
+function defaultCustomLogEnd() {
+  return toLocalInputValue(new Date());
 }
 
 function renderHighlightedLog(value: string, keyword: string) {
@@ -117,6 +131,21 @@ function formatSavedTargetScope(target: SavedInspectionTarget) {
   return "全部 Pod";
 }
 
+function formatLogCollectionTimeRange(data: ReturnType<typeof useRunNamespaceInspection>["data"]) {
+  const range = data?.log_collection?.time_range;
+  if (!range) {
+    return null;
+  }
+  if (range.mode === "recent" && range.recent_minutes) {
+    return `最近 ${range.recent_minutes === 60 ? "1 小时" : `${range.recent_minutes} 分钟`}`;
+  }
+  const start = new Date(range.start_time);
+  const end = range.end_time ? new Date(range.end_time) : null;
+  const startText = Number.isNaN(start.getTime()) ? range.start_time : start.toLocaleString();
+  const endText = end && !Number.isNaN(end.getTime()) ? end.toLocaleString() : "当前时间";
+  return `${startText} 至 ${endText}`;
+}
+
 export function PodInspectionPage({ initialScopeMode = "single" }: PodInspectionPageProps) {
   const [namespaceSearch, setNamespaceSearch] = useState("");
   const [namespace, setNamespace] = useState("");
@@ -128,7 +157,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [podOptionsError, setPodOptionsError] = useState<string | null>(null);
   const [podOptionsNamespace, setPodOptionsNamespace] = useState<string | null>(null);
   const [maxLogPods, setMaxLogPods] = useState<number | null>(null);
+  const [maxLogTimeRangeMinutes, setMaxLogTimeRangeMinutes] = useState(120);
   const [logLimitError, setLogLimitError] = useState<string | null>(null);
+  const [logTimeRangeMode, setLogTimeRangeMode] = useState<"recent" | "custom">("recent");
+  const [recentLogMinutes, setRecentLogMinutes] = useState(15);
+  const [customLogStart, setCustomLogStart] = useState(defaultCustomLogStart);
+  const [customLogEnd, setCustomLogEnd] = useState(defaultCustomLogEnd);
   const [selectedRangePodName, setSelectedRangePodName] = useState<string | null>(null);
   const [targetName, setTargetName] = useState("");
   const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
@@ -167,6 +201,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           return;
         }
         setMaxLogPods(result.inspection_policy.max_log_pods);
+        setMaxLogTimeRangeMinutes(result.inspection_policy.reproduction_logs?.max_log_inspection_range_minutes ?? 120);
         setLogLimitError(null);
       })
       .catch((reason) => {
@@ -321,9 +356,44 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       () => runNamespaceLogInspection(
         request.namespace,
         request.scopeMode === "label" ? request.labelSelector : null,
+        request.logTimeRange,
       ),
     );
     resetAfterInspection();
+  }
+
+  function buildLogTimeRange(): LogTimeRangeRequest | null {
+    if (logTimeRangeMode === "recent") {
+      if (!Number.isInteger(recentLogMinutes) || recentLogMinutes < 1) {
+        setSaveMessage("日志时间范围必须是正整数分钟");
+        return null;
+      }
+      if (recentLogMinutes > maxLogTimeRangeMinutes) {
+        setSaveMessage(`日志时间范围不能超过 ${maxLogTimeRangeMinutes} 分钟`);
+        return null;
+      }
+      return { mode: "recent", recent_minutes: recentLogMinutes };
+    }
+
+    const start = new Date(customLogStart);
+    const end = new Date(customLogEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      setSaveMessage("自定义日志时间范围需要填写开始时间和结束时间");
+      return null;
+    }
+    if (start >= end) {
+      setSaveMessage("日志开始时间必须早于结束时间");
+      return null;
+    }
+    if (end > new Date()) {
+      setSaveMessage("日志结束时间不能晚于当前时间");
+      return null;
+    }
+    if ((end.getTime() - start.getTime()) / 60_000 > maxLogTimeRangeMinutes) {
+      setSaveMessage(`日志时间范围不能超过 ${maxLogTimeRangeMinutes} 分钟`);
+      return null;
+    }
+    return { mode: "custom", start_time: start.toISOString(), end_time: end.toISOString() };
   }
 
   async function requestRangeInspection(
@@ -331,12 +401,17 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     targetScopeMode: Exclude<PodScopeMode, "single">,
     targetLabelSelector: string,
   ) {
+    const logTimeRange = buildLogTimeRange();
+    if (!logTimeRange) {
+      return;
+    }
     const podCount = await resolveRangePodCount(targetNamespace, targetScopeMode, targetLabelSelector);
     const request = {
       namespace: targetNamespace,
       scopeMode: targetScopeMode,
       labelSelector: targetLabelSelector,
       podCount,
+      logTimeRange,
     };
     if (podCount === null || maxLogPods === null || podCount > maxLogPods) {
       setRangeConfirmation(request);
@@ -579,6 +654,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const currentModeLabel = scopeMode === "all" ? "全部 Pod" : scopeMode === "label" ? "Label Selector" : "单个 Pod";
   const currentRunLabel = scopeMode === "single" ? "巡检单个 Pod" : "日志巡检";
   const listTitle = scopeMode === "single" ? "最近使用范围" : "Pod 列表";
+  const activeLogTimeRangeText = formatLogCollectionTimeRange(namespaceInspection.data);
 
   return (
     <section className="page-section">
@@ -679,6 +755,56 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                 ))}
               </select>
             </label>
+          ) : null}
+
+          {scopeMode !== "single" ? (
+            <div className="compact-subpanel label-selector-panel">
+              <label className="label-selector-field">
+                日志时间范围
+                <select
+                  aria-label="日志时间范围"
+                  value={logTimeRangeMode === "recent" ? `recent:${recentLogMinutes}` : "custom"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "custom") {
+                      setLogTimeRangeMode("custom");
+                      return;
+                    }
+                    setLogTimeRangeMode("recent");
+                    setRecentLogMinutes(Number(value.split(":")[1]));
+                  }}
+                >
+                  {[5, 15, 30, 60].map((minutes) => (
+                    <option key={minutes} value={`recent:${minutes}`} disabled={minutes > maxLogTimeRangeMinutes}>
+                      最近 {minutes === 60 ? "1 小时" : `${minutes} 分钟`}{minutes > maxLogTimeRangeMinutes ? "（超过上限）" : ""}
+                    </option>
+                  ))}
+                  <option value="custom">自定义起止时间</option>
+                </select>
+              </label>
+              {logTimeRangeMode === "custom" ? (
+                <>
+                  <label className="label-selector-field">
+                    日志开始时间
+                    <input
+                      aria-label="日志开始时间"
+                      type="datetime-local"
+                      value={customLogStart}
+                      onChange={(event) => setCustomLogStart(event.target.value)}
+                    />
+                  </label>
+                  <label className="label-selector-field">
+                    日志结束时间
+                    <input
+                      aria-label="日志结束时间"
+                      type="datetime-local"
+                      value={customLogEnd}
+                      onChange={(event) => setCustomLogEnd(event.target.value)}
+                    />
+                  </label>
+                </>
+              ) : null}
+            </div>
           ) : null}
 
           <div className="button-row">
@@ -795,6 +921,15 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             已检查 {inspectedLogPods.length} 个 Pod，发现 {activeLogHitCount} 个日志命中。
             {activeLogHitCount === 0 ? " 未命中日志关键字；这不代表 Pod 或服务状态正常。" : ""}
           </p>
+          {scopeMode !== "single" && namespaceInspection.data?.log_collection ? (
+            <p className="inline-note">
+              日志时间范围：{activeLogTimeRangeText ?? "服务端未返回"}；
+              已读取 {namespaceInspection.data.log_collection.pods_read} / {namespaceInspection.data.log_collection.pod_count} 个 Pod；
+              {namespaceInspection.data.log_collection.truncated ? "日志已截断。" : "未发生截断。"}
+              {namespaceInspection.data.log_collection.time_range?.approximate ? " 时间范围为近似过滤。" : ""}
+              {namespaceInspection.data.log_collection.time_range?.end_time_filter_precise === false ? " 结束时间无法精确过滤。" : ""}
+            </p>
+          ) : null}
         </section>
       ) : null}
 

@@ -43,6 +43,10 @@ def test_empty_database_initializes_to_v110_head(tmp_path: Path) -> None:
             "inspection_runs",
             "admin_sessions",
             "security_audit_logs",
+            "log_recordings",
+            "log_recording_pods",
+            "log_recording_lines",
+            "log_recording_template_matches",
         } <= tables
         for table_name in (
             "issues",
@@ -56,6 +60,10 @@ def test_empty_database_initializes_to_v110_head(tmp_path: Path) -> None:
             "resource_metric_states",
             "security_audit_logs",
             "admin_sessions",
+            "log_recordings",
+            "log_recording_pods",
+            "log_recording_lines",
+            "log_recording_template_matches",
         ):
             database_columns = {column["name"] for column in inspect(engine).get_columns(table_name)}
             assert database_columns == set(Base.metadata.tables[table_name].columns.keys())
@@ -93,6 +101,12 @@ def test_empty_database_initializes_to_v110_head(tmp_path: Path) -> None:
         settings_columns = {column["name"] for column in inspect(engine).get_columns("system_settings")}
         assert "cluster_id" in settings_columns
         assert "admin_password_hash" in settings_columns
+        line_indexes = inspect(engine).get_indexes("log_recording_lines")
+        assert {
+            "ix_log_recording_lines_recording_pod_container",
+            "ix_log_recording_lines_recording_log_time",
+            "ix_log_recording_lines_recording_fingerprint",
+        } <= {index["name"] for index in line_indexes}
     finally:
         engine.dispose()
 

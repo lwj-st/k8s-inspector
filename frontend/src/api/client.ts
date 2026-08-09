@@ -42,6 +42,15 @@ import type {
   RequiredComponentCandidateResponse,
   SettingsUpdate,
   SystemStatus,
+  LogRecording,
+  LogRecordingCreate,
+  LogRecordingLogPage,
+  LogRecordingPod,
+  LogRecordingPreview,
+  LogRecordingStorageUsage,
+  LogRecordingTemplateMatch,
+  LogRecordingViewMode,
+  LogTimeRangeRequest,
 } from "./types";
 
 let currentCsrfToken: string | null = null;
@@ -385,12 +394,14 @@ export function runNamespaceInspection(
 export function runNamespaceLogInspection(
   namespace: string,
   labelSelector: string | null,
+  logTimeRange?: LogTimeRangeRequest,
 ): Promise<NamespaceInspectionResponse> {
   return request("/inspections/logs/namespace/run", {
     method: "POST",
     body: JSON.stringify({
       namespace,
       label_selector: labelSelector || null,
+      log_time_range: logTimeRange ?? { mode: "recent", recent_minutes: 15 },
     }),
   });
 }
@@ -750,4 +761,71 @@ export function updateSettings(payload: SettingsUpdate): Promise<SettingsRespons
 
 export function getSystemStatus(): Promise<SystemStatus> {
   return request("/system/status");
+}
+
+export function previewLogRecording(namespace: string): Promise<LogRecordingPreview> {
+  return request("/log-recordings/preview", {
+    method: "POST",
+    body: JSON.stringify({ namespace }),
+  });
+}
+
+export function getLogRecordingStorage(): Promise<LogRecordingStorageUsage> {
+  return request("/log-recordings/storage");
+}
+
+export function createLogRecording(payload: LogRecordingCreate): Promise<LogRecording> {
+  return request("/log-recordings", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listLogRecordings(params: {
+  page?: number;
+  page_size?: number;
+  namespace?: string | null;
+} = {}): Promise<Page<LogRecording>> {
+  return request(`/log-recordings${queryString(params)}`);
+}
+
+export function getLogRecording(recordingId: number): Promise<LogRecording> {
+  return request(`/log-recordings/${recordingId}`);
+}
+
+export function updateLogRecording(
+  recordingId: number,
+  payload: { name?: string; note?: string | null },
+): Promise<LogRecording> {
+  return request(`/log-recordings/${recordingId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function stopLogRecording(recordingId: number): Promise<LogRecording> {
+  return request(`/log-recordings/${recordingId}/stop`, { method: "POST" });
+}
+
+export function deleteLogRecording(recordingId: number): Promise<void> {
+  return requestVoid(`/log-recordings/${recordingId}`, { method: "DELETE" });
+}
+
+export function matchLogRecordingTemplates(recordingId: number): Promise<LogRecordingTemplateMatch[]> {
+  return request(`/log-recordings/${recordingId}/template-match`, { method: "POST" });
+}
+
+export function listLogRecordingPods(recordingId: number): Promise<LogRecordingPod[]> {
+  return request(`/log-recordings/${recordingId}/pods`);
+}
+
+export function listLogRecordingLogs(
+  recordingId: number,
+  podName: string,
+  containerName: string,
+  params: { page?: number; page_size?: number; view?: LogRecordingViewMode } = {},
+): Promise<LogRecordingLogPage> {
+  return request(
+    `/log-recordings/${recordingId}/pods/${encodeURIComponent(podName)}/containers/${encodeURIComponent(containerName)}/logs${queryString(params)}`,
+  );
 }

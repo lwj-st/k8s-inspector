@@ -343,6 +343,7 @@ export type InspectionPolicySettings = {
   namespace_concurrency: number;
   max_log_pods: number;
   retention: DataRetentionSettings;
+  reproduction_logs: ReproductionLogPolicySettings;
 };
 
 export type DataRetentionSettings = {
@@ -350,6 +351,25 @@ export type DataRetentionSettings = {
   recovered_issue_days: number;
   notification_delivery_days: number;
   security_audit_days: number;
+};
+
+export type ReproductionLogPolicySettings = {
+  default_duration_minutes: number;
+  max_duration_minutes: number;
+  max_namespace_pods: number;
+  max_recording_bytes: number;
+  max_pod_bytes: number;
+  global_storage_bytes: number;
+  storage_warning_percent: number;
+  duplicate_folding_enabled: boolean;
+  auto_cleanup_enabled: boolean;
+  max_log_inspection_range_minutes: number;
+  custom_redaction_rules: Array<{
+    name: string;
+    pattern: string;
+    replacement: string;
+    enabled: boolean;
+  }>;
 };
 
 export type SystemComponentStatus = {
@@ -545,6 +565,26 @@ export type PodDiscoveryResponse = {
   pods: PodDiscoverySummary[];
 };
 
+export type LogTimeRangeRequest =
+  | { mode: "recent"; recent_minutes: number; start_time?: null; end_time?: null }
+  | { mode: "custom"; recent_minutes?: null; start_time: string; end_time: string };
+
+export type LogCollectionSummary = {
+  pod_count: number;
+  pods_read: number;
+  collected_log_bytes: number;
+  truncated: boolean;
+  time_range?: {
+    mode: string;
+    recent_minutes?: number | null;
+    start_time: string;
+    end_time?: string | null;
+    max_minutes: number;
+    approximate: boolean;
+    end_time_filter_precise: boolean;
+  } | null;
+};
+
 export type InspectedPod = {
   name: string;
   labels: Record<string, string>;
@@ -590,6 +630,7 @@ export type NamespaceInspectionResponse = {
   daemonsets: InspectedObject[];
   issues: Issue[];
   coverage: Coverage[];
+  log_collection?: LogCollectionSummary | null;
 };
 
 export type NamespaceBatchInspectionRequest = {
@@ -694,6 +735,121 @@ export type FaultTemplate = {
   enabled: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+};
+
+export type LogRecordingStatus = "recording" | "completed" | "auto_completed" | "failed";
+export type LogRecordingDurationSource = "system_default" | "preset" | "custom";
+export type LogRecordingStopReason =
+  | "user_stopped"
+  | "system_default_timeout"
+  | "selected_duration_timeout"
+  | "max_recording_bytes_reached"
+  | "collection_failed"
+  | "recovery_failed_after_restart";
+export type LogRecordingViewMode = "folded" | "raw";
+
+export type LogRecording = {
+  id: number;
+  name: string;
+  namespace: string;
+  note?: string | null;
+  status: LogRecordingStatus;
+  started_at: string;
+  ended_at?: string | null;
+  planned_end_at: string;
+  duration_source: LogRecordingDurationSource;
+  duration_minutes: number;
+  stop_reason?: LogRecordingStopReason | null;
+  pod_count: number;
+  container_count: number;
+  raw_line_count: number;
+  folded_line_count: number;
+  total_bytes: number;
+  truncated: boolean;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LogRecordingCreate = {
+  name: string;
+  namespace: string;
+  note?: string | null;
+  duration_source: LogRecordingDurationSource;
+  duration_minutes?: number | null;
+};
+
+export type LogRecordingPreview = {
+  namespace: string;
+  pod_count: number;
+  container_count: number;
+  allowed: boolean;
+  reason?: string | null;
+};
+
+export type LogRecordingStorageUsage = {
+  used_bytes: number;
+  max_bytes: number;
+  used_percent: number;
+  warning_threshold_percent: number;
+  warning: boolean;
+  full: boolean;
+};
+
+export type LogRecordingPod = {
+  id: number;
+  recording_id: number;
+  namespace: string;
+  pod_uid: string;
+  pod_name: string;
+  node_name?: string | null;
+  owner_kind?: string | null;
+  owner_name?: string | null;
+  container_count: number;
+  raw_line_count: number;
+  folded_line_count: number;
+  keyword_hit_count: number;
+  deleted_during_recording: boolean;
+  truncated: boolean;
+  collection_error?: string | null;
+  container_names: string[];
+};
+
+export type LogRecordingLine = {
+  id: number;
+  recording_id: number;
+  pod_uid?: string | null;
+  pod_name: string;
+  container_name: string;
+  log_time?: string | null;
+  collected_at: string;
+  line_text: string;
+  normalized_fingerprint: string;
+  repeat_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  redacted: boolean;
+  folded: boolean;
+  byte_size: number;
+};
+
+export type LogRecordingLogPage = Page<LogRecordingLine> & {
+  view: LogRecordingViewMode;
+  redacted: boolean;
+};
+
+export type LogRecordingTemplateMatch = {
+  id: number;
+  recording_id: number;
+  template_id?: number | null;
+  template_name: string;
+  severity: string;
+  pod_name: string;
+  container_name: string;
+  keyword: string;
+  matched_context: string;
+  suggestion?: string | null;
+  created_at: string;
 };
 
 export type Whitelist = {

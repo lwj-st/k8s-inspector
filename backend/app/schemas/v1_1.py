@@ -528,12 +528,51 @@ class DataRetentionSettings(ContractModel):
     security_audit_days: int = Field(default=90, ge=7, le=180)
 
 
+class LogRedactionRule(ContractModel):
+    name: str = Field(min_length=1, max_length=128)
+    pattern: str = Field(min_length=1, max_length=2000)
+    replacement: str = Field(default="***", min_length=1, max_length=128)
+    enabled: bool = True
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, value: str) -> str:
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError("redaction pattern must be a valid regular expression") from exc
+        return value
+
+
+class ReproductionLogPolicySettings(ContractModel):
+    default_duration_minutes: int = Field(default=20, ge=1, le=120)
+    max_duration_minutes: int = Field(default=120, ge=1, le=120)
+    max_namespace_pods: int = Field(default=200, ge=1, le=1000)
+    max_recording_bytes: int = Field(default=200 * 1024 * 1024, ge=1024, le=10 * 1024 * 1024 * 1024)
+    max_pod_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
+    global_storage_bytes: int = Field(default=10 * 1024 * 1024 * 1024, ge=1024 * 1024, le=1024 * 1024 * 1024 * 1024)
+    storage_warning_percent: int = Field(default=80, ge=1, le=100)
+    duplicate_folding_enabled: bool = True
+    auto_cleanup_enabled: bool = False
+    max_log_inspection_range_minutes: int = Field(default=120, ge=1, le=1440)
+    custom_redaction_rules: list[LogRedactionRule] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_duration_and_bytes(self) -> ReproductionLogPolicySettings:
+        if self.default_duration_minutes > self.max_duration_minutes:
+            raise ValueError("default_duration_minutes must not exceed max_duration_minutes")
+        if self.max_pod_bytes > self.max_recording_bytes:
+            raise ValueError("max_pod_bytes must not exceed max_recording_bytes")
+        return self
+
+
 class InspectionPolicySettings(ContractModel):
     required_components: list[RequiredComponentPolicy] = Field(default_factory=list, max_length=100)
     thresholds: InspectionThresholds = Field(default_factory=InspectionThresholds)
     retention: DataRetentionSettings = Field(default_factory=DataRetentionSettings)
     namespace_concurrency: int = Field(default=3, ge=1, le=10)
     max_log_pods: int = Field(default=200, ge=1, le=1000)
+    reproduction_logs: ReproductionLogPolicySettings = Field(default_factory=ReproductionLogPolicySettings)
 
     @field_validator("required_components")
     @classmethod

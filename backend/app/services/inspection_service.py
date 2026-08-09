@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,7 @@ from app.services.pod_health import is_abnormal_container, is_abnormal_pod, is_n
 from app.schemas.inspection import (
     InspectionRunRequest,
     InspectionTargetType,
+    LogTimeRangeMode,
     NamespaceBatchInspectionRequest,
     NamespaceInspectionRequest,
     PodInspectionRequest,
@@ -43,6 +44,58 @@ class LogInspectionScopeTooLargeError(ValueError):
             f"本次预计读取 {estimated_pods} 个 Pod 日志，超过上限 "
             f"{self.limit}，请缩小范围"
         )
+
+
+class LogInspectionTimeRangeError(ValueError):
+    pass
+
+
+def _parse_user_time(value: str | None, field_name: str) -> datetime:
+    if not value:
+        raise LogInspectionTimeRangeError(f"{field_name}不能为空")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise LogInspectionTimeRangeError(f"{field_name}格式不正确") from exc
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+
+
+def _resolve_log_time_range(
+    payload: NamespaceInspectionRequest,
+    policy: InspectionPolicySettings,
+) -> tuple[datetime, datetime | None, dict]:
+    now = datetime.now(timezone.utc)
+    time_range = payload.log_time_range
+    max_minutes = policy.reproduction_logs.max_log_inspection_range_minutes
+    if time_range.mode == LogTimeRangeMode.custom:
+        start = _parse_user_time(time_range.start_time, "开始时间")
+        end = _parse_user_time(time_range.end_time, "结束时间")
+        if start >= end:
+            raise LogInspectionTimeRangeError("开始时间必须早于结束时间")
+        if end > now:
+            raise LogInspectionTimeRangeError("结束时间不能晚于当前时间")
+        span_minutes = (end - start).total_seconds() / 60
+        if span_minutes > max_minutes:
+            raise LogInspectionTimeRangeError(f"日志巡检时间范围不能超过 {max_minutes} 分钟")
+        return start, end, {
+            "mode": "custom",
+            "start_time": start.isoformat(),
+            "end_time": end.isoformat(),
+            "recent_minutes": None,
+            "max_minutes": max_minutes,
+        }
+
+    recent_minutes = time_range.recent_minutes or 15
+    if recent_minutes > max_minutes:
+        raise LogInspectionTimeRangeError(f"日志巡检时间范围不能超过 {max_minutes} 分钟")
+    start = now - timedelta(minutes=recent_minutes)
+    return start, None, {
+        "mode": "recent",
+        "recent_minutes": recent_minutes,
+        "start_time": start.isoformat(),
+        "end_time": None,
+        "max_minutes": max_minutes,
+    }
 
 
 def sanitize_persistence_payload(payload):
@@ -173,6 +226,7 @@ def run_namespace_log_inspection(
         max_log_pods=policy.max_log_pods,
         namespace_concurrency=policy.namespace_concurrency,
     )
+    since_time, until_time, time_range_payload = _resolve_log_time_range(payload, policy)
     discovery = discovery_service.discover_namespace_pods(
         provider,
         payload.namespace,
@@ -185,6 +239,8 @@ def run_namespace_log_inspection(
             payload.namespace,
             [str(item.get("name") or "") for item in pod_summaries],
             limits,
+            since_time=since_time,
+            until_time=until_time,
         )
     except ProviderLogPodLimitExceededError as exc:
         raise LogInspectionScopeTooLargeError(
@@ -254,6 +310,11 @@ def run_namespace_log_inspection(
             "pods_read": log_collection.log_pods_read,
             "collected_log_bytes": log_collection.collected_log_bytes,
             "truncated": log_collection.truncated,
+            "time_range": {
+                **time_range_payload,
+                "approximate": log_collection.time_range_approximate,
+                "end_time_filter_precise": log_collection.end_time_filter_precise,
+            },
         },
     }
     _save_record(

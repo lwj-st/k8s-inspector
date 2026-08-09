@@ -27,6 +27,17 @@ def test_get_settings_returns_base_path_field(client) -> None:
     assert response.json()["base_path"] == ""
     assert response.json()["provider_mode"] == "mock"
     assert response.json()["inspection_policy"]["max_log_pods"] == 200
+    reproduction_logs = response.json()["inspection_policy"]["reproduction_logs"]
+    assert reproduction_logs["default_duration_minutes"] == 20
+    assert reproduction_logs["max_duration_minutes"] == 120
+    assert reproduction_logs["max_namespace_pods"] == 200
+    assert reproduction_logs["max_recording_bytes"] == 200 * 1024 * 1024
+    assert reproduction_logs["max_pod_bytes"] == 20 * 1024 * 1024
+    assert reproduction_logs["global_storage_bytes"] == 10 * 1024 * 1024 * 1024
+    assert reproduction_logs["storage_warning_percent"] == 80
+    assert reproduction_logs["duplicate_folding_enabled"] is True
+    assert reproduction_logs["auto_cleanup_enabled"] is False
+    assert reproduction_logs["max_log_inspection_range_minutes"] == 120
     required_components = response.json()["inspection_policy"]["required_components"]
     assert any(
         item["namespace"] == "kube-system"
@@ -171,6 +182,64 @@ def test_settings_put_persists_configurable_log_pod_limit(client) -> None:
     with client.app.state.session_factory() as session:
         stored = session.get(SystemSetting, 1)
         assert stored.inspection_policy["max_log_pods"] == 450
+
+
+def test_settings_put_persists_reproduction_log_policy(client) -> None:
+    policy = InspectionPolicySettings.model_validate(
+        {
+            "max_log_pods": 300,
+            "reproduction_logs": {
+                "default_duration_minutes": 10,
+                "max_duration_minutes": 60,
+                "max_namespace_pods": 150,
+                "max_recording_bytes": 100 * 1024 * 1024,
+                "max_pod_bytes": 10 * 1024 * 1024,
+                "global_storage_bytes": 1024 * 1024 * 1024,
+                "storage_warning_percent": 75,
+                "duplicate_folding_enabled": False,
+                "auto_cleanup_enabled": True,
+                "max_log_inspection_range_minutes": 90,
+                "custom_redaction_rules": [
+                    {
+                        "name": "api-key",
+                        "pattern": "api_key=[^&\\s]+",
+                        "replacement": "api_key=***",
+                        "enabled": True,
+                    }
+                ],
+            },
+        }
+    ).model_dump(mode="json")
+
+    response = client.put(
+        "/api/v1/settings",
+        json=_settings_payload(inspection_policy=policy),
+    )
+
+    assert response.status_code == 200
+    reproduction_logs = response.json()["inspection_policy"]["reproduction_logs"]
+    assert reproduction_logs["default_duration_minutes"] == 10
+    assert reproduction_logs["max_duration_minutes"] == 60
+    assert reproduction_logs["max_namespace_pods"] == 150
+    assert reproduction_logs["duplicate_folding_enabled"] is False
+    assert reproduction_logs["custom_redaction_rules"][0]["name"] == "api-key"
+    with client.app.state.session_factory() as session:
+        stored = session.get(SystemSetting, 1)
+        assert stored.inspection_policy["reproduction_logs"]["global_storage_bytes"] == 1024 * 1024 * 1024
+
+
+def test_settings_put_rejects_invalid_reproduction_log_policy(client) -> None:
+    policy = InspectionPolicySettings().model_dump(mode="json")
+    policy["reproduction_logs"]["default_duration_minutes"] = 90
+    policy["reproduction_logs"]["max_duration_minutes"] = 30
+
+    response = client.put(
+        "/api/v1/settings",
+        json=_settings_payload(inspection_policy=policy),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "REQUEST_VALIDATION_FAILED"
 
 
 def test_settings_put_rejects_explicit_null_inspection_policy(client) -> None:

@@ -1,6 +1,12 @@
 from datetime import datetime, timezone
 
-from app.providers.base import LogPodLimitExceededError, TemporaryPodLogCollection
+from app.providers.base import (
+    LogPodLimitExceededError,
+    LogRecordingEntry,
+    LogRecordingPodSnapshot,
+    LogRecordingSnapshot,
+    TemporaryPodLogCollection,
+)
 from app.schemas.v1_1 import (
     CollectionLayer,
     CollectionLimits,
@@ -335,6 +341,9 @@ class MockInspectionProvider:
         namespace: str,
         pod_names: list[str],
         limits: CollectionLimits,
+        *,
+        since_time: datetime | None = None,
+        until_time: datetime | None = None,
     ) -> TemporaryPodLogCollection:
         unique_names = list(dict.fromkeys(name for name in pod_names if name))
         if len(unique_names) > limits.max_log_pods:
@@ -362,6 +371,61 @@ class MockInspectionProvider:
             log_pods_read=len(container_samples),
             collected_log_bytes=collected_bytes,
             truncated=truncated,
+            time_range_start=since_time,
+            time_range_end=until_time,
+            time_range_approximate=False,
+            end_time_filter_precise=True,
+        )
+
+    def collect_log_recording_snapshot(
+        self,
+        namespace: str,
+        *,
+        since_time: datetime,
+        max_pods: int,
+        max_total_bytes: int,
+        max_pod_bytes: int,
+    ) -> LogRecordingSnapshot:
+        if max_pods < 1:
+            raise LogPodLimitExceededError(1, max_pods)
+        collected_at = datetime.now(timezone.utc)
+        pod = build_demo_pod()
+        text = (
+            f"{collected_at.isoformat()} database connection refused\n"
+            f"{collected_at.isoformat()} Authorization: Bearer mock-token"
+        )
+        accepted = text.encode("utf-8")[: min(max_total_bytes, max_pod_bytes)]
+        sample = accepted.decode("utf-8", errors="ignore")
+        entries = [
+            LogRecordingEntry(
+                pod_uid="mock-demo-api-uid",
+                pod_name=pod["name"],
+                container_name="demo-api",
+                log_time=collected_at,
+                text=line,
+                collected_at=collected_at,
+            )
+            for line in sample.splitlines()
+            if line
+        ]
+        return LogRecordingSnapshot(
+            namespace=namespace,
+            collected_at=collected_at,
+            pods=[
+                LogRecordingPodSnapshot(
+                    namespace=namespace,
+                    pod_uid="mock-demo-api-uid",
+                    pod_name=pod["name"],
+                    node_name="node-a",
+                    owner_kind="Deployment",
+                    owner_name="demo-api",
+                    container_names=["demo-api"],
+                    entries=entries,
+                    truncated=len(text.encode("utf-8")) > len(accepted),
+                )
+            ],
+            total_bytes=len(accepted),
+            truncated=len(text.encode("utf-8")) > len(accepted),
         )
 
     def run_pod_inspection(self, namespace: str, pod_name: str) -> dict:

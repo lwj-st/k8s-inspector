@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from kubernetes.client.exceptions import ApiException
@@ -235,9 +236,33 @@ def test_namespace_log_api_collects_only_pod_logs(client) -> None:
     assert body["coverage"] == []
     assert body["pods"][0]["log_summary"] == "[app] database connection refused"
     assert body["pods"][0]["log_hits"][0]["keyword"] == "connection refused"
+    assert body["log_collection"]["time_range"]["mode"] == "recent"
+    assert body["log_collection"]["time_range"]["recent_minutes"] == 15
     provider.list_namespace_pods.assert_called_once_with("demo", "app=demo")
     provider.collect_pod_log_samples.assert_called_once()
+    _, args, kwargs = provider.collect_pod_log_samples.mock_calls[0]
+    assert args[0] == "demo"
+    assert args[1] == ["demo-api-0"]
+    assert kwargs["until_time"] is None
+    assert datetime.now(timezone.utc) - kwargs["since_time"] < timedelta(minutes=16)
     provider.run_namespace_inspection.assert_not_called()
+
+
+def test_namespace_log_api_rejects_custom_end_time_in_future(client) -> None:
+    response = client.post(
+        "/api/v1/inspections/logs/namespace/run",
+        json={
+            "namespace": "demo",
+            "log_time_range": {
+                "mode": "custom",
+                "start_time": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+                "end_time": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "INSPECTION_LOG_TIME_RANGE_INVALID"
 
 
 def test_cluster_api_explicit_status_mode_skips_log_preflight(client) -> None:

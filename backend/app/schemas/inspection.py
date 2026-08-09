@@ -12,6 +12,18 @@ class InspectionTargetType(str, Enum):
     pod = "pod"
 
 
+class LogTimeRangeMode(str, Enum):
+    recent = "recent"
+    custom = "custom"
+
+
+class LogTimeRange(BaseModel):
+    mode: LogTimeRangeMode = LogTimeRangeMode.recent
+    recent_minutes: int | None = Field(default=15, ge=1, le=1440)
+    start_time: str | None = None
+    end_time: str | None = None
+
+
 class ClusterInspectionResult(BaseModel):
     component: str
     namespace: str | None = None
@@ -33,6 +45,25 @@ class NamespaceInspectionRequest(BaseModel):
     namespace: str = Field(min_length=1)
     label_selector: str | None = None
     include_logs: bool = True
+    log_time_range: LogTimeRange = Field(default_factory=LogTimeRange)
+
+
+class LogCollectionTimeRange(BaseModel):
+    mode: str
+    recent_minutes: int | None = None
+    start_time: str
+    end_time: str | None = None
+    max_minutes: int
+    approximate: bool = False
+    end_time_filter_precise: bool = True
+
+
+class LogCollectionSummary(BaseModel):
+    pod_count: int = 0
+    pods_read: int = 0
+    collected_log_bytes: int = 0
+    truncated: bool = False
+    time_range: LogCollectionTimeRange | None = None
 
 
 class NamespaceBatchInspectionRequest(BaseModel):
@@ -165,6 +196,7 @@ class NamespaceInspectionResponse(BaseModel):
     daemonsets: list[InspectedObject]
     issues: list[Issue] = Field(default_factory=list)
     coverage: list[Coverage] = Field(default_factory=list)
+    log_collection: LogCollectionSummary | None = None
 
 
 class NamespaceBatchInspectionResult(BaseModel):

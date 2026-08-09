@@ -6,6 +6,7 @@ import { AutoInspectionPage } from "../pages/AutoInspectionPage";
 import { DiagnosisPage } from "../pages/DiagnosisPage";
 import { IssueDetailPage } from "../pages/IssueDetailPage";
 import { LoginPage } from "../pages/LoginPage";
+import { LogRecordingsPage } from "../pages/LogRecordingsPage";
 import { NamespaceInspectionPage } from "../pages/NamespaceInspectionPage";
 import { PodInspectionPage } from "../pages/PodInspectionPage";
 import { ProblemWorkbenchPage } from "../pages/ProblemWorkbenchPage";
@@ -30,6 +31,7 @@ export const appRoutes: RouteObject[] = [
               { path: "inspections/status", element: <AutoInspectionPage /> },
               { path: "inspections/namespace", element: <NamespaceInspectionPage /> },
               { path: "inspections/pod", element: <PodInspectionPage initialScopeMode="single" /> },
+              { path: "log-recordings", element: <LogRecordingsPage /> },
               { path: "diagnosis", element: <DiagnosisPage /> },
               { path: "templates", element: <TemplatesPage /> },
               { path: "whitelists", element: <WhitelistsPage /> },

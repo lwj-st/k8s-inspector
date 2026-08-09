@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
+from datetime import datetime, timezone
 
 import pytest
 from kubernetes.client.exceptions import ApiException
@@ -757,6 +758,41 @@ def test_targeted_log_collection_reads_only_explicit_pods() -> None:
     } == {"target-api-0"}
 
 
+def test_targeted_log_collection_uses_since_time_and_filters_until_time() -> None:
+    provider = _make_provider()
+    since_time = datetime(2026, 8, 9, 10, 0, tzinfo=timezone.utc)
+    until_time = datetime(2026, 8, 9, 10, 5, tzinfo=timezone.utc)
+    provider.core.read_namespaced_pod = Mock(
+        return_value=SimpleNamespace(
+            spec=SimpleNamespace(containers=[SimpleNamespace(name="api")]),
+            status=SimpleNamespace(container_statuses=[]),
+        )
+    )
+    provider.core.read_namespaced_pod_log = Mock(
+        return_value=(
+            "2026-08-09T10:01:00Z ERROR inside window\n"
+            "2026-08-09T10:06:00Z ERROR outside window"
+        )
+    )
+
+    result = provider.collect_pod_log_samples(
+        "demo",
+        ["target-api-0"],
+        CollectionLimits(),
+        since_time=since_time,
+        until_time=until_time,
+    )
+
+    assert result.container_samples == {
+        "target-api-0": {"api": "2026-08-09T10:01:00Z ERROR inside window"}
+    }
+    assert result.time_range_start == since_time
+    assert result.time_range_end == until_time
+    provider.core.read_namespaced_pod_log.assert_called_once()
+    assert provider.core.read_namespaced_pod_log.call_args.kwargs["since_time"] == since_time
+    assert provider.core.read_namespaced_pod_log.call_args.kwargs["timestamps"] is True
+
+
 def test_log_pod_limit_rejects_before_any_log_or_pod_read() -> None:
     provider = _make_provider()
     provider.core.read_namespaced_pod = Mock()
@@ -828,3 +864,73 @@ def test_kubernetes_provider_lists_namespace_label_candidates() -> None:
         {"key": "app", "values": ["api"], "selector": "app=api", "pod_count": 2},
         {"key": "team", "values": ["platform"], "selector": "team=platform", "pod_count": 1},
     ]
+
+
+def test_kubernetes_provider_collects_log_recording_snapshot_with_since_time() -> None:
+    provider = _make_provider()
+    since_time = datetime(2026, 8, 9, 10, 0, tzinfo=timezone.utc)
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(
+            name="demo-api-0",
+            namespace="demo",
+            uid="uid-0",
+            owner_references=[SimpleNamespace(kind="ReplicaSet", name="demo-api-abc")],
+        ),
+        spec=SimpleNamespace(
+            node_name="node-a",
+            containers=[SimpleNamespace(name="api"), SimpleNamespace(name="sidecar")],
+        ),
+    )
+    provider.core.list_namespaced_pod = Mock(return_value=SimpleNamespace(items=[pod]))
+
+    def read_log(**kwargs):
+        if kwargs["container"] == "api":
+            return "2026-08-09T10:00:01Z api started\n2026-08-09T10:00:02Z error happened"
+        return ""
+
+    provider.core.read_namespaced_pod_log = Mock(side_effect=read_log)
+
+    snapshot = provider.collect_log_recording_snapshot(
+        "demo",
+        since_time=since_time,
+        max_pods=10,
+        max_total_bytes=1024,
+        max_pod_bytes=1024,
+    )
+
+    provider.core.list_namespaced_pod.assert_called_once_with(namespace="demo", _request_timeout=5)
+    assert provider.core.read_namespaced_pod_log.call_args_list[0].kwargs == {
+        "name": "demo-api-0",
+        "namespace": "demo",
+        "container": "api",
+        "since_time": since_time,
+        "timestamps": True,
+        "_request_timeout": 5,
+    }
+    assert snapshot.namespace == "demo"
+    assert snapshot.pods[0].pod_uid == "uid-0"
+    assert snapshot.pods[0].owner_kind == "ReplicaSet"
+    assert snapshot.pods[0].container_names == ["api", "sidecar"]
+    assert [entry.text for entry in snapshot.pods[0].entries] == ["api started", "error happened"]
+    assert snapshot.pods[0].entries[0].log_time == datetime(2026, 8, 9, 10, 0, 1, tzinfo=timezone.utc)
+
+
+def test_kubernetes_provider_collect_log_recording_snapshot_enforces_pod_limit() -> None:
+    provider = _make_provider()
+    provider.core.list_namespaced_pod = Mock(
+        return_value=SimpleNamespace(
+            items=[
+                SimpleNamespace(metadata=SimpleNamespace(name="api-0")),
+                SimpleNamespace(metadata=SimpleNamespace(name="api-1")),
+            ]
+        )
+    )
+
+    with pytest.raises(LogPodLimitExceededError):
+        provider.collect_log_recording_snapshot(
+            "demo",
+            since_time=datetime.now(timezone.utc),
+            max_pods=1,
+            max_total_bytes=1024,
+            max_pod_bytes=1024,
+        )

@@ -9,7 +9,13 @@ from kubernetes.client.exceptions import ApiException
 from kubernetes.config.config_exception import ConfigException
 
 from app.core.config import Settings
-from app.providers.base import LogPodLimitExceededError, TemporaryPodLogCollection
+from app.providers.base import (
+    LogPodLimitExceededError,
+    LogRecordingEntry,
+    LogRecordingPodSnapshot,
+    LogRecordingSnapshot,
+    TemporaryPodLogCollection,
+)
 from app.providers.kubernetes_collection import KubernetesResourceCollector
 from app.providers.kubernetes_quantities import (
     quantity_bytes,
@@ -322,6 +328,9 @@ class KubernetesInspectionProvider:
         namespace: str,
         pod_names: list[str],
         limits: CollectionLimits,
+        *,
+        since_time: datetime | None = None,
+        until_time: datetime | None = None,
     ) -> TemporaryPodLogCollection:
         unique_names = list(dict.fromkeys(name for name in pod_names if name))
         if len(unique_names) > limits.max_log_pods:
@@ -359,15 +368,24 @@ class KubernetesInspectionProvider:
                     truncated = True
                     break
                 try:
+                    log_kwargs = {
+                        "name": pod_name,
+                        "namespace": namespace,
+                        "container": container.name,
+                        "tail_lines": limits.max_container_log_lines,
+                        "_request_timeout": self.settings.k8s_request_timeout,
+                    }
+                    if since_time is not None:
+                        log_kwargs["since_time"] = self._k8s_since_time(since_time)
+                    if until_time is not None:
+                        log_kwargs["timestamps"] = True
                     raw_log = self.core.read_namespaced_pod_log(
-                        name=pod_name,
-                        namespace=namespace,
-                        container=container.name,
-                        tail_lines=limits.max_container_log_lines,
-                        _request_timeout=self.settings.k8s_request_timeout,
+                        **log_kwargs,
                     )
                 except ApiException:
                     continue
+                if until_time is not None:
+                    raw_log = self._filter_timestamped_log_until(raw_log, until_time)
                 sample, accepted, sample_truncated = self._bounded_log_sample(
                     raw_log,
                     allowed,
@@ -384,7 +402,7 @@ class KubernetesInspectionProvider:
                 status.restart_count or 0
                 for status in (pod.status.container_statuses or [])
             )
-            if restart_total > 0 and containers:
+            if restart_total > 0 and containers and since_time is None and until_time is None:
                 allowed = min(
                     limits.max_log_bytes_per_pod - per_pod_bytes,
                     limits.max_total_log_bytes - collected_total,
@@ -427,7 +445,156 @@ class KubernetesInspectionProvider:
             log_pods_read=log_pods_read,
             collected_log_bytes=collected_total,
             truncated=truncated,
+            time_range_start=since_time,
+            time_range_end=until_time,
+            time_range_approximate=False,
+            end_time_filter_precise=True,
         )
+
+    def collect_log_recording_snapshot(
+        self,
+        namespace: str,
+        *,
+        since_time: datetime,
+        max_pods: int,
+        max_total_bytes: int,
+        max_pod_bytes: int,
+    ) -> LogRecordingSnapshot:
+        collected_at = datetime.now(timezone.utc)
+        try:
+            pods = self.core.list_namespaced_pod(
+                namespace=namespace,
+                _request_timeout=self.settings.k8s_request_timeout,
+            ).items
+        except ApiException as exc:
+            reason = exc.reason or str(exc)
+            raise RuntimeError(f"无法读取名称空间 {namespace} 的 Pod 名单：{reason}") from exc
+        if len(pods) > max_pods:
+            raise LogPodLimitExceededError(len(pods), max_pods)
+
+        snapshots: list[LogRecordingPodSnapshot] = []
+        collected_total = 0
+        truncated = False
+        for pod in pods:
+            if collected_total >= max_total_bytes:
+                truncated = True
+                break
+            pod_uid = str(getattr(pod.metadata, "uid", None) or pod.metadata.name)
+            pod_name = str(pod.metadata.name)
+            pod_bytes = 0
+            entries: list[LogRecordingEntry] = []
+            failures: list[str] = []
+            containers = list(pod.spec.containers if pod.spec and pod.spec.containers else [])
+            for container in containers:
+                allowed = min(max_pod_bytes - pod_bytes, max_total_bytes - collected_total)
+                if allowed <= 0:
+                    truncated = True
+                    break
+                try:
+                    raw_log = self.core.read_namespaced_pod_log(
+                        name=pod_name,
+                        namespace=namespace,
+                        container=container.name,
+                        since_time=self._k8s_since_time(since_time),
+                        timestamps=True,
+                        _request_timeout=self.settings.k8s_request_timeout,
+                    )
+                except ApiException as exc:
+                    failures.append(f"{container.name}: {exc.reason or str(exc)}")
+                    continue
+                sample, accepted, sample_truncated = self._bounded_log_sample(raw_log, allowed)
+                pod_bytes += accepted
+                collected_total += accepted
+                truncated = truncated or sample_truncated
+                entries.extend(
+                    self._parse_timestamped_log_lines(
+                        sample,
+                        pod_uid=pod_uid,
+                        pod_name=pod_name,
+                        container_name=container.name,
+                        collected_at=collected_at,
+                    )
+                )
+            owner_kind, owner_name = self._pod_owner(pod)
+            snapshots.append(
+                LogRecordingPodSnapshot(
+                    namespace=namespace,
+                    pod_uid=pod_uid,
+                    pod_name=pod_name,
+                    node_name=getattr(pod.spec, "node_name", None) if pod.spec else None,
+                    owner_kind=owner_kind,
+                    owner_name=owner_name,
+                    container_names=[container.name for container in containers],
+                    entries=entries,
+                    failures=failures,
+                    truncated=pod_bytes >= max_pod_bytes or truncated,
+                )
+            )
+        return LogRecordingSnapshot(
+            namespace=namespace,
+            collected_at=collected_at,
+            pods=snapshots,
+            total_bytes=collected_total,
+            truncated=truncated,
+        )
+
+    def _k8s_since_time(self, value: datetime) -> datetime:
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+    def _parse_timestamped_log_lines(
+        self,
+        text: str,
+        *,
+        pod_uid: str,
+        pod_name: str,
+        container_name: str,
+        collected_at: datetime,
+    ) -> list[LogRecordingEntry]:
+        entries: list[LogRecordingEntry] = []
+        for raw_line in text.splitlines():
+            log_time, line_text = self._split_log_timestamp(raw_line)
+            if not line_text:
+                continue
+            entries.append(
+                LogRecordingEntry(
+                    pod_uid=pod_uid,
+                    pod_name=pod_name,
+                    container_name=container_name,
+                    log_time=log_time,
+                    text=line_text,
+                    collected_at=collected_at,
+                )
+            )
+        return entries
+
+    def _split_log_timestamp(self, line: str) -> tuple[datetime | None, str]:
+        timestamp, _, rest = line.partition(" ")
+        if not rest:
+            return None, line
+        try:
+            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return None, line
+        return parsed, rest
+
+    def _filter_timestamped_log_until(self, text: str, until_time: datetime) -> str:
+        end = self._k8s_since_time(until_time)
+        lines: list[str] = []
+        for raw_line in text.splitlines():
+            log_time, _ = self._split_log_timestamp(raw_line)
+            if log_time is None:
+                lines.append(raw_line)
+                continue
+            if self._k8s_since_time(log_time) <= end:
+                lines.append(raw_line)
+        return "\n".join(lines)
+
+    def _pod_owner(self, pod: client.V1Pod) -> tuple[str | None, str | None]:
+        owners = list(getattr(pod.metadata, "owner_references", None) or [])
+        if not owners:
+            return None, None
+        owner = owners[0]
+        return getattr(owner, "kind", None), getattr(owner, "name", None)
 
     def _pod_previous_log_summary(self, pod: client.V1Pod) -> str | None:
         container_statuses = pod.status.container_statuses or []

@@ -102,6 +102,7 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "日志巡检" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "模板检查" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "故障模板" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "复现日志" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "关键字与白名单" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "系统设置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开菜单" })).toHaveAttribute("aria-expanded", "false");

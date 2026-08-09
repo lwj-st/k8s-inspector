@@ -30,6 +30,19 @@ const settings: SettingsResponse = {
       notification_delivery_days: 30,
       security_audit_days: 90,
     },
+    reproduction_logs: {
+      default_duration_minutes: 20,
+      max_duration_minutes: 120,
+      max_namespace_pods: 200,
+      max_recording_bytes: 209715200,
+      max_pod_bytes: 20971520,
+      global_storage_bytes: 10737418240,
+      storage_warning_percent: 80,
+      duplicate_folding_enabled: true,
+      auto_cleanup_enabled: false,
+      max_log_inspection_range_minutes: 120,
+      custom_redaction_rules: [],
+    },
     thresholds: {
       tls_warning_days: 30,
       tls_critical_days: 7,
@@ -583,6 +596,34 @@ describe("SettingsPage", () => {
 
     await user.clear(maxLogPods);
     await user.type(maxLogPods, "350");
+    const defaultDuration = screen.getByLabelText("默认记录时长");
+    const maxDuration = screen.getByLabelText("最大允许记录时长");
+    await user.clear(defaultDuration);
+    await user.type(defaultDuration, "90");
+    await user.clear(maxDuration);
+    await user.type(maxDuration, "30");
+    await user.click(screen.getByRole("button", { name: "保存巡检策略" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("默认记录时长不能大于最大允许记录时长");
+
+    await user.clear(defaultDuration);
+    await user.type(defaultDuration, "10");
+    await user.clear(maxDuration);
+    await user.type(maxDuration, "60");
+    const maxRecordingBytes = screen.getByLabelText("单记录最大日志字节数");
+    const maxPodBytes = screen.getByLabelText("单 Pod 最大日志字节数");
+    await user.clear(maxRecordingBytes);
+    await user.type(maxRecordingBytes, "1048576");
+    await user.clear(maxPodBytes);
+    await user.type(maxPodBytes, "2097152");
+    await user.click(screen.getByRole("button", { name: "保存巡检策略" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("单 Pod 最大日志字节数不能大于单记录最大日志字节数");
+
+    await user.clear(maxPodBytes);
+    await user.type(maxPodBytes, "524288");
+    const globalStorage = screen.getByLabelText("全局最大日志存储容量");
+    await user.clear(globalStorage);
+    await user.type(globalStorage, "2147483648");
+    await user.click(screen.getByLabelText("启用重复日志折叠"));
     const runRetention = screen.getByLabelText("巡检运行记录保留");
     await user.clear(runRetention);
     await user.type(runRetention, "45");
@@ -592,6 +633,12 @@ describe("SettingsPage", () => {
     expect((updatedSettings as SettingsResponse | null)?.inspection_policy.namespace_concurrency).toBe(4);
     expect((updatedSettings as SettingsResponse | null)?.inspection_policy.max_log_pods).toBe(350);
     expect((updatedSettings as SettingsResponse | null)?.inspection_policy.retention.inspection_run_days).toBe(45);
+    expect((updatedSettings as SettingsResponse | null)?.inspection_policy.reproduction_logs.default_duration_minutes).toBe(10);
+    expect((updatedSettings as SettingsResponse | null)?.inspection_policy.reproduction_logs.max_duration_minutes).toBe(60);
+    expect((updatedSettings as SettingsResponse | null)?.inspection_policy.reproduction_logs.max_recording_bytes).toBe(1048576);
+    expect((updatedSettings as SettingsResponse | null)?.inspection_policy.reproduction_logs.max_pod_bytes).toBe(524288);
+    expect((updatedSettings as SettingsResponse | null)?.inspection_policy.reproduction_logs.global_storage_bytes).toBe(2147483648);
+    expect((updatedSettings as SettingsResponse | null)?.inspection_policy.reproduction_logs.duplicate_folding_enabled).toBe(false);
 
     await user.click(screen.getByRole("button", { name: "系统状态" }));
     expect(await screen.findByText("资源指标未覆盖")).toBeInTheDocument();

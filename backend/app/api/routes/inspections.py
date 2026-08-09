@@ -64,6 +64,8 @@ def run_namespace_inspection(
         )
     except inspection_service.LogInspectionScopeTooLargeError as exc:
         return _log_limit_response(request, exc)
+    except inspection_service.LogInspectionTimeRangeError as exc:
+        return _log_time_range_response(request, exc)
 
 
 @router.get("/inspections/namespace/history")
@@ -89,6 +91,8 @@ def run_namespace_log_inspection(
         )
     except inspection_service.LogInspectionScopeTooLargeError as exc:
         return _log_limit_response(request, exc)
+    except inspection_service.LogInspectionTimeRangeError as exc:
+        return _log_time_range_response(request, exc)
 
 
 @router.post("/inspections/namespaces/run", response_model=NamespaceBatchInspectionResponse)
@@ -175,6 +179,24 @@ def _log_limit_response(
                 "estimated_pods": exc.estimated_pods,
                 "limit": exc.limit,
             },
+        },
+        headers=headers,
+    )
+
+
+def _log_time_range_response(
+    request: Request,
+    exc: inspection_service.LogInspectionTimeRangeError,
+) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", None)
+    headers = {"x-request-id": request_id} if request_id else {}
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "INSPECTION_LOG_TIME_RANGE_INVALID",
+            "message": str(exc),
+            "request_id": request_id,
+            "details": {"reason": str(exc)},
         },
         headers=headers,
     )

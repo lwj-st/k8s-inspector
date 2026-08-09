@@ -1,12 +1,13 @@
 # K8s Inspector
 
-K8s Inspector v1.2.0 是面向单个 Kubernetes 集群的只读巡检与排障系统。它将资源状态、对象关系、事件、受限日志证据和问题生命周期集中到一个工作台，帮助运维人员更快定位问题，但不会自动修改集群资源。
+K8s Inspector v1.3.0 是面向单个 Kubernetes 集群的只读巡检与排障系统。它将资源状态、对象关系、事件、受限日志证据、复现日志记录和问题生命周期集中到一个工作台，帮助运维人员更快定位问题，但不会自动修改集群资源。
 
-## v1.2.0 能力
+## v1.3.0 能力
 
 - 巡检 Deployment、StatefulSet、DaemonSet、Job、CronJob、Pod、Service、EndpointSlice、Ingress、PVC、PV、Node 和可选 Metrics API。
 - 区分正常、异常、跳过和采集失败；采集失败不会显示为健康。
 - 按指纹合并重复问题，记录开放、升级、确认和恢复时间线。
+- 支持“复现日志”：按名称空间启动记录，后台采集复现窗口内所有 Pod 新增日志，长期保存后可搜索、折叠查看、改名、备注、删除和执行日志模板匹配。
 - 支持手动巡检和单进程定时计划，执行记录保存 API 调用量、日志读取量和耗时。
 - 支持飞书群机器人 V2 Webhook 和通用 Webhook 告警，包含签名、失败重试、消息裁剪和目标访问控制。
 - 支持本地单管理员登录、服务端 Session、CSRF、登录限流和安全审计。
@@ -29,6 +30,8 @@ K8s Inspector v1.2.0 是面向单个 Kubernetes 集群的只读巡检与排障�
 关键字与白名单用于维护日志异常判断规则和忽略规则，减少已知无害日志带来的噪音。
 
 ![关键字与白名单](docs/assets/screenshots/keyword-whitelist.png)
+
+复现日志用于记录用户复现问题期间的名称空间日志，支持按 Pod 和容器查看折叠或原始日志。
 
 系统设置集中管理巡检计划、通知渠道、巡检策略、系统状态和基础配置。
 
@@ -77,11 +80,44 @@ uvicorn app.main:app --reload
 
 系统不会创建、更新、删除集群资源，也不使用 Pod exec。
 
+## 复现日志
+
+进入左侧“复现日志”后，可以选择名称空间并开始记录。开始后离开 K8s Inspector 去业务系统复现问题，完成后回到本页手动结束；如果忘记结束，系统会按本次记录时长自动结束。
+
+复现日志只保存记录开始后的新增日志。详情页支持：
+
+- 按名称空间筛选历史记录。
+- 选择 Pod 和容器查看日志。
+- 在折叠视图和原始逐行视图之间切换。
+- 搜索当前 Pod/容器日志并高亮命中内容。
+- 查看是否达到字节上限并发生截断。
+- 对保存的日志执行日志类故障模板匹配。
+- 改名、修改备注和删除记录。
+
+日志在入库前脱敏，不保存脱敏前原文。重复日志会按指纹折叠，折叠行展示 `repeat_count`。
+
+复现日志策略在“系统设置 → 巡检策略 → 复现日志策略”中配置，默认值如下：
+
+| 配置项 | 默认值 |
+| --- | --- |
+| 默认记录时长 | 20 分钟 |
+| 最大允许记录时长 | 120 分钟 |
+| 单名称空间最大 Pod 数 | 200 |
+| 单记录最大日志字节数 | 200 MiB |
+| 单 Pod 最大日志字节数 | 20 MiB |
+| 全局最大日志存储容量 | 10 GiB |
+| 日志存储告警阈值 | 80% |
+| 是否启用重复日志折叠 | 是 |
+| 是否自动清理历史记录 | 否 |
+| 日志巡检最大自定义时间范围 | 120 分钟 |
+
+达到全局存储上限后，页面会禁止开始新的复现日志记录。删除记录只删除 K8s Inspector 内部保存的数据，不影响 Kubernetes 集群。
+
 ## 测试与构建
 
 ```bash
 python3 -m pytest -q backend/tests
-cd frontend && npm test -- --run
+cd frontend && npm test
 cd frontend && npm run build
 helm lint deploy/helm/k8s-inspector \
   -f deploy/helm/k8s-inspector/ci-values.yaml
@@ -91,7 +127,7 @@ CI 还配置了 Kubernetes 1.34 和 1.36 的 KubeKey 单节点 E2E。支持范�
 
 ## 生产部署
 
-v1.2.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart 会拒绝 `replicaCount` 不等于 `1` 的部署。
+v1.3.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart 会拒绝 `replicaCount` 不等于 `1` 的部署。
 
 > 必须使用与镜像相同版本的完整 Helm Chart 部署。禁止只修改 Deployment
 > 镜像而不执行 Helm upgrade，否则应用能力与 ServiceAccount RBAC 可能不一致，
@@ -112,7 +148,7 @@ v1.2.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart
 kubectl version
 ```
 
-v1.2.0 当前沿用 Kubernetes 1.34 至 1.36 支持范围。目标集群不在该范围时，
+v1.3.0 当前沿用 Kubernetes 1.34 至 1.36 支持范围。目标集群不在该范围时，
 不能直接作为商用环境部署，应先完成该版本的兼容性验证。
 
 可用以下命令生成随机密钥：
@@ -132,7 +168,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/your-org/k8s-inspector
-  tag: v1.2.0
+  tag: v1.3.0
 
 env:
   appEnv: production
@@ -297,7 +333,7 @@ kubectl get secret TLS_SECRET -n INGRESS_NAMESPACE \
 ```bash
 docker build \
   --build-arg VITE_BASE_PATH=/inspector \
-  -t ghcr.io/your-org/k8s-inspector:v1.2.0 .
+  -t ghcr.io/your-org/k8s-inspector:v1.3.0 .
 ```
 
 双入口部署使用根路径镜像，不设置 `VITE_BASE_PATH=/inspector`。子路径入口由网关
@@ -314,12 +350,14 @@ basePath: /inspector
 
 ## 重要运行边界
 
-- Kubernetes 1.34 至 1.36 是 v1.2.0 计划支持范围；1.33 及以下不承诺商用支持。
+- Kubernetes 1.34 至 1.36 是 v1.3.0 计划支持范围；1.33 及以下不承诺商用支持。
 - Metrics API 是可选能力，缺失时相应检查显示为 skipped，不影响基础巡检。
 - 资源链路检查基于 Kubernetes 对象关系，只能表示“配置链路正常/异常”，不代表真实网络请求成功。
 - 日志只用于用户主动巡检、异常对象或模板明确要求的证据，不应默认读取全部正常 Pod。
-- 单次日志巡检默认上限为 200 个 Pod，可在“系统配置 → 巡检策略”调整；超过当前上限必须缩小范围。
-- 完整 Pod 日志、Secret 数据和 TLS 私钥不得持久化或返回；页面只应展示受限且脱敏的摘要。
+- 单次日志巡检默认只读取最近 15 分钟日志，支持自定义起止时间；超过最大允许时间范围会被拒绝。
+- 单次日志巡检默认上限为 200 个 Pod，可在“系统设置 → 巡检策略”调整；超过当前上限必须缩小范围。
+- 复现日志记录受单名称空间 Pod 数、单记录字节数、单 Pod 字节数和全局存储容量限制；达到上限会拒绝开始、停止采集或标记截断。
+- 完整 Secret 数据和 TLS 私钥不得持久化或返回；页面只应展示受限且脱敏的日志或摘要。
 - Webhook 失败不会回滚巡检结果；生产环境必须配置目标允许列表。
 - 系统不执行自动修复，也不支持多副本写入。
 
@@ -327,4 +365,4 @@ basePath: /inspector
 
 从 v1.0.0 或 v1.1.0 升级前必须停止写入并备份 SQLite 数据库、当前镜像、values 和所有安全密钥。v1.1.0 详细步骤见 [v1.1.0 升级与回退指南](docs/v1.1.0/upgrade-guide.md)。
 
-v1.2.0 发布验收状态见 [v1.2.0 验收报告](docs/v1.2.0/acceptance-report.md)。
+v1.2.0 发布验收状态见 [v1.2.0 验收报告](docs/v1.2.0/acceptance-report.md)。v1.3.0 需求见 [v1.3.0 PRD](docs/v1.3.0/prd.md)。

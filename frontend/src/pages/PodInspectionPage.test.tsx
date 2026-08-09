@@ -444,6 +444,7 @@ describe("PodInspectionPage", () => {
     expect(JSON.parse(String(request?.[1]?.body))).toEqual({
       namespace: "demo",
       label_selector: null,
+      log_time_range: { mode: "recent", recent_minutes: 15 },
     });
   });
 
@@ -640,7 +641,33 @@ describe("PodInspectionPage", () => {
     expect(JSON.parse(String(request?.[1]?.body))).toEqual({
       namespace: "demo",
       label_selector: "app=demo-api",
+      log_time_range: { mode: "recent", recent_minutes: 15 },
     });
+  });
+
+  it("sends a custom log time range for namespace log inspection", async () => {
+    render(<PodInspectionPage />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.change(screen.getByLabelText("范围类型"), { target: { value: "label" } });
+    await screen.findByRole("option", { name: "app=demo-api（1 个 Pod）" });
+    fireEvent.change(screen.getByLabelText("Label Selector"), { target: { value: "app=demo-api" } });
+    fireEvent.change(screen.getByLabelText("日志时间范围"), { target: { value: "custom" } });
+    fireEvent.change(screen.getByLabelText("日志开始时间"), { target: { value: "2020-01-02T10:00" } });
+    fireEvent.change(screen.getByLabelText("日志结束时间"), { target: { value: "2020-01-02T10:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "日志巡检" }));
+
+    expect(await screen.findByText("Pod 列表")).toBeInTheDocument();
+    const request = fetchMock.mock.calls
+      .filter(([input, init]) => String(input).endsWith("/inspections/logs/namespace/run") && init?.method === "POST")
+      .at(-1);
+    const body = JSON.parse(String(request?.[1]?.body));
+    expect(body.namespace).toBe("demo");
+    expect(body.label_selector).toBe("app=demo-api");
+    expect(body.log_time_range.mode).toBe("custom");
+    expect(body.log_time_range.start_time).toBe(new Date("2020-01-02T10:00").toISOString());
+    expect(body.log_time_range.end_time).toBe(new Date("2020-01-02T10:30").toISOString());
   });
 
   it("loads a single Pod dropdown through lightweight discovery without running namespace inspection", async () => {

@@ -38,6 +38,7 @@ import type {
   NotificationChannelType,
   RequiredComponentCandidate,
   RequiredComponentPolicy,
+  ReproductionLogPolicySettings,
   SettingsResponse,
   SystemComponentStatus,
   SystemStatus,
@@ -105,6 +106,34 @@ const retentionFields: Array<{
   { key: "recovered_issue_days", label: "已恢复问题保留", help: "开放或仍活跃的问题不会清理" },
   { key: "notification_delivery_days", label: "通知投递记录保留", help: "用于排查历史投递结果" },
   { key: "security_audit_days", label: "安全审计记录保留", help: "用于追溯登录和敏感操作" },
+];
+
+const reproductionLogFields: Array<{
+  key: keyof Pick<
+    ReproductionLogPolicySettings,
+    | "default_duration_minutes"
+    | "max_duration_minutes"
+    | "max_namespace_pods"
+    | "max_recording_bytes"
+    | "max_pod_bytes"
+    | "global_storage_bytes"
+    | "storage_warning_percent"
+    | "max_log_inspection_range_minutes"
+  >;
+  label: string;
+  min: number;
+  max: number;
+  unit: string;
+  help: string;
+}> = [
+  { key: "default_duration_minutes", label: "默认记录时长", min: 1, max: 120, unit: "分钟", help: "开始记录选择系统默认时使用。" },
+  { key: "max_duration_minutes", label: "最大允许记录时长", min: 1, max: 120, unit: "分钟", help: "超过该值的记录请求会被拒绝。" },
+  { key: "max_namespace_pods", label: "单名称空间最大 Pod 数", min: 1, max: 1000, unit: "个", help: "超过后不允许开始复现日志记录。" },
+  { key: "max_recording_bytes", label: "单记录最大日志字节数", min: 1024, max: 10 * 1024 * 1024 * 1024, unit: "B", help: "达到后记录会标记截断并自动结束。" },
+  { key: "max_pod_bytes", label: "单 Pod 最大日志字节数", min: 1024, max: 1024 * 1024 * 1024, unit: "B", help: "单个 Pod 达到后停止继续写入该 Pod 日志。" },
+  { key: "global_storage_bytes", label: "全局最大日志存储容量", min: 1024 * 1024, max: 1024 * 1024 * 1024 * 1024, unit: "B", help: "达到后不允许开始新的复现日志记录。" },
+  { key: "storage_warning_percent", label: "日志存储告警阈值", min: 1, max: 100, unit: "%", help: "达到后页面展示空间不足提示。" },
+  { key: "max_log_inspection_range_minutes", label: "日志巡检最大时间范围", min: 1, max: 1440, unit: "分钟", help: "用于限制普通日志巡检的自定义起止时间。" },
 ];
 
 function readableError(reason: unknown) {
@@ -809,6 +838,25 @@ export function SettingsPage() {
     });
   }
 
+  function updateReproductionLogs<K extends keyof ReproductionLogPolicySettings>(
+    key: K,
+    value: ReproductionLogPolicySettings[K],
+  ) {
+    if (!settings) {
+      return;
+    }
+    setSettings({
+      ...settings,
+      inspection_policy: {
+        ...settings.inspection_policy,
+        reproduction_logs: {
+          ...settings.inspection_policy.reproduction_logs,
+          [key]: value,
+        },
+      },
+    });
+  }
+
   async function savePolicy() {
     if (!settings) {
       return;
@@ -830,6 +878,23 @@ export function SettingsPage() {
     const maxLogPods = settings.inspection_policy.max_log_pods;
     if (!Number.isInteger(maxLogPods) || maxLogPods < 1 || maxLogPods > 1000) {
       setActionError("单次日志采集 Pod 上限必须是 1–1000 的整数");
+      return;
+    }
+    const reproductionLogs = settings.inspection_policy.reproduction_logs;
+    const invalidReproductionLog = reproductionLogFields.find(({ key, min, max }) => {
+      const value = reproductionLogs[key];
+      return !Number.isInteger(value) || value < min || value > max;
+    });
+    if (invalidReproductionLog) {
+      setActionError(`${invalidReproductionLog.label}必须是 ${invalidReproductionLog.min}–${invalidReproductionLog.max} 的整数`);
+      return;
+    }
+    if (reproductionLogs.default_duration_minutes > reproductionLogs.max_duration_minutes) {
+      setActionError("默认记录时长不能大于最大允许记录时长");
+      return;
+    }
+    if (reproductionLogs.max_pod_bytes > reproductionLogs.max_recording_bytes) {
+      setActionError("单 Pod 最大日志字节数不能大于单记录最大日志字节数");
       return;
     }
     const invalidRetention = retentionFields.find(({ key }) => {
@@ -1328,6 +1393,69 @@ export function SettingsPage() {
                     <small>{field.help}，范围 7–180 天。</small>
                   </label>
                 ))}
+              </fieldset>
+            </div>
+            <hr className="section-divider" />
+            <h2>复现日志策略</h2>
+            <p className="inline-note">用于控制“复现日志”记录窗口、采集规模、存储上限和日志巡检时间范围。</p>
+            <div className="threshold-groups">
+              <fieldset>
+                <legend>记录限制</legend>
+                {reproductionLogFields.slice(0, 5).map((field) => (
+                  <label key={field.key}>
+                    {field.label}
+                    <span className="input-with-unit">
+                      <input
+                        aria-label={field.label}
+                        type="number"
+                        min={field.min}
+                        max={field.max}
+                        step={1}
+                        value={settings.inspection_policy.reproduction_logs[field.key]}
+                        onChange={(event) => updateReproductionLogs(field.key, Number(event.target.value))}
+                      />
+                      <span>{field.unit}</span>
+                    </span>
+                    <small>{field.help}</small>
+                  </label>
+                ))}
+              </fieldset>
+              <fieldset>
+                <legend>存储与巡检</legend>
+                {reproductionLogFields.slice(5).map((field) => (
+                  <label key={field.key}>
+                    {field.label}
+                    <span className="input-with-unit">
+                      <input
+                        aria-label={field.label}
+                        type="number"
+                        min={field.min}
+                        max={field.max}
+                        step={1}
+                        value={settings.inspection_policy.reproduction_logs[field.key]}
+                        onChange={(event) => updateReproductionLogs(field.key, Number(event.target.value))}
+                      />
+                      <span>{field.unit}</span>
+                    </span>
+                    <small>{field.help}</small>
+                  </label>
+                ))}
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={settings.inspection_policy.reproduction_logs.duplicate_folding_enabled}
+                    onChange={(event) => updateReproductionLogs("duplicate_folding_enabled", event.target.checked)}
+                  />
+                  启用重复日志折叠
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={settings.inspection_policy.reproduction_logs.auto_cleanup_enabled}
+                    onChange={(event) => updateReproductionLogs("auto_cleanup_enabled", event.target.checked)}
+                  />
+                  启用历史记录自动清理
+                </label>
               </fieldset>
             </div>
             <hr className="section-divider" />
