@@ -1149,7 +1149,7 @@ a {
 }
 
 .log-recording-history-header label {
-  min-width: 220px;
+  min-width: 260px;
   font-size: 13px;
   font-weight: 700;
   color: var(--muted);
@@ -1157,6 +1157,67 @@ a {
 
 .log-recording-history-header select {
   margin-top: 6px;
+}
+
+.log-recordings-page button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--teal);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.06);
+  cursor: pointer;
+}
+
+.log-recordings-page button:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.44);
+  background: var(--sidebar-active);
+}
+
+.log-recordings-page .button-danger {
+  border-color: transparent;
+  background: #dc2626;
+  color: #fff;
+  box-shadow: none;
+}
+
+.log-recordings-page .button-danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.log-recordings-page .compact-table td:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.log-recordings-page .pagination-row {
+  gap: 8px;
+}
+
+.log-recordings-page select,
+.log-recordings-page input {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.log-recordings-page select:focus,
+.log-recordings-page input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.22);
+  border-color: rgba(37, 99, 235, 0.42);
 }
 
 .log-recording-detail {
@@ -1177,21 +1238,21 @@ a {
 
 .log-recording-meta {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
   margin: 0;
 }
 
 .log-recording-meta div {
   min-width: 0;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid rgba(157, 182, 202, 0.24);
   border-radius: 8px;
   background: var(--paper-strong);
 }
 
 .log-recording-meta dt {
-  margin-bottom: 5px;
+  margin-bottom: 3px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
@@ -1201,13 +1262,13 @@ a {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .log-recording-workbench {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
   gap: 14px;
   min-height: 420px;
 }
@@ -1238,9 +1299,11 @@ a {
 .log-recording-pods strong,
 .log-recording-pods span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.log-recording-pods strong {
+  line-height: 1.35;
 }
 
 .log-recording-pods span {
@@ -1259,7 +1322,7 @@ a {
 
 .log-recording-toolbar {
   display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(110px, 140px) minmax(180px, 1fr) minmax(72px, auto) repeat(3, minmax(70px, auto));
+  grid-template-columns: minmax(150px, 190px) minmax(120px, 150px) minmax(220px, 1fr) minmax(72px, auto) repeat(3, minmax(70px, auto));
   gap: 8px;
   align-items: center;
   margin-bottom: 10px;

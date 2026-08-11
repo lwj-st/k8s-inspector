@@ -493,6 +493,7 @@ export function LogRecordingsPage() {
                   type="button"
                   key={pod.pod_uid}
                   className={selectedPod === pod.pod_name ? "log-recording-pod-active" : ""}
+                  title={pod.pod_name}
                   onClick={() => {
                     setSelectedPod(pod.pod_name);
                     setSelectedContainer(pod.container_names[0] ?? "");
