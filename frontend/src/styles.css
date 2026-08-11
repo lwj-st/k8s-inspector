@@ -1379,7 +1379,7 @@ a {
   gap: 2px;
   max-height: 560px;
   overflow: auto;
-  white-space: normal;
+  white-space: pre;
 }
 
 .log-recording-line {
@@ -1387,16 +1387,17 @@ a {
   grid-template-columns: 170px 44px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  min-width: 0;
+  width: max-content;
+  min-width: 100%;
   padding: 3px 0;
   font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
 }
 
 .log-recording-line code {
-  min-width: 0;
+  min-width: max-content;
   color: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-wrap: normal;
 }
 
 .log-recording-line mark {

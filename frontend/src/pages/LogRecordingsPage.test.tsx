@@ -160,6 +160,7 @@ describe("LogRecordingsPage", () => {
     expect(await screen.findByText("api-0")).toBeInTheDocument();
     expect(await screen.findByText(/database timeout while checkout/)).toBeInTheDocument();
     expect(screen.getByText(/Bearer \[REDACTED]/)).toBeInTheDocument();
+    expect(screen.getByText(/Bearer \[REDACTED]/).closest(".log-recording-line")?.querySelector(".log-recording-repeat")).not.toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText("搜索当前日志"), { target: { value: "timeout" } });
     expect(screen.getByText("1 行命中")).toBeInTheDocument();

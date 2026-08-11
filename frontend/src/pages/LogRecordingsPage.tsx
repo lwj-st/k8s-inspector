@@ -554,7 +554,9 @@ export function LogRecordingsPage() {
                         className={`log-recording-line${line.id === activeSearchLineId ? " log-recording-line-active" : ""}`}
                       >
                         <span className="log-recording-time">{formatTime(line.log_time ?? line.collected_at)}</span>
-                        {line.repeat_count > 1 ? <span className="log-recording-repeat">x{line.repeat_count}</span> : null}
+                        <span className="log-recording-repeat" aria-hidden={line.repeat_count <= 1}>
+                          {line.repeat_count > 1 ? `x${line.repeat_count}` : ""}
+                        </span>
                         <code>{highlightText(line.line_text, search)}</code>
                       </div>
                     ))}
