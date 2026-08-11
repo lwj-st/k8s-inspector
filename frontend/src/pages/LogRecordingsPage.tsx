@@ -5,6 +5,7 @@ import {
   createLogRecording,
   deleteLogRecording,
   discoverNamespaces,
+  getLogRecording,
   getSettings,
   getLogRecordingStorage,
   listLogRecordingLogs,
@@ -173,6 +174,19 @@ export function LogRecordingsPage() {
 
   useEffect(() => {
     void loadInitial();
+  }, []);
+
+  useEffect(() => {
+    const recordingId = Number(new URLSearchParams(window.location.search).get("recordingId"));
+    if (!Number.isInteger(recordingId) || recordingId < 1) {
+      return;
+    }
+    void getLogRecording(recordingId)
+      .then((recording) => {
+        setSelected(recording);
+        setFilterNamespace(recording.namespace);
+      })
+      .catch((err) => setError(errorMessage(err)));
   }, []);
 
   useEffect(() => {

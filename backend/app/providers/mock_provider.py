@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.providers.base import (
     LogPodLimitExceededError,
@@ -21,6 +21,27 @@ from app.services.pod_health import is_abnormal_pod
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _mock_log_sample(text: str, *, since_time: datetime | None, until_time: datetime | None) -> str:
+    if since_time is None and until_time is None:
+        return text
+    now = datetime.now(timezone.utc)
+    lines = [
+        (now - timedelta(minutes=30), f"{text} from old window"),
+        (now - timedelta(minutes=1), text),
+    ]
+    start = _ensure_utc(since_time) if since_time is not None else None
+    end = _ensure_utc(until_time) if until_time is not None else None
+    return "\n".join(
+        line
+        for observed_at, line in lines
+        if (start is None or observed_at >= start) and (end is None or observed_at <= end)
+    )
 
 
 def build_log_hit(keyword: str, matched_text: str, *, container_name: str = "demo-api") -> dict:
@@ -352,7 +373,11 @@ class MockInspectionProvider:
         collected_bytes = 0
         truncated = False
         for pod_name in unique_names:
-            raw = str(build_demo_pod(pod_name)["log_summary"] or "")
+            raw = _mock_log_sample(
+                str(build_demo_pod(pod_name)["log_summary"] or ""),
+                since_time=since_time,
+                until_time=until_time,
+            )
             allowed = min(
                 limits.max_log_bytes_per_pod,
                 limits.max_total_log_bytes - collected_bytes,

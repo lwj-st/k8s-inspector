@@ -49,6 +49,10 @@ type IgnoreDraft = {
   note: string;
 };
 type RecordingDurationMode = LogRecordingDurationSource;
+type RecordingLists = {
+  running: LogRecording[];
+  ended: LogRecording[];
+};
 
 function logHitContext(hit: KeywordHit) {
   const context = hit.context_text?.trim();
@@ -196,6 +200,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [recordDurationMode, setRecordDurationMode] = useState<RecordingDurationMode>("system_default");
   const [recordDurationMinutes, setRecordDurationMinutes] = useState(20);
   const [runningRecordings, setRunningRecordings] = useState<LogRecording[]>([]);
+  const [endedRecordings, setEndedRecordings] = useState<LogRecording[]>([]);
   const [recordingBusy, setRecordingBusy] = useState(false);
   const [stoppingRecordingIds, setStoppingRecordingIds] = useState<number[]>([]);
   const [recordingMessage, setRecordingMessage] = useState<string | null>(null);
@@ -257,20 +262,23 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     const normalizedNamespace = namespace.trim();
     if (!normalizedNamespace) {
       setRunningRecordings([]);
+      setEndedRecordings([]);
       return;
     }
 
     let alive = true;
-    void loadRunningRecordings(normalizedNamespace)
+    void loadRecordingLists(normalizedNamespace)
       .then((recordings) => {
         if (!alive) {
           return;
         }
-        setRunningRecordings(recordings);
+        setRunningRecordings(recordings.running);
+        setEndedRecordings(recordings.ended);
       })
       .catch(() => {
         if (alive) {
           setRunningRecordings([]);
+          setEndedRecordings([]);
         }
       });
 
@@ -279,9 +287,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     };
   }, [namespace]);
 
-  async function loadRunningRecordings(targetNamespace: string) {
+  async function loadRecordingLists(targetNamespace: string): Promise<RecordingLists> {
     const result = await listLogRecordings({ namespace: targetNamespace, page: 1, page_size: 20 });
-    return result.items.filter((item) => item.status === "recording");
+    return {
+      running: result.items.filter((item) => item.status === "recording"),
+      ended: result.items.filter((item) => item.status !== "recording").slice(0, 10),
+    };
   }
 
   const filteredNamespaces = useMemo(() => {
@@ -534,6 +545,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     try {
       const stopped = await stopLogRecording(recording.id);
       setRunningRecordings((current) => current.filter((item) => item.id !== recording.id));
+      setEndedRecordings((current) => [stopped, ...current.filter((item) => item.id !== stopped.id)].slice(0, 10));
       setRecordingMessage(`已停止记录：${stopped.name}`);
     } catch (reason) {
       if (reason instanceof ApiClientError && reason.status === 409) {
@@ -544,12 +556,14 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             setRecordingError("记录仍在运行，请稍后重试结束");
           } else {
             setRunningRecordings((current) => current.filter((item) => item.id !== recording.id));
+            setEndedRecordings((current) => [latest, ...current.filter((item) => item.id !== latest.id)].slice(0, 10));
             setRecordingMessage(`记录已结束：${latest.name}`);
           }
         } catch {
-          const latestRunning = await loadRunningRecordings(recording.namespace);
-          setRunningRecordings(latestRunning);
-          if (latestRunning.some((item) => item.id === recording.id)) {
+          const latestLists = await loadRecordingLists(recording.namespace);
+          setRunningRecordings(latestLists.running);
+          setEndedRecordings(latestLists.ended);
+          if (latestLists.running.some((item) => item.id === recording.id)) {
             setRecordingError("记录状态已变化，请稍后重试结束");
           } else {
             setRecordingMessage("记录已结束");
@@ -1100,6 +1114,34 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     </article>
                   );
                 })}
+              </div>
+            </div>
+          ) : null}
+          {endedRecordings.length > 0 ? (
+            <div className="recording-history-panel">
+              <div className="section-header">
+                <div>
+                  <h4>最近结束的日志记录</h4>
+                  <span className="section-tip">点击查看日志可进入记录详情和搜索。</span>
+                </div>
+              </div>
+              <div className="running-recording-list">
+                {endedRecordings.map((recording) => (
+                  <article key={recording.id} className="running-recording-item">
+                    <div>
+                      <strong>{recording.name}</strong>
+                      <div className="diagnosis-inline-metrics">
+                        <span>状态：{recording.status === "failed" ? "失败" : "已结束"}</span>
+                        <span>开始：{formatRecordingTime(recording.started_at)}</span>
+                        <span>结束：{formatRecordingTime(recording.ended_at)}</span>
+                        <span>日志行：{recording.folded_line_count} / {recording.raw_line_count}</span>
+                      </div>
+                    </div>
+                    <a className="mini-button text-button" href={`/log-recordings?recordingId=${recording.id}`}>
+                      查看日志
+                    </a>
+                  </article>
+                ))}
               </div>
             </div>
           ) : null}

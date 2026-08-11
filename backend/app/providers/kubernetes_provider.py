@@ -380,15 +380,15 @@ class KubernetesInspectionProvider:
                             log_kwargs["since_seconds"] = self._k8s_since_seconds(since_time)
                         else:
                             log_kwargs["since_time"] = self._k8s_log_time(since_time)
-                    if until_time is not None:
+                    if since_time is not None or until_time is not None:
                         log_kwargs["timestamps"] = True
                     raw_log = self.core.read_namespaced_pod_log(
                         **log_kwargs,
                     )
                 except (ApiException, TypeError, ValueError):
                     continue
-                if until_time is not None:
-                    raw_log = self._filter_timestamped_log_until(raw_log, until_time)
+                if since_time is not None or until_time is not None:
+                    raw_log = self._filter_timestamped_log_range(raw_log, since_time, until_time)
                 sample, accepted, sample_truncated = self._bounded_log_sample(
                     raw_log,
                     allowed,
@@ -588,17 +588,30 @@ class KubernetesInspectionProvider:
             return None, line
         return parsed, rest
 
-    def _filter_timestamped_log_until(self, text: str, until_time: datetime) -> str:
-        end = self._k8s_since_time(until_time)
+    def _filter_timestamped_log_range(
+        self,
+        text: str,
+        since_time: datetime | None,
+        until_time: datetime | None,
+    ) -> str:
+        start = self._k8s_since_time(since_time) if since_time is not None else None
+        end = self._k8s_since_time(until_time) if until_time is not None else None
         lines: list[str] = []
         for raw_line in text.splitlines():
             log_time, _ = self._split_log_timestamp(raw_line)
             if log_time is None:
                 lines.append(raw_line)
                 continue
-            if self._k8s_since_time(log_time) <= end:
-                lines.append(raw_line)
+            normalized_log_time = self._k8s_since_time(log_time)
+            if start is not None and normalized_log_time < start:
+                continue
+            if end is not None and normalized_log_time > end:
+                continue
+            lines.append(raw_line)
         return "\n".join(lines)
+
+    def _filter_timestamped_log_until(self, text: str, until_time: datetime) -> str:
+        return self._filter_timestamped_log_range(text, None, until_time)
 
     def _pod_owner(self, pod: client.V1Pod) -> tuple[str | None, str | None]:
         owners = list(getattr(pod.metadata, "owner_references", None) or [])

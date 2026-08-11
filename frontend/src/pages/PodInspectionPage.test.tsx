@@ -10,6 +10,7 @@ let configuredMaxLogPods = 120;
 let failDemoPodDiscovery = false;
 let stopRecordingConflict = false;
 let listRunningRecording = false;
+let listEndedRecording = false;
 
 describe("PodInspectionPage", () => {
   beforeEach(() => {
@@ -19,6 +20,7 @@ describe("PodInspectionPage", () => {
     failDemoPodDiscovery = false;
     stopRecordingConflict = false;
     listRunningRecording = false;
+    listEndedRecording = false;
     const savedTargets = [
       {
         id: 1,
@@ -57,8 +59,9 @@ describe("PodInspectionPage", () => {
       }
 
       if (url.includes("/log-recordings?") && (!init || init.method === undefined)) {
-        const items = listRunningRecording
-          ? [{
+        const items = [
+          ...(listRunningRecording
+            ? [{
               id: 7,
               name: "接口恢复的记录",
               namespace: "demo",
@@ -80,7 +83,32 @@ describe("PodInspectionPage", () => {
               created_at: "2026-07-19T10:00:00Z",
               updated_at: "2026-07-19T10:00:00Z",
             }]
-          : [];
+            : []),
+          ...(listEndedRecording
+            ? [{
+              id: 8,
+              name: "已结束的复现记录",
+              namespace: "demo",
+              note: null,
+              status: "completed",
+              started_at: "2026-07-19T09:00:00Z",
+              ended_at: "2026-07-19T09:10:00Z",
+              planned_end_at: "2026-07-19T09:20:00Z",
+              duration_source: "system_default",
+              duration_minutes: 20,
+              stop_reason: "user_stopped",
+              pod_count: 2,
+              container_count: 3,
+              raw_line_count: 12,
+              folded_line_count: 6,
+              total_bytes: 200,
+              truncated: false,
+              created_by: "admin",
+              created_at: "2026-07-19T09:00:00Z",
+              updated_at: "2026-07-19T09:10:00Z",
+            }]
+            : []),
+        ];
         return Promise.resolve(
           new Response(
             JSON.stringify({ items, total: items.length, page: 1, page_size: 20 }),
@@ -635,6 +663,21 @@ describe("PodInspectionPage", () => {
     expect(screen.getByText("接口恢复的记录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
+  });
+
+  it("shows ended recordings history inside the log inspection page", async () => {
+    listEndedRecording = true;
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+
+    expect(await screen.findByText("最近结束的日志记录")).toBeInTheDocument();
+    expect(screen.getByText("已结束的复现记录")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看日志" })).toHaveAttribute(
+      "href",
+      "/log-recordings?recordingId=8",
+    );
   });
 
   it("recovers when stopping a recording that already ended in the backend", async () => {

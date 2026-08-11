@@ -802,7 +802,12 @@ def test_targeted_log_collection_uses_since_seconds_for_recent_range() -> None:
             status=SimpleNamespace(container_statuses=[]),
         )
     )
-    provider.core.read_namespaced_pod_log = Mock(return_value="ERROR recent window")
+    provider.core.read_namespaced_pod_log = Mock(
+        return_value=(
+            "2026-08-09T09:00:00Z ERROR old window\n"
+            f"{datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')} ERROR recent window"
+        )
+    )
 
     result = provider.collect_pod_log_samples(
         "demo",
@@ -812,12 +817,12 @@ def test_targeted_log_collection_uses_since_seconds_for_recent_range() -> None:
     )
 
     assert result.container_samples == {
-        "target-api-0": {"api": "ERROR recent window"}
+        "target-api-0": {"api": f"{provider.core.read_namespaced_pod_log.return_value.splitlines()[1]}"}
     }
     log_kwargs = provider.core.read_namespaced_pod_log.call_args.kwargs
     assert "since_time" not in log_kwargs
     assert 1 <= log_kwargs["since_seconds"] <= 16 * 60
-    assert "timestamps" not in log_kwargs
+    assert log_kwargs["timestamps"] is True
 
 
 def test_log_pod_limit_rejects_before_any_log_or_pod_read() -> None:
@@ -872,6 +877,21 @@ def test_mock_provider_lists_stable_namespace_label_candidates() -> None:
             "pod_count": 4,
         },
     ]
+
+
+def test_mock_provider_filters_temporary_logs_by_recent_range() -> None:
+    provider = MockInspectionProvider()
+
+    result = provider.collect_pod_log_samples(
+        "demo",
+        ["demo-api-0"],
+        CollectionLimits(),
+        since_time=datetime.now(timezone.utc) - timedelta(minutes=5),
+    )
+
+    sample = result.container_samples["demo-api-0"]["demo-api"]
+    assert "database connection refused" in sample
+    assert "old window" not in sample
 
 
 def test_kubernetes_provider_lists_namespace_label_candidates() -> None:

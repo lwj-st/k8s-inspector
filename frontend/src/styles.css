@@ -1507,7 +1507,17 @@ a {
   background: rgba(240, 253, 250, 0.62);
 }
 
-.running-recording-panel .section-header {
+.recording-history-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.82);
+}
+
+.running-recording-panel .section-header,
+.recording-history-panel .section-header {
   margin-bottom: 0;
 }
 
