@@ -143,8 +143,6 @@ export function LogRecordingsPage() {
   const logLineRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const hasRunningRecords = useMemo(() => (records?.items ?? []).some((item) => item.status === "recording"), [records]);
-  const currentPod = pods.find((pod) => pod.pod_name === selectedPod) ?? null;
-  const containers = useMemo(() => currentPod?.container_names ?? uniqueContainers(logs?.items ?? []), [currentPod, logs]);
   const searchLineIds = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     if (!keyword || !logs) {
@@ -387,6 +385,13 @@ export function LogRecordingsPage() {
     setMatches([]);
   }
 
+  function selectPodContainer(pod: LogRecordingPod, containerName = pod.container_names[0] ?? "") {
+    setSelectedPod(pod.pod_name);
+    setSelectedContainer(containerName);
+    setLogs(null);
+    setLogPage(1);
+  }
+
   function moveSearch(delta: number) {
     if (searchLineIds.length === 0) {
       return;
@@ -489,30 +494,42 @@ export function LogRecordingsPage() {
           <div className="log-recording-workbench">
             <aside className="log-recording-pods">
               {pods.length === 0 ? <p className="empty-copy">暂无已采集日志的 Pod。</p> : pods.map((pod) => (
-                <button
-                  type="button"
+                <article
                   key={pod.pod_uid}
-                  className={selectedPod === pod.pod_name ? "log-recording-pod-active" : ""}
-                  title={pod.pod_name}
-                  onClick={() => {
-                    setSelectedPod(pod.pod_name);
-                    setSelectedContainer(pod.container_names[0] ?? "");
-                    setLogs(null);
-                    setLogPage(1);
-                  }}
+                  className={selectedPod === pod.pod_name ? "log-recording-pod-card log-recording-pod-active" : "log-recording-pod-card"}
                 >
-                  <strong>{pod.pod_name}</strong>
-                  <span>{pod.keyword_hit_count} 命中 · {pod.folded_line_count}/{pod.raw_line_count} 行{pod.deleted_during_recording ? " · 已删除" : ""}{pod.truncated ? " · 已截断" : ""}</span>
-                </button>
+                  <button
+                    type="button"
+                    className="log-recording-pod-summary"
+                    title={pod.pod_name}
+                    onClick={() => selectPodContainer(pod)}
+                  >
+                    <strong>{pod.pod_name}</strong>
+                    <span>异常关键字 {pod.keyword_hit_count} · 日志 {pod.folded_line_count}/{pod.raw_line_count} 行{pod.deleted_during_recording ? " · 已删除" : ""}{pod.truncated ? " · 已截断" : ""}</span>
+                  </button>
+                  {pod.container_names.length > 0 ? (
+                    <div className="log-recording-container-list">
+                      {pod.container_names.map((container) => (
+                        <button
+                          type="button"
+                          key={container}
+                          className={selectedPod === pod.pod_name && selectedContainer === container ? "log-recording-container-active" : ""}
+                          title={`${pod.pod_name} / ${container}`}
+                          onClick={() => selectPodContainer(pod, container)}
+                        >
+                          {container}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="log-recording-pod-note">未采集到容器日志</p>
+                  )}
+                </article>
               ))}
             </aside>
 
             <div className="log-recording-logs">
               <div className="log-recording-toolbar">
-                <select value={selectedContainer} onChange={(event) => setSelectedContainer(event.target.value)}>
-                  <option value="">选择容器</option>
-                  {containers.map((container) => <option key={container} value={container}>{container}</option>)}
-                </select>
                 <select value={view} onChange={(event) => setView(event.target.value as LogRecordingViewMode)}>
                   <option value="folded">折叠视图</option>
                   <option value="raw">原始逐行</option>
@@ -524,7 +541,7 @@ export function LogRecordingsPage() {
                 <button type="button" disabled={!search} onClick={() => setSearch("")}>清空</button>
               </div>
               {!selectedPod ? <p className="empty-copy">请选择 Pod。</p> : null}
-              {selectedPod && !selectedContainer ? <p className="empty-copy">请选择容器。</p> : null}
+              {selectedPod && !selectedContainer ? <p className="empty-copy">该 Pod 暂无可查看的容器日志。</p> : null}
               {logs ? (
                 <>
                   <div className="log-block log-recording-log-block">

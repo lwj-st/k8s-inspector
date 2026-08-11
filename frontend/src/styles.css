@@ -1276,44 +1276,81 @@ a {
 .log-recording-pods {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 10px;
   max-height: 560px;
   overflow: auto;
   padding-right: 4px;
 }
 
-.log-recording-pods button {
+.log-recording-pod-card {
   display: grid;
-  gap: 4px;
-  width: 100%;
+  gap: 8px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper-strong);
-  color: var(--ink);
-  text-align: left;
-  box-shadow: none;
 }
 
-.log-recording-pods strong,
-.log-recording-pods span {
+.log-recording-pod-summary {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: auto !important;
+  min-width: 0;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: none !important;
+}
+
+.log-recording-pod-summary strong,
+.log-recording-pod-summary span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.log-recording-pods strong {
+.log-recording-pod-summary strong {
   line-height: 1.35;
 }
 
-.log-recording-pods span {
+.log-recording-pod-summary span,
+.log-recording-pod-note {
   color: var(--muted);
   font-size: 12px;
 }
 
-.log-recording-pods .log-recording-pod-active {
+.log-recording-pod-note {
+  margin: 0;
+}
+
+.log-recording-pod-active {
   border-color: rgba(37, 99, 235, 0.52);
   box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.72);
+}
+
+.log-recording-container-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.log-recording-container-list button {
+  min-height: 28px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border-radius: 8px;
+  box-shadow: none;
+  overflow-wrap: anywhere;
+}
+
+.log-recording-container-list .log-recording-container-active {
+  border-color: transparent;
+  background: #2563eb;
+  color: #fff;
 }
 
 .log-recording-logs {
@@ -1322,7 +1359,7 @@ a {
 
 .log-recording-toolbar {
   display: grid;
-  grid-template-columns: minmax(150px, 190px) minmax(120px, 150px) minmax(220px, 1fr) minmax(72px, auto) repeat(3, minmax(70px, auto));
+  grid-template-columns: minmax(120px, 150px) minmax(240px, 1fr) minmax(72px, auto) repeat(3, minmax(70px, auto));
   gap: 8px;
   align-items: center;
   margin-bottom: 10px;
