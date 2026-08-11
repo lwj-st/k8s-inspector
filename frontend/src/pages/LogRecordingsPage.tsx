@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiClientError,
@@ -9,6 +9,7 @@ import {
   listLogRecordingLogs,
   listLogRecordingPods,
   listLogRecordings,
+  listTemplates,
   matchLogRecordingTemplates,
   stopLogRecording,
   updateLogRecording,
@@ -19,6 +20,7 @@ import type {
   LogRecordingPod,
   LogRecordingTemplateMatch,
   LogRecordingViewMode,
+  FaultTemplate,
   NamespaceSummary,
   Page,
 } from "../api/types";
@@ -46,6 +48,20 @@ function formatBytes(value: number) {
     return `${(value / 1024).toFixed(1)} KiB`;
   }
   return `${value} B`;
+}
+
+function formatValue(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "--";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function statusText(status: LogRecording["status"]) {
@@ -136,7 +152,9 @@ export function LogRecordingsPage() {
   const [logPage, setLogPage] = useState(1);
   const [search, setSearch] = useState("");
   const [matches, setMatches] = useState<LogRecordingTemplateMatch[]>([]);
-  const [expandedMatchId, setExpandedMatchId] = useState<number | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<LogRecordingTemplateMatch | null>(null);
+  const [matchTemplate, setMatchTemplate] = useState<FaultTemplate | null>(null);
+  const [templates, setTemplates] = useState<FaultTemplate[] | null>(null);
   const [pendingTemplateMatchCount, setPendingTemplateMatchCount] = useState<number | null>(null);
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
@@ -370,7 +388,8 @@ export function LogRecordingsPage() {
     try {
       const result = await matchLogRecordingTemplates(selected.id);
       setMatches(result);
-      setExpandedMatchId(null);
+      setSelectedMatch(null);
+      setMatchTemplate(null);
       setPendingTemplateMatchCount(result.length > 0 ? result.length : null);
       setMessage(result.length > 0 ? `命中 ${result.length} 条模板结果` : "未命中日志类模板");
     } catch (err) {
@@ -395,12 +414,17 @@ export function LogRecordingsPage() {
     setLogPage(1);
   }
 
-  async function copyPodName(podName: string) {
+  async function openMatchDetails(match: LogRecordingTemplateMatch) {
+    setSelectedMatch(match);
+    setMatchTemplate(null);
     try {
-      await navigator.clipboard.writeText(podName);
-      setMessage(`已复制 Pod 名：${podName}`);
+      const loadedTemplates = templates ?? await listTemplates();
+      if (!templates) {
+        setTemplates(loadedTemplates);
+      }
+      setMatchTemplate(loadedTemplates.find((template) => template.id === match.template_id) ?? null);
     } catch {
-      setError("当前环境不支持自动复制 Pod 名");
+      setMatchTemplate(null);
     }
   }
 
@@ -535,22 +559,14 @@ export function LogRecordingsPage() {
                   className={selectedPod === pod.pod_name ? "log-recording-pod-card log-recording-pod-active" : "log-recording-pod-card"}
                 >
                   <div className="log-recording-pod-heading">
+                    <strong className="log-recording-pod-name" title={pod.pod_name}>{pod.pod_name}</strong>
                     <button
                       type="button"
                       className="log-recording-pod-summary"
                       title={pod.pod_name}
                       onClick={() => selectPodContainer(pod)}
                     >
-                      <strong>{pod.pod_name}</strong>
                       <span>名称空间：{pod.namespace} · 异常关键字 {pod.keyword_hit_count} · 日志 {pod.folded_line_count}/{pod.raw_line_count} 行{pod.truncated ? " · 已截断" : ""}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="log-recording-copy-button"
-                      title="复制 Pod 名"
-                      onClick={() => void copyPodName(pod.pod_name)}
-                    >
-                      复制
                     </button>
                   </div>
                   {pod.container_names.length > 0 ? (
@@ -625,37 +641,79 @@ export function LogRecordingsPage() {
                 </thead>
                 <tbody>
                   {matches.map((item) => (
-                    <Fragment key={item.id}>
-                      <tr>
-                        <td>{item.template_name}</td>
-                        <td>{item.namespace ?? "--"}</td>
-                        <td>{item.pod_name}</td>
-                        <td>{item.container_name}</td>
-                        <td>{item.keyword}</td>
-                        <td>{item.suggestion ?? "--"}</td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => setExpandedMatchId((current) => current === item.id ? null : item.id)}
-                          >
-                            {expandedMatchId === item.id ? "收起" : "详情"}
-                          </button>
-                        </td>
-                      </tr>
-                      {expandedMatchId === item.id ? (
-                        <tr>
-                          <td colSpan={7}>
-                            <div className="log-recording-match-detail">
-                              <strong>匹配上下文</strong>
-                              <code>{item.matched_context || "--"}</code>
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
+                    <tr key={item.id}>
+                      <td>{item.template_name}</td>
+                      <td>{item.namespace ?? "--"}</td>
+                      <td>{item.pod_name}</td>
+                      <td>{item.container_name}</td>
+                      <td>{item.keyword}</td>
+                      <td>{item.suggestion ?? "--"}</td>
+                      <td>
+                        <button type="button" onClick={() => void openMatchDetails(item)}>详情</button>
+                      </td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          ) : null}
+          {selectedMatch ? (
+            <div className="modal-backdrop" role="presentation" onMouseDown={() => setSelectedMatch(null)}>
+              <section
+                className="modal-card modal-card-polished log-recording-template-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="log-recording-template-detail-title"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="section-header">
+                  <div>
+                    <h3 id="log-recording-template-detail-title">命中模板详情</h3>
+                    <p className="inline-note">{selectedMatch.template_name} · {selectedMatch.namespace ?? "--"} · {selectedMatch.pod_name}</p>
+                  </div>
+                  <button type="button" onClick={() => setSelectedMatch(null)}>关闭</button>
+                </div>
+                <dl className="log-recording-template-detail-grid">
+                  <div><dt>模板 ID</dt><dd>{selectedMatch.template_id ?? "--"}</dd></div>
+                  <div><dt>模板名称</dt><dd>{selectedMatch.template_name}</dd></div>
+                  <div><dt>严重级别</dt><dd>{selectedMatch.severity}</dd></div>
+                  <div><dt>启用状态</dt><dd>{matchTemplate ? (matchTemplate.enabled ? "启用" : "停用") : "--"}</dd></div>
+                  <div><dt>场景</dt><dd>{matchTemplate?.scenario ?? "--"}</dd></div>
+                  <div><dt>命中时间</dt><dd>{formatTime(selectedMatch.created_at)}</dd></div>
+                  <div><dt>名称空间</dt><dd>{selectedMatch.namespace ?? "--"}</dd></div>
+                  <div><dt>Pod</dt><dd>{selectedMatch.pod_name}</dd></div>
+                  <div><dt>容器</dt><dd>{selectedMatch.container_name}</dd></div>
+                  <div><dt>关键字</dt><dd>{selectedMatch.keyword}</dd></div>
+                </dl>
+                {matchTemplate ? (
+                  <>
+                    <div className="log-recording-template-section">
+                      <strong>对象组</strong>
+                      {(matchTemplate.targets?.length ? matchTemplate.targets : matchTemplate.target_groups ?? []).map((target, index) => (
+                        <code key={index}>{formatValue(target)}</code>
+                      ))}
+                    </div>
+                    <div className="log-recording-template-section">
+                      <strong>匹配条件</strong>
+                      {matchTemplate.match_conditions.map((condition, index) => (
+                        <code key={index}>{formatValue(condition)}</code>
+                      ))}
+                    </div>
+                    <dl className="log-recording-template-detail-grid">
+                      <div><dt>原因</dt><dd>{matchTemplate.reason || "--"}</dd></div>
+                      <div><dt>建议</dt><dd>{matchTemplate.suggestion || selectedMatch.suggestion || "--"}</dd></div>
+                      <div><dt>处理命令</dt><dd>{matchTemplate.command || "--"}</dd></div>
+                      <div><dt>风险说明</dt><dd>{matchTemplate.risk_note || "--"}</dd></div>
+                    </dl>
+                  </>
+                ) : (
+                  <p className="inline-note">未能加载完整模板信息，仅展示本次命中记录。</p>
+                )}
+                <div className="log-recording-template-section">
+                  <strong>匹配上下文</strong>
+                  <code>{selectedMatch.matched_context || "--"}</code>
+                </div>
+              </section>
             </div>
           ) : null}
         </section>

@@ -1,5 +1,6 @@
-import { useId, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 
 type ConfirmPopoverButtonProps = {
   children: ReactNode;
@@ -38,6 +39,8 @@ export function ConfirmPopoverButton({
   const [confirming, setConfirming] = useState(false);
   const titleId = useId();
   const messageId = useId();
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const position = useFloatingConfirmPosition(anchorRef, open);
 
   async function handleConfirm() {
     setConfirming(true);
@@ -50,7 +53,7 @@ export function ConfirmPopoverButton({
   }
 
   return (
-    <span className="confirm-popover-anchor">
+    <span className="confirm-popover-anchor" ref={anchorRef}>
       <button
         type="button"
         className={className}
@@ -61,7 +64,7 @@ export function ConfirmPopoverButton({
       >
         {children}
       </button>
-      {open ? (
+      {open && position ? createPortal(
         <ConfirmPopoverPanel
           title={title}
           message={message}
@@ -71,9 +74,12 @@ export function ConfirmPopoverButton({
           confirming={confirming}
           titleId={titleId}
           messageId={messageId}
+          style={position.style}
+          placement={position.placement}
           onCancel={() => setOpen(false)}
           onConfirm={handleConfirm}
-        />
+        />,
+        document.body,
       ) : null}
     </span>
   );
@@ -91,6 +97,8 @@ export function ConfirmPopoverPrompt({
   const [confirming, setConfirming] = useState(false);
   const titleId = useId();
   const messageId = useId();
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const position = useFloatingConfirmPosition(anchorRef, true);
 
   async function handleConfirm() {
     setConfirming(true);
@@ -102,8 +110,8 @@ export function ConfirmPopoverPrompt({
   }
 
   return (
-    <span className="confirm-popover-anchor">
-      <ConfirmPopoverPanel
+    <span className="confirm-popover-anchor" ref={anchorRef}>
+      {position ? createPortal(<ConfirmPopoverPanel
         title={title}
         message={message}
         confirmText={confirmText}
@@ -112,9 +120,11 @@ export function ConfirmPopoverPrompt({
         confirming={confirming}
         titleId={titleId}
         messageId={messageId}
+        style={position.style}
+        placement={position.placement}
         onCancel={onCancel}
         onConfirm={handleConfirm}
-      />
+      />, document.body) : null}
     </span>
   );
 }
@@ -128,6 +138,8 @@ type ConfirmPopoverPanelProps = {
   confirming: boolean;
   titleId: string;
   messageId: string;
+  style: CSSProperties;
+  placement: "top" | "bottom";
   onCancel: () => void;
   onConfirm: () => void | Promise<void>;
 };
@@ -141,12 +153,15 @@ function ConfirmPopoverPanel({
   confirming,
   titleId,
   messageId,
+  style,
+  placement,
   onCancel,
   onConfirm,
 }: ConfirmPopoverPanelProps) {
   return (
     <span
-      className="confirm-popover"
+      className={`confirm-popover confirm-popover-${placement}`}
+      style={style}
       role="alertdialog"
       aria-modal="false"
       aria-labelledby={titleId}
@@ -167,4 +182,64 @@ function ConfirmPopoverPanel({
       </span>
     </span>
   );
+}
+
+type FloatingConfirmPosition = {
+  style: CSSProperties;
+  placement: "top" | "bottom";
+};
+
+function useFloatingConfirmPosition(
+  anchorRef: RefObject<HTMLElement | null>,
+  open: boolean,
+): FloatingConfirmPosition | null {
+  const [position, setPosition] = useState<FloatingConfirmPosition | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return undefined;
+    }
+
+    const panelWidth = 320;
+    const panelHeightEstimate = 150;
+    const gap = 10;
+    const margin = 12;
+
+    function updatePosition() {
+      const anchor = anchorRef.current;
+      if (!anchor) {
+        return;
+      }
+      const rect = anchor.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const preferredLeft = rect.left + rect.width / 2 - panelWidth / 2;
+      const left = Math.max(margin, Math.min(preferredLeft, viewportWidth - panelWidth - margin));
+      const bottomTop = rect.bottom + gap;
+      const canOpenBelow = bottomTop + panelHeightEstimate <= viewportHeight - margin;
+      const top = canOpenBelow
+        ? bottomTop
+        : Math.max(margin, rect.top - panelHeightEstimate - gap);
+
+      setPosition({
+        placement: canOpenBelow ? "bottom" : "top",
+        style: {
+          left,
+          top,
+          width: panelWidth,
+        },
+      });
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchorRef, open]);
+
+  return position;
 }

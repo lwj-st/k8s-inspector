@@ -6,7 +6,6 @@ import { LogRecordingsPage } from "./LogRecordingsPage";
 
 const fetchMock = vi.fn();
 const scrollIntoViewMock = vi.fn();
-const writeTextMock = vi.fn();
 
 const baseRecording = {
   id: 1,
@@ -38,10 +37,6 @@ function json(data: unknown, status = 200) {
 describe("LogRecordingsPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText: writeTextMock },
-    });
     Element.prototype.scrollIntoView = scrollIntoViewMock;
     configureApiSession("csrf-token-at-least-16");
   });
@@ -51,7 +46,6 @@ describe("LogRecordingsPage", () => {
     vi.unstubAllGlobals();
     fetchMock.mockReset();
     scrollIntoViewMock.mockReset();
-    writeTextMock.mockReset();
     configureApiSession(null);
   });
 
@@ -157,6 +151,29 @@ describe("LogRecordingsPage", () => {
           created_at: "2026-08-09T10:04:00Z",
         }]);
       }
+      if (url.endsWith("/templates")) {
+        return json([{
+          id: 7,
+          name: "数据库超时",
+          scenario: "targeted_diagnosis",
+          targets: [{ target_ref: "api", namespace: "demo", resource_scope: ["pods"] }],
+          match_conditions: [{
+            target_ref: "api",
+            condition_type: "log_keyword",
+            operator: "contains",
+            expected_value: "timeout",
+            enabled: true,
+          }],
+          joint_rule: { operator: "AND" },
+          reason: "数据库响应超时",
+          suggestion: "检查数据库连接",
+          command: "kubectl logs deploy/api",
+          risk_note: "只读命令",
+          enabled: true,
+          created_at: "2026-08-09T09:00:00Z",
+          updated_at: "2026-08-09T09:00:00Z",
+        }]);
+      }
 
       throw new Error(`Unexpected request: ${url}`);
     });
@@ -166,8 +183,7 @@ describe("LogRecordingsPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "查看" }));
     expect(await screen.findByText("api-0")).toBeInTheDocument();
     expect(screen.getByText(/名称空间：demo/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "复制" }));
-    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("api-0"));
+    expect(screen.queryByRole("button", { name: "复制" })).not.toBeInTheDocument();
     expect(await screen.findByText(/database timeout while checkout/)).toBeInTheDocument();
     expect(screen.getByText(/Bearer \[REDACTED]/)).toBeInTheDocument();
     expect(screen.getByText(/Bearer \[REDACTED]/).closest(".log-recording-line")?.querySelector(".log-recording-repeat")).not.toBeNull();
@@ -190,7 +206,9 @@ describe("LogRecordingsPage", () => {
     expect(within(matchRow).getByText("demo")).toBeInTheDocument();
     expect(within(matchRow).getByText("检查数据库连接")).toBeInTheDocument();
     fireEvent.click(within(matchRow).getByRole("button", { name: "详情" }));
-    const detail = screen.getByText("匹配上下文").closest(".log-recording-match-detail") as HTMLElement;
-    expect(within(detail).getByText("database timeout while checkout")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "命中模板详情" });
+    expect(within(dialog).getByText("数据库响应超时")).toBeInTheDocument();
+    expect(within(dialog).getByText("kubectl logs deploy/api")).toBeInTheDocument();
+    expect(within(dialog).getByText("database timeout while checkout")).toBeInTheDocument();
   });
 });
