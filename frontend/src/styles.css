@@ -1498,6 +1498,47 @@ a {
   resize: vertical;
 }
 
+.running-recording-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 12px;
+  background: rgba(240, 253, 250, 0.62);
+}
+
+.running-recording-panel .section-header {
+  margin-bottom: 0;
+}
+
+.running-recording-list {
+  display: grid;
+  gap: 10px;
+}
+
+.running-recording-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.running-recording-item > div {
+  min-width: 0;
+}
+
+.running-recording-item strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .quick-target-grid,
 .stack-list,
 .alert-list,
@@ -3681,6 +3722,11 @@ summary:focus-visible {
   .log-time-range-panel,
   .recording-form-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .running-recording-item {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

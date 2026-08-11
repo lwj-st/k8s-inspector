@@ -9,6 +9,7 @@ let discoveredPodCount: number | null = 3;
 let configuredMaxLogPods = 120;
 let failDemoPodDiscovery = false;
 let stopRecordingConflict = false;
+let listRunningRecording = false;
 
 describe("PodInspectionPage", () => {
   beforeEach(() => {
@@ -17,6 +18,7 @@ describe("PodInspectionPage", () => {
     configuredMaxLogPods = 120;
     failDemoPodDiscovery = false;
     stopRecordingConflict = false;
+    listRunningRecording = false;
     const savedTargets = [
       {
         id: 1,
@@ -55,9 +57,33 @@ describe("PodInspectionPage", () => {
       }
 
       if (url.includes("/log-recordings?") && (!init || init.method === undefined)) {
+        const items = listRunningRecording
+          ? [{
+              id: 7,
+              name: "接口恢复的记录",
+              namespace: "demo",
+              note: null,
+              status: "recording",
+              started_at: "2026-07-19T10:00:00Z",
+              ended_at: null,
+              planned_end_at: "2026-07-19T10:20:00Z",
+              duration_source: "system_default",
+              duration_minutes: 20,
+              stop_reason: null,
+              pod_count: 2,
+              container_count: 3,
+              raw_line_count: 0,
+              folded_line_count: 0,
+              total_bytes: 0,
+              truncated: false,
+              created_by: "admin",
+              created_at: "2026-07-19T10:00:00Z",
+              updated_at: "2026-07-19T10:00:00Z",
+            }]
+          : [];
         return Promise.resolve(
           new Response(
-            JSON.stringify({ items: [], total: 0, page: 1, page_size: 20 }),
+            JSON.stringify({ items, total: items.length, page: 1, page_size: 20 }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
         );
@@ -577,7 +603,9 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
 
     expect(await screen.findByText("已开始记录：支付 500 复现")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "停止记录" })).toBeInTheDocument();
+    expect(screen.getByText("进行中的日志记录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
 
     const createRequest = fetchMock.mock.calls.find(
       ([input, init]) => String(input).endsWith("/log-recordings") && init?.method === "POST",
@@ -591,9 +619,22 @@ describe("PodInspectionPage", () => {
       duration_minutes: null,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "停止记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "结束记录" }));
     expect(await screen.findByText("已停止记录：支付 500 复现")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+  });
+
+  it("loads running recordings as a list after returning to the log inspection page", async () => {
+    listRunningRecording = true;
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+
+    expect(await screen.findByText("进行中的日志记录")).toBeInTheDocument();
+    expect(screen.getByText("接口恢复的记录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
   });
 
   it("recovers when stopping a recording that already ended in the backend", async () => {
@@ -607,9 +648,9 @@ describe("PodInspectionPage", () => {
     await screen.findByRole("heading", { name: "开始记录日志" });
     fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "支付 500 复现" } });
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
-    expect(await screen.findByRole("button", { name: "停止记录" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "结束记录" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "停止记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "结束记录" }));
 
     expect(await screen.findByText("记录已结束：支付 500 复现")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
