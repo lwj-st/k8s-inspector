@@ -1,18 +1,15 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiClientError,
-  createLogRecording,
   deleteLogRecording,
   discoverNamespaces,
   getLogRecording,
-  getSettings,
   getLogRecordingStorage,
   listLogRecordingLogs,
   listLogRecordingPods,
   listLogRecordings,
   matchLogRecordingTemplates,
-  previewLogRecording,
   stopLogRecording,
   updateLogRecording,
 } from "../api/client";
@@ -24,12 +21,10 @@ import type {
   LogRecordingViewMode,
   NamespaceSummary,
   Page,
-  ReproductionLogPolicySettings,
 } from "../api/types";
 
 const pageSize = 20;
 const logPageSize = 100;
-const presetDurationOptions = [5, 10, 15, 20];
 
 function formatTime(value?: string | null) {
   if (!value) {
@@ -79,6 +74,11 @@ function stopReasonText(reason?: LogRecording["stop_reason"] | null) {
   }[reason];
 }
 
+function recordingNamespacesText(recording: LogRecording) {
+  const namespaces = (recording as LogRecording & { namespaces?: string[] }).namespaces ?? [];
+  return namespaces.length > 0 ? namespaces.join("、") : recording.namespace;
+}
+
 function countdown(recording: LogRecording | null, nowMs = Date.now()) {
   if (!recording || recording.status !== "recording") {
     return "--";
@@ -120,14 +120,7 @@ function uniqueContainers(lines: LogRecordingLine[]) {
 
 export function LogRecordingsPage() {
   const [namespaces, setNamespaces] = useState<NamespaceSummary[]>([]);
-  const [policy, setPolicy] = useState<ReproductionLogPolicySettings | null>(null);
-  const [namespace, setNamespace] = useState("");
   const [filterNamespace, setFilterNamespace] = useState("");
-  const [name, setName] = useState("");
-  const [durationMode, setDurationMode] = useState<"system_default" | "preset" | "custom">("system_default");
-  const [presetMinutes, setPresetMinutes] = useState(20);
-  const [customMinutes, setCustomMinutes] = useState(30);
-  const [note, setNote] = useState("");
   const [records, setRecords] = useState<Page<LogRecording> | null>(null);
   const [recordPage, setRecordPage] = useState(1);
   const [storageText, setStorageText] = useState("");
@@ -149,7 +142,7 @@ export function LogRecordingsPage() {
   const [tick, setTick] = useState(0);
   const logLineRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  const runningRecords = useMemo(() => records?.items.filter((item) => item.status === "recording") ?? [], [records]);
+  const hasRunningRecords = useMemo(() => (records?.items ?? []).some((item) => item.status === "recording"), [records]);
   const currentPod = pods.find((pod) => pod.pod_name === selectedPod) ?? null;
   const containers = useMemo(() => currentPod?.container_names ?? uniqueContainers(logs?.items ?? []), [currentPod, logs]);
   const searchLineIds = useMemo(() => {
@@ -169,8 +162,6 @@ export function LogRecordingsPage() {
   const activeSearchLineId = searchLineIds[activeSearchIndex] ?? null;
   const nowMs = useMemo(() => Date.now(), [tick]);
   const historyTotalPages = Math.max(1, Math.ceil((records?.total ?? 0) / (records?.page_size ?? pageSize)));
-  const maxDurationMinutes = policy?.max_duration_minutes ?? 120;
-  const defaultDurationMinutes = policy?.default_duration_minutes ?? 20;
 
   useEffect(() => {
     void loadInitial();
@@ -200,12 +191,12 @@ export function LogRecordingsPage() {
   }, []);
 
   useEffect(() => {
-    if (runningRecords.length === 0) {
+    if (!hasRunningRecords) {
       return;
     }
     const timer = window.setInterval(() => void loadRecords(recordPage), 5000);
     return () => window.clearInterval(timer);
-  }, [runningRecords.length, filterNamespace, recordPage]);
+  }, [hasRunningRecords, filterNamespace, recordPage]);
 
   useEffect(() => {
     if (selected) {
@@ -231,14 +222,12 @@ export function LogRecordingsPage() {
 
   async function loadInitial() {
     try {
-      const [namespaceData, settings, storage] = await Promise.all([
+      const [namespaceData, storage] = await Promise.all([
         discoverNamespaces(),
-        getSettings(),
         getLogRecordingStorage(),
         loadRecords(1),
       ]);
       setNamespaces(namespaceData.namespaces);
-      setPolicy(settings.inspection_policy.reproduction_logs);
       applyStorage(storage);
     } catch (err) {
       setError(errorMessage(err));
@@ -302,44 +291,6 @@ export function LogRecordingsPage() {
       }
     } catch (err) {
       setError(errorMessage(err));
-    }
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    setMessage(null);
-    if (!name.trim() || !namespace) {
-      setError("请填写日志名称并选择名称空间");
-      return;
-    }
-    setBusy(true);
-    try {
-      const preview = await previewLogRecording(namespace);
-      if (!preview.allowed) {
-        setError(preview.reason ?? "当前名称空间不能开始记录");
-        return;
-      }
-      const duration_source = durationMode === "system_default" ? "system_default" : durationMode;
-      const duration_minutes = durationMode === "system_default" ? null : durationMode === "preset" ? presetMinutes : customMinutes;
-      const created = await createLogRecording({
-        name: name.trim(),
-        namespace,
-        note: note.trim() || null,
-        duration_source,
-        duration_minutes,
-      });
-      setName("");
-      setNote("");
-      setSelected(created);
-      setMessage("已开始记录");
-      setRecordPage(1);
-      await loadRecords(1);
-      await refreshStorage();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -449,81 +400,20 @@ export function LogRecordingsPage() {
     <section className="page-section log-recordings-page">
       <div className="section-header">
         <div>
-          <h2>复现日志</h2>
-          <p className="inline-note">开始后可去业务系统复现问题，完成后回到本页结束记录。</p>
+          <h2>日志记录</h2>
+          <p className="inline-note">查看正在记录和已经完成的日志记录任务。</p>
         </div>
         <button type="button" onClick={() => void loadRecords()}>刷新</button>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
       {message ? <p className="form-success">{message}</p> : null}
-
-      <div className="settings-two-column">
-        <form className="settings-form" onSubmit={submit}>
-          <h3>开始记录</h3>
-          <label>
-            日志名称
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：支付 500 复现" />
-          </label>
-          <label>
-            名称空间
-            <select value={namespace} onChange={(event) => setNamespace(event.target.value)}>
-              <option value="">请选择</option>
-              {namespaces.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}
-            </select>
-          </label>
-          <label>
-            记录时长
-            <select value={durationMode === "preset" ? `preset:${presetMinutes}` : durationMode} onChange={(event) => {
-              const value = event.target.value;
-              if (value.startsWith("preset:")) {
-                setDurationMode("preset");
-                setPresetMinutes(Number(value.split(":")[1]));
-              } else {
-                setDurationMode(value as "system_default" | "custom");
-              }
-            }}>
-                <option value="system_default">使用系统默认（{defaultDurationMinutes} 分钟）</option>
-              {presetDurationOptions.map((minutes) => (
-                <option key={minutes} value={`preset:${minutes}`} disabled={minutes > maxDurationMinutes}>
-                  {minutes} 分钟{minutes > maxDurationMinutes ? "（超过上限）" : ""}
-                </option>
-              ))}
-              <option value="custom">自定义</option>
-            </select>
-          </label>
-          {durationMode === "custom" ? (
-            <label>
-              自定义分钟
-              <input type="number" min={1} max={maxDurationMinutes} value={customMinutes} onChange={(event) => setCustomMinutes(Number(event.target.value))} />
-            </label>
-          ) : null}
-          <label>
-            备注
-            <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} />
-          </label>
-          <button type="submit" className="primary-action" disabled={busy || storageFull}>{busy ? "处理中..." : "开始记录"}</button>
-          <p className={storageWarning ? "form-error" : "inline-note"}>
-            日志存储：{storageText || "--"}{storageFull ? "，已达到上限，请删除旧记录或调整配置" : ""}
-          </p>
-        </form>
-
-        <section>
-          <h3>记录中</h3>
-          {runningRecords.length === 0 ? <p className="empty-copy">当前没有运行中的记录。</p> : runningRecords.map((item) => (
-            <article className="log-recording-card" key={item.id}>
-              <div>
-                <strong>{item.name}</strong>
-                <p className="inline-note">{item.namespace} · 自动结束倒计时 {countdown(item, nowMs)}</p>
-              </div>
-              <button type="button" className="button-danger" disabled={busy} onClick={() => void stop(item.id)}>结束记录</button>
-            </article>
-          ))}
-        </section>
-      </div>
+      <p className={storageWarning ? "form-error" : "inline-note"}>
+        日志存储：{storageText || "--"}{storageFull ? "，已达到上限，请删除旧记录或调整配置" : ""}
+      </p>
 
       <div className="section-header log-recording-history-header">
-        <h3>历史记录</h3>
+        <h3>记录列表</h3>
         <label>
           名称空间
           <select value={filterNamespace} onChange={(event) => setFilterNamespace(event.target.value)}>
@@ -549,10 +439,10 @@ export function LogRecordingsPage() {
             {(records?.items ?? []).map((item) => (
               <tr key={item.id}>
                 <td>{item.name}</td>
-                <td>{item.namespace}</td>
+                <td>{recordingNamespacesText(item)}</td>
                 <td>{statusText(item.status)}</td>
                 <td>{formatTime(item.started_at)}</td>
-                <td>{stopReasonText(item.stop_reason)}</td>
+                <td>{item.error_message ?? stopReasonText(item.stop_reason)}</td>
                 <td>{item.folded_line_count}/{item.raw_line_count}</td>
                 <td>
                   <button type="button" onClick={() => selectRecord(item)}>查看</button>
@@ -576,8 +466,9 @@ export function LogRecordingsPage() {
             <div>
               <h3>{displaySelected.name}</h3>
               <p className="inline-note">
-                {displaySelected.namespace} · {statusText(displaySelected.status)} · {formatBytes(displaySelected.total_bytes)} · 已脱敏
+                {recordingNamespacesText(displaySelected)} · {statusText(displaySelected.status)} · {formatBytes(displaySelected.total_bytes)} · 已脱敏
               </p>
+              {displaySelected.error_message ? <p className="inline-note">失败原因：{displaySelected.error_message}</p> : null}
             </div>
             <div className="log-recording-actions">
               <button type="button" onClick={renameSelected}>改名</button>

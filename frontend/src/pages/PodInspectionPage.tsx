@@ -1179,6 +1179,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                       <strong>{recording.name}</strong>
                       <div className="diagnosis-inline-metrics">
                         <span>状态：{recording.status === "failed" ? "失败" : "已结束"}</span>
+                        {recording.error_message ? <span>原因：{recording.error_message}</span> : null}
                         {displayRecordingNamespaces(recording).length > 1 ? <span>包含：{displayRecordingNamespaces(recording).join("、")}</span> : <span>名称空间：{recording.namespace}</span>}
                         <span>开始：{formatRecordingTime(recording.started_at)}</span>
                         <span>结束：{formatRecordingTime(recording.ended_at)}</span>

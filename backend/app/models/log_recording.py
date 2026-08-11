@@ -28,6 +28,7 @@ class LogRecording(Base):
     duration_source: Mapped[str] = mapped_column(String(32), nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     stop_reason: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(String(1000))
     pod_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     container_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     raw_line_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

@@ -498,12 +498,15 @@ class KubernetesInspectionProvider:
                         name=pod_name,
                         namespace=namespace,
                         container=container.name,
-                        since_time=self._k8s_since_time(since_time),
+                        since_time=self._k8s_log_time(since_time),
                         timestamps=True,
                         _request_timeout=self.settings.k8s_request_timeout,
                     )
                 except ApiException as exc:
                     failures.append(f"{container.name}: {exc.reason or str(exc)}")
+                    continue
+                except (TypeError, ValueError) as exc:
+                    failures.append(f"{container.name}: {type(exc).__name__}: {exc}")
                     continue
                 sample, accepted, sample_truncated = self._bounded_log_sample(raw_log, allowed)
                 pod_bytes += accepted

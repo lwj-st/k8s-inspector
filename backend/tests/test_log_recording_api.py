@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
@@ -152,6 +153,50 @@ def test_log_recording_create_and_collects_multi_namespace_task(client) -> None:
     pods_response = client.get(f"/api/v1/log-recordings/{recording.id}/pods")
     assert pods_response.status_code == 200
     assert {item["namespace"] for item in pods_response.json()} == {"demo", "prod"}
+
+
+def test_log_recording_failed_response_includes_error_message(client) -> None:
+    class FailingProvider:
+        def list_namespace_pods(self, namespace: str, label_selector: str | None = None) -> dict:
+            return {
+                "namespace": namespace,
+                "label_selector": label_selector,
+                "executed_at": datetime.now(timezone.utc).isoformat(),
+                "pods": [{"name": "demo-api-0", "labels": {"app": "api"}, "containers": ["api"]}],
+            }
+
+        def collect_log_recording_snapshot(
+            self,
+            namespace: str,
+            *,
+            since_time: datetime,
+            max_pods: int,
+            max_total_bytes: int,
+            max_pod_bytes: int,
+        ) -> LogRecordingSnapshot:
+            raise TypeError("invalid since_time")
+
+    provider = FailingProvider()
+    with client.app.state.session_factory() as session:
+        recording = log_recording_engine.log_recording_service.create_recording(
+            session,
+            provider,
+            LogRecordingCreate(
+                name="失败记录",
+                namespace="demo",
+                duration_source=LogRecordingDurationSource.preset,
+                duration_minutes=10,
+            ),
+            created_by="test",
+        )
+        recording_id = recording.id
+        with pytest.raises(log_recording_engine.log_recording_service.LogRecordingCollectionFailedError):
+            log_recording_engine.log_recording_service.collect_recording_once(session, provider, recording_id)
+
+    response = client.get(f"/api/v1/log-recordings/{recording_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    assert response.json()["error_message"] == "demo: TypeError"
 
 
 def test_log_recording_auto_stop_due_recordings(client) -> None:

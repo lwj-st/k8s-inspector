@@ -950,7 +950,7 @@ def test_kubernetes_provider_collects_log_recording_snapshot_with_since_time() -
         "name": "demo-api-0",
         "namespace": "demo",
         "container": "api",
-        "since_time": since_time,
+        "since_time": "2026-08-09T10:00:00Z",
         "timestamps": True,
         "_request_timeout": 5,
     }
@@ -960,6 +960,28 @@ def test_kubernetes_provider_collects_log_recording_snapshot_with_since_time() -
     assert snapshot.pods[0].container_names == ["api", "sidecar"]
     assert [entry.text for entry in snapshot.pods[0].entries] == ["api started", "error happened"]
     assert snapshot.pods[0].entries[0].log_time == datetime(2026, 8, 9, 10, 0, 1, tzinfo=timezone.utc)
+
+
+def test_kubernetes_provider_log_recording_snapshot_records_log_parameter_errors() -> None:
+    provider = _make_provider()
+    since_time = datetime(2026, 8, 9, 10, 0, tzinfo=timezone.utc)
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="demo-api-0", namespace="demo", uid="uid-0", owner_references=[]),
+        spec=SimpleNamespace(node_name="node-a", containers=[SimpleNamespace(name="api")]),
+    )
+    provider.core.list_namespaced_pod = Mock(return_value=SimpleNamespace(items=[pod]))
+    provider.core.read_namespaced_pod_log = Mock(side_effect=TypeError("invalid since_time"))
+
+    snapshot = provider.collect_log_recording_snapshot(
+        "demo",
+        since_time=since_time,
+        max_pods=10,
+        max_total_bytes=1024,
+        max_pod_bytes=1024,
+    )
+
+    assert snapshot.pods[0].entries == []
+    assert snapshot.pods[0].failures == ["api: TypeError: invalid since_time"]
 
 
 def test_kubernetes_provider_collect_log_recording_snapshot_enforces_pod_limit() -> None:

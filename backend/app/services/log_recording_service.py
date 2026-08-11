@@ -195,6 +195,7 @@ def create_recording(
         duration_source=payload.duration_source.value,
         duration_minutes=duration_minutes,
         stop_reason=None,
+        error_message=None,
         pod_count=pod_count,
         container_count=container_count,
         raw_line_count=0,
@@ -335,8 +336,11 @@ def _collect_recording_once_locked(
     except LogPodLimitExceededError as exc:
         _fail_recording(session, row, f"Pod 数 {exc.requested_pods} 超过上限 {exc.limit}")
         raise LogRecordingScopeTooLargeError(exc.requested_pods, exc.limit) from exc
+    except LogRecordingCollectionFailedError as exc:
+        _fail_recording(session, row, str(exc) or "采集失败")
+        raise
     except Exception as exc:
-        _fail_recording(session, row, "采集失败")
+        _fail_recording(session, row, f"{type(exc).__name__}: {exc}"[:1000])
         raise LogRecordingCollectionFailedError("日志采集失败") from exc
     if row.total_bytes >= policy.max_recording_bytes:
         row.truncated = True
@@ -764,8 +768,8 @@ def _fail_recording(session: Session, row: LogRecording, message: str) -> None:
     row.status = LogRecordingStatus.failed.value
     row.ended_at = now
     row.stop_reason = LogRecordingStopReason.collection_failed.value
+    row.error_message = message[:1000]
     row.updated_at = now
-    row.note = f"{row.note}\n{message}" if row.note else message
     session.commit()
 
 

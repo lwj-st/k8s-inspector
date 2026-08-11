@@ -761,6 +761,7 @@ export type LogRecording = {
   duration_source: LogRecordingDurationSource;
   duration_minutes: number;
   stop_reason?: LogRecordingStopReason | null;
+  error_message?: string | null;
   pod_count: number;
   container_count: number;
   raw_line_count: number;

@@ -121,6 +121,7 @@ class LogRecordingRead(LogRecordingBase):
     duration_source: LogRecordingDurationSource
     duration_minutes: int = Field(ge=1)
     stop_reason: LogRecordingStopReason | None = None
+    error_message: str | None = None
     pod_count: int = Field(ge=0)
     container_count: int = Field(ge=0)
     raw_line_count: int = Field(ge=0)

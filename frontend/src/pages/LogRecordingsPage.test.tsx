@@ -30,26 +30,6 @@ const baseRecording = {
   updated_at: "2026-08-09T10:00:00Z",
 };
 
-function settingsResponse() {
-  return {
-    inspection_policy: {
-      reproduction_logs: {
-        default_duration_minutes: 20,
-        max_duration_minutes: 20,
-        max_namespace_pods: 200,
-        max_recording_bytes: 209715200,
-        max_pod_bytes: 20971520,
-        global_storage_bytes: 10737418240,
-        storage_warning_percent: 80,
-        duplicate_folding_enabled: true,
-        auto_cleanup_enabled: false,
-        max_log_inspection_range_minutes: 120,
-        custom_redaction_rules: [],
-      },
-    },
-  };
-}
-
 function json(data: unknown, status = 200) {
   return Promise.resolve(new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }));
 }
@@ -69,7 +49,7 @@ describe("LogRecordingsPage", () => {
     configureApiSession(null);
   });
 
-  it("starts a recording, shows running state, and stops it", async () => {
+  it("shows storage usage and stops a running recording from the list", async () => {
     const records: Record<string, unknown>[] = [baseRecording];
     fetchMock.mockImplementation((input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -80,27 +60,11 @@ describe("LogRecordingsPage", () => {
           namespaces: [{ name: "demo", status: "healthy", pod_count: 1, abnormal_pod_count: 0, last_inspected_at: null, labels: {}, abnormal_categories: [] }],
         });
       }
-      if (url.endsWith("/settings")) {
-        return json(settingsResponse());
-      }
       if (url.endsWith("/log-recordings/storage")) {
         return json({ used_bytes: 256, max_bytes: 10737418240, used_percent: 1, warning_threshold_percent: 80, warning: false, full: false });
       }
       if (url.includes("/log-recordings?")) {
         return json({ items: records, total: records.length, page: 1, page_size: 20 });
-      }
-      if (url.endsWith("/log-recordings/preview") && init?.method === "POST") {
-        expect(JSON.parse(String(init.body))).toEqual({ namespace: "demo" });
-        return json({ namespace: "demo", pod_count: 1, container_count: 1, allowed: true, reason: null });
-      }
-      if (url.endsWith("/log-recordings") && init?.method === "POST") {
-        expect(new Headers(init.headers).get("X-CSRF-Token")).toBe("csrf-token-at-least-16");
-        expect(JSON.parse(String(init.body))).toMatchObject({
-          name: "支付 500 复现",
-          namespace: "demo",
-          duration_source: "system_default",
-        });
-        return json(baseRecording, 201);
       }
       if (url.endsWith("/log-recordings/1/stop") && init?.method === "POST") {
         records[0] = { ...baseRecording, status: "completed", ended_at: "2026-08-09T10:03:00Z", stop_reason: "user_stopped" };
@@ -112,15 +76,10 @@ describe("LogRecordingsPage", () => {
 
     render(<LogRecordingsPage />);
 
-    expect(await screen.findByText("使用系统默认（20 分钟）")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "支付 500 复现" } });
-    fireEvent.change(screen.getAllByLabelText("名称空间")[0], { target: { value: "demo" } });
-    fireEvent.click(screen.getByRole("button", { name: "开始记录" }));
+    expect(await screen.findByText("日志存储：256 B / 10.0 GiB (1%)")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始记录" })).not.toBeInTheDocument();
 
-    expect(await screen.findByText("已开始记录")).toBeInTheDocument();
-    expect(screen.getByText(/自动结束倒计时/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "结束记录" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "结束" }));
 
     await waitFor(() => expect(screen.getByText("记录已结束")).toBeInTheDocument());
     expect(screen.getByText("用户手动结束")).toBeInTheDocument();
@@ -135,9 +94,6 @@ describe("LogRecordingsPage", () => {
           executed_at: "2026-08-09T10:00:00Z",
           namespaces: [{ name: "demo", status: "warning", pod_count: 1, abnormal_pod_count: 1, last_inspected_at: null, labels: {}, abnormal_categories: ["log_keyword"] }],
         });
-      }
-      if (url.endsWith("/settings")) {
-        return json(settingsResponse());
       }
       if (url.endsWith("/log-recordings/storage")) {
         return json({ used_bytes: 512, max_bytes: 10737418240, used_percent: 1, warning_threshold_percent: 80, warning: false, full: false });
