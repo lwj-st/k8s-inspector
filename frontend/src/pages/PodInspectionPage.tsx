@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import {
+  ApiClientError,
   createLogRecording,
   discoverNamespacePods,
+  getLogRecording,
   getSettings,
   ignoreWhitelistLogHit,
   listLogRecordings,
@@ -258,12 +260,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     }
 
     let alive = true;
-    void listLogRecordings({ namespace: normalizedNamespace, page: 1, page_size: 20 })
-      .then((result) => {
+    void loadActiveRecording(normalizedNamespace)
+      .then((recording) => {
         if (!alive) {
           return;
         }
-        setActiveRecording(result.items.find((item) => item.status === "recording") ?? null);
+        setActiveRecording(recording);
       })
       .catch(() => {
         if (alive) {
@@ -275,6 +277,11 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       alive = false;
     };
   }, [namespace]);
+
+  async function loadActiveRecording(targetNamespace: string) {
+    const result = await listLogRecordings({ namespace: targetNamespace, page: 1, page_size: 20 });
+    return result.items.find((item) => item.status === "recording") ?? null;
+  }
 
   const filteredNamespaces = useMemo(() => {
     const keyword = namespaceSearch.trim().toLowerCase();
@@ -516,6 +523,27 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         setActiveRecording(null);
         setRecordingMessage(`已停止记录：${stopped.name}`);
       } catch (reason) {
+        if (reason instanceof ApiClientError && reason.status === 409) {
+          try {
+            const latest = await getLogRecording(activeRecording.id);
+            if (latest.status === "recording") {
+              setActiveRecording(latest);
+              setRecordingError("记录仍在运行，请稍后重试停止");
+            } else {
+              setActiveRecording(null);
+              setRecordingMessage(`记录已结束：${latest.name}`);
+            }
+          } catch {
+            const running = await loadActiveRecording(activeRecording.namespace);
+            setActiveRecording(running);
+            if (running) {
+              setRecordingError("记录状态已变化，请稍后重试停止");
+            } else {
+              setRecordingMessage("记录已结束");
+            }
+          }
+          return;
+        }
         setRecordingError(reason instanceof Error ? reason.message : "停止记录失败");
       } finally {
         setRecordingBusy(false);

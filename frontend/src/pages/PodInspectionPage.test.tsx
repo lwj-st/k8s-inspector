@@ -8,6 +8,7 @@ const fetchMock = vi.fn();
 let discoveredPodCount: number | null = 3;
 let configuredMaxLogPods = 120;
 let failDemoPodDiscovery = false;
+let stopRecordingConflict = false;
 
 describe("PodInspectionPage", () => {
   beforeEach(() => {
@@ -15,6 +16,7 @@ describe("PodInspectionPage", () => {
     discoveredPodCount = 3;
     configuredMaxLogPods = 120;
     failDemoPodDiscovery = false;
+    stopRecordingConflict = false;
     const savedTargets = [
       {
         id: 1,
@@ -421,6 +423,14 @@ describe("PodInspectionPage", () => {
       }
 
       if (url.endsWith("/log-recordings/1/stop") && init?.method === "POST") {
+        if (stopRecordingConflict) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "日志记录已结束" }), {
+              status: 409,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -444,6 +454,36 @@ describe("PodInspectionPage", () => {
               created_by: "admin",
               created_at: "2026-07-19T10:00:00Z",
               updated_at: "2026-07-19T10:05:00Z",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/log-recordings/1") && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 1,
+              name: "支付 500 复现",
+              namespace: "demo",
+              note: "点击支付后复现",
+              status: "auto_completed",
+              started_at: "2026-07-19T10:00:00Z",
+              ended_at: "2026-07-19T10:20:00Z",
+              planned_end_at: "2026-07-19T10:20:00Z",
+              duration_source: "system_default",
+              duration_minutes: 20,
+              stop_reason: "system_default_timeout",
+              pod_count: 2,
+              container_count: 3,
+              raw_line_count: 1,
+              folded_line_count: 1,
+              total_bytes: 20,
+              truncated: false,
+              created_by: "admin",
+              created_at: "2026-07-19T10:00:00Z",
+              updated_at: "2026-07-19T10:20:00Z",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
@@ -554,6 +594,26 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "停止记录" }));
     expect(await screen.findByText("已停止记录：支付 500 复现")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+  });
+
+  it("recovers when stopping a recording that already ended in the backend", async () => {
+    stopRecordingConflict = true;
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始记录日志" }));
+
+    await screen.findByRole("heading", { name: "开始记录日志" });
+    fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "支付 500 复现" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
+    expect(await screen.findByRole("button", { name: "停止记录" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "停止记录" }));
+
+    expect(await screen.findByText("记录已结束：支付 500 复现")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.queryByText(/记录日志失败/)).not.toBeInTheDocument();
   });
 
   it("runs saved label inspection point on the first click after resolving pod count", async () => {
