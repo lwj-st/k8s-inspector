@@ -453,6 +453,53 @@ class MockInspectionProvider:
             truncated=len(text.encode("utf-8")) > len(accepted),
         )
 
+    def discover_log_recording_pods(
+        self,
+        namespace: str,
+        *,
+        max_pods: int,
+    ) -> LogRecordingSnapshot:
+        if max_pods < 1:
+            raise LogPodLimitExceededError(1, max_pods)
+        collected_at = datetime.now(timezone.utc)
+        pod = build_demo_pod()
+        return LogRecordingSnapshot(
+            namespace=namespace,
+            collected_at=collected_at,
+            pods=[
+                LogRecordingPodSnapshot(
+                    namespace=namespace,
+                    pod_uid=f"mock-{namespace}-demo-api-uid",
+                    pod_name=pod["name"],
+                    node_name="node-a",
+                    owner_kind="Deployment",
+                    owner_name="demo-api",
+                    container_names=["demo-api"],
+                    entries=[],
+                )
+            ],
+        )
+
+    def stream_log_recording_entries(
+        self,
+        namespace: str,
+        *,
+        pod_uid: str,
+        pod_name: str,
+        container_name: str,
+        since_time: datetime,
+    ):
+        collected_at = datetime.now(timezone.utc)
+        for line in ("database connection refused", "Authorization: Bearer mock-token"):
+            yield LogRecordingEntry(
+                pod_uid=pod_uid,
+                pod_name=pod_name,
+                container_name=container_name,
+                log_time=collected_at,
+                text=line,
+                collected_at=collected_at,
+            )
+
     def run_pod_inspection(self, namespace: str, pod_name: str) -> dict:
         pod = build_demo_pod(pod_name)
         if pod["name"] != pod_name:

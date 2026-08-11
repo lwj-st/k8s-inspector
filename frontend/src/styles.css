@@ -1180,13 +1180,14 @@ a {
 
 .log-recordings-page .button-danger {
   border-color: transparent;
-  background: #dc2626;
+  background: var(--danger);
   color: #fff;
   box-shadow: none;
 }
 
 .log-recordings-page .button-danger:hover:not(:disabled) {
-  background: #b91c1c;
+  background: var(--danger);
+  filter: brightness(0.92);
 }
 
 .log-recordings-page .compact-table td:last-child {
@@ -1314,6 +1315,7 @@ a {
 }
 
 .log-recording-pod-summary strong {
+  color: var(--ink);
   line-height: 1.35;
 }
 
@@ -1349,7 +1351,7 @@ a {
 
 .log-recording-container-list .log-recording-container-active {
   border-color: transparent;
-  background: #2563eb;
+  background: var(--teal);
   color: #fff;
 }
 
@@ -2801,7 +2803,7 @@ summary:focus-visible {
 .user-menu button:hover,
 .user-menu button:focus-visible {
   background: var(--sidebar-active);
-  color: #1d4ed8;
+  color: var(--teal);
 }
 
 .theme-menu-group {
@@ -2819,7 +2821,7 @@ summary:focus-visible {
 
 .theme-segment {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
@@ -2834,7 +2836,7 @@ summary:focus-visible {
 
 .user-menu .theme-segment-option-active {
   background: var(--sidebar-active);
-  color: #1d4ed8;
+  color: var(--teal);
   font-weight: 800;
 }
 

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from collections.abc import Iterator
 from typing import Protocol
 
 from app.schemas.v1_1 import CollectionLimits, ProviderCollectionRequest, ProviderCollectionResult
@@ -113,6 +114,23 @@ class InspectionProvider(Protocol):
         max_total_bytes: int,
         max_pod_bytes: int,
     ) -> LogRecordingSnapshot: ...
+
+    def discover_log_recording_pods(
+        self,
+        namespace: str,
+        *,
+        max_pods: int,
+    ) -> LogRecordingSnapshot: ...
+
+    def stream_log_recording_entries(
+        self,
+        namespace: str,
+        *,
+        pod_uid: str,
+        pod_name: str,
+        container_name: str,
+        since_time: datetime,
+    ) -> Iterator[LogRecordingEntry]: ...
 
     def collect_resources(
         self,

@@ -39,7 +39,7 @@ def test_log_recording_crud_and_stop_flow(client) -> None:
     created = _create_recording(client)
     scheduler = client.app.state.log_recording_scheduler
     assert scheduler.get_job(f"v1.3:log-recording:auto-stop:{created['id']}") is not None
-    assert scheduler.get_job(f"v1.3:log-recording:collect:{created['id']}") is not None
+    assert scheduler.get_job(f"v1.3:log-recording:collect:{created['id']}") is None
 
     assert created["name"] == "复现支付失败"
     assert created["namespace"] == "demo"
@@ -346,6 +346,36 @@ def test_log_recording_pods_and_logs_read_existing_rows(client) -> None:
     assert logs_response.json()["redacted"] is True
     assert logs_response.json()["items"][0]["repeat_count"] == 2
     assert "Bearer ***" in logs_response.json()["items"][0]["line_text"]
+
+
+def test_log_recording_pods_return_container_names_without_log_lines(client) -> None:
+    created = _create_recording(client)
+
+    with client.app.state.session_factory() as session:
+        pod = LogRecordingPod(
+            recording_id=created["id"],
+            namespace="demo",
+            pod_uid="pod-uid-empty",
+            pod_name="demo-api-empty",
+            node_name="node-a",
+            owner_kind="Deployment",
+            owner_name="demo-api",
+            container_names='["api","sidecar"]',
+            container_count=2,
+            raw_line_count=0,
+            folded_line_count=0,
+            keyword_hit_count=0,
+            deleted_during_recording=False,
+            truncated=False,
+            collection_error=None,
+        )
+        session.add(pod)
+        session.commit()
+
+    pods_response = client.get(f"/api/v1/log-recordings/{created['id']}/pods")
+    assert pods_response.status_code == 200
+    empty_pod = next(item for item in pods_response.json() if item["pod_name"] == "demo-api-empty")
+    assert empty_pod["container_names"] == ["api", "sidecar"]
 
 
 def test_log_recording_not_found_routes_return_404(client) -> None:

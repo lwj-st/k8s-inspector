@@ -16,10 +16,20 @@ const navItems = [
 
 const themeStorageKey = "k8s-inspector:theme";
 type AppTheme = "light" | "dark";
+type ThemePreference = AppTheme | "system";
 
-function readStoredTheme(): AppTheme {
+function readStoredThemePreference(): ThemePreference {
   try {
-    return window.localStorage?.getItem(themeStorageKey) === "dark" ? "dark" : "light";
+    const value = window.localStorage?.getItem(themeStorageKey);
+    return value === "light" || value === "dark" || value === "system" ? value : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function resolveSystemTheme(): AppTheme {
+  try {
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   } catch {
     return "light";
   }
@@ -37,7 +47,7 @@ export function AppLayout() {
   const { session, logout } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<AppTheme>(readStoredTheme);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(readStoredThemePreference);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -51,13 +61,30 @@ export function AppLayout() {
   const userInitial = username.trim().slice(0, 1).toUpperCase() || "管";
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+
+    function applyTheme() {
+      document.documentElement.dataset.theme = themePreference === "system" ? resolveSystemTheme() : themePreference;
+      document.documentElement.dataset.themePreference = themePreference;
+    }
+
+    applyTheme();
     try {
-      window.localStorage?.setItem(themeStorageKey, theme);
+      window.localStorage?.setItem(themeStorageKey, themePreference);
     } catch {
       // 主题切换仍然对当前页面生效。
     }
-  }, [theme]);
+
+    if (themePreference !== "system" || !mediaQuery) {
+      return;
+    }
+    mediaQuery.addEventListener?.("change", applyTheme);
+    mediaQuery.addListener?.(applyTheme);
+    return () => {
+      mediaQuery.removeEventListener?.("change", applyTheme);
+      mediaQuery.removeListener?.(applyTheme);
+    };
+  }, [themePreference]);
 
   useEffect(() => {
     if (!userMenuOpen) {
@@ -192,18 +219,27 @@ export function AppLayout() {
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={theme === "light"}
-                    className={theme === "light" ? "theme-segment-option theme-segment-option-active" : "theme-segment-option"}
-                    onClick={() => setTheme("light")}
+                    aria-checked={themePreference === "system"}
+                    className={themePreference === "system" ? "theme-segment-option theme-segment-option-active" : "theme-segment-option"}
+                    onClick={() => setThemePreference("system")}
+                  >
+                    系统
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={themePreference === "light"}
+                    className={themePreference === "light" ? "theme-segment-option theme-segment-option-active" : "theme-segment-option"}
+                    onClick={() => setThemePreference("light")}
                   >
                     亮色
                   </button>
                   <button
                     type="button"
                     role="menuitemradio"
-                    aria-checked={theme === "dark"}
-                    className={theme === "dark" ? "theme-segment-option theme-segment-option-active" : "theme-segment-option"}
-                    onClick={() => setTheme("dark")}
+                    aria-checked={themePreference === "dark"}
+                    className={themePreference === "dark" ? "theme-segment-option theme-segment-option-active" : "theme-segment-option"}
+                    onClick={() => setThemePreference("dark")}
                   >
                     暗色
                   </button>

@@ -59,6 +59,7 @@ class LogRecordingPod(Base):
     node_name: Mapped[str | None] = mapped_column(String(253))
     owner_kind: Mapped[str | None] = mapped_column(String(128))
     owner_name: Mapped[str | None] = mapped_column(String(253))
+    container_names: Mapped[str | None] = mapped_column(Text)
     container_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     raw_line_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     folded_line_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

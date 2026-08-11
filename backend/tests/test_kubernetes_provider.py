@@ -913,7 +913,7 @@ def test_kubernetes_provider_lists_namespace_label_candidates() -> None:
     ]
 
 
-def test_kubernetes_provider_collects_log_recording_snapshot_with_since_time() -> None:
+def test_kubernetes_provider_collects_log_recording_snapshot_with_since_seconds() -> None:
     provider = _make_provider()
     since_time = datetime(2026, 8, 9, 10, 0, tzinfo=timezone.utc)
     pod = SimpleNamespace(
@@ -932,7 +932,7 @@ def test_kubernetes_provider_collects_log_recording_snapshot_with_since_time() -
 
     def read_log(**kwargs):
         if kwargs["container"] == "api":
-            return "2026-08-09T10:00:01Z api started\n2026-08-09T10:00:02Z error happened"
+            return "2026-08-09T09:59:59Z too old\n2026-08-09T10:00:01Z api started\n2026-08-09T10:00:02Z error happened"
         return ""
 
     provider.core.read_namespaced_pod_log = Mock(side_effect=read_log)
@@ -946,14 +946,14 @@ def test_kubernetes_provider_collects_log_recording_snapshot_with_since_time() -
     )
 
     provider.core.list_namespaced_pod.assert_called_once_with(namespace="demo", _request_timeout=5)
-    assert provider.core.read_namespaced_pod_log.call_args_list[0].kwargs == {
-        "name": "demo-api-0",
-        "namespace": "demo",
-        "container": "api",
-        "since_time": "2026-08-09T10:00:00Z",
-        "timestamps": True,
-        "_request_timeout": 5,
-    }
+    log_kwargs = provider.core.read_namespaced_pod_log.call_args_list[0].kwargs
+    assert log_kwargs["name"] == "demo-api-0"
+    assert log_kwargs["namespace"] == "demo"
+    assert log_kwargs["container"] == "api"
+    assert "since_time" not in log_kwargs
+    assert log_kwargs["since_seconds"] >= 1
+    assert log_kwargs["timestamps"] is True
+    assert log_kwargs["_request_timeout"] == 5
     assert snapshot.namespace == "demo"
     assert snapshot.pods[0].pod_uid == "uid-0"
     assert snapshot.pods[0].owner_kind == "ReplicaSet"

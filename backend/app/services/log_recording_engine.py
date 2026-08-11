@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from threading import Event, Lock, Thread
+from time import sleep
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
@@ -8,6 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
 
 from app.models import LogRecording
+from app.providers.base import LogRecordingPodSnapshot, LogRecordingSnapshot
 from app.schemas.log_recording import (
     LogRecordingDurationSource,
     LogRecordingStatus,
@@ -15,6 +19,17 @@ from app.schemas.log_recording import (
 )
 from app.security.lifespan import register_lifespan_hook
 from app.services import log_recording_service
+
+
+@dataclass
+class RecordingStreamHandle:
+    stop_event: Event
+    manager_thread: Thread
+    worker_threads: dict[tuple[str, str, str], Thread] = field(default_factory=dict)
+
+
+_STREAM_LOCK = Lock()
+_STREAMS: dict[int, RecordingStreamHandle] = {}
 
 
 def schedule_auto_stop(app, recording_id: int) -> None:
@@ -26,7 +41,7 @@ def schedule_auto_stop(app, recording_id: int) -> None:
         if row is None or row.status != LogRecordingStatus.recording.value:
             return
         _add_auto_stop_job(scheduler, app, row)
-        _add_collection_job(scheduler, app, row.id)
+        _start_streaming(app, row.id)
 
 
 def remove_auto_stop(app, recording_id: int) -> None:
@@ -39,6 +54,7 @@ def remove_auto_stop(app, recording_id: int) -> None:
     collection_job = scheduler.get_job(_collection_job_id(recording_id))
     if collection_job is not None:
         scheduler.remove_job(collection_job.id)
+    _stop_streaming(recording_id)
 
 
 def auto_stop_recording(app, recording_id: int) -> None:
@@ -151,6 +167,7 @@ def _stop_engine(app) -> None:
     if scheduler is not None and scheduler.running:
         scheduler.shutdown(wait=False)
     app.state.log_recording_scheduler = None
+    _stop_all_streams()
 
 
 def _add_auto_stop_job(
@@ -188,6 +205,147 @@ def _add_collection_job(
         coalesce=True,
         next_run_time=datetime.now(timezone.utc),
     )
+
+
+def _start_streaming(app, recording_id: int) -> None:
+    with _STREAM_LOCK:
+        existing = _STREAMS.get(recording_id)
+        if existing is not None and existing.manager_thread.is_alive():
+            return
+        stop_event = Event()
+        handle = RecordingStreamHandle(
+            stop_event=stop_event,
+            manager_thread=Thread(
+                target=_stream_recording_manager,
+                args=(app, recording_id, stop_event),
+                name=f"log-recording-stream-manager-{recording_id}",
+                daemon=True,
+            ),
+        )
+        _STREAMS[recording_id] = handle
+        handle.manager_thread.start()
+
+
+def _stop_streaming(recording_id: int) -> None:
+    with _STREAM_LOCK:
+        handle = _STREAMS.pop(recording_id, None)
+    if handle is not None:
+        handle.stop_event.set()
+
+
+def _stop_all_streams() -> None:
+    with _STREAM_LOCK:
+        handles = list(_STREAMS.values())
+        _STREAMS.clear()
+    for handle in handles:
+        handle.stop_event.set()
+
+
+def _stream_recording_manager(app, recording_id: int, stop_event: Event) -> None:
+    while not stop_event.is_set():
+        with app.state.session_factory() as session:
+            row = session.get(LogRecording, recording_id)
+            if row is None or row.status != LogRecordingStatus.recording.value:
+                stop_event.set()
+                break
+            policy = log_recording_service._policy(session)
+            namespaces = log_recording_service._recording_namespaces(row)
+            since_time = log_recording_service._ensure_utc(
+                log_recording_service._last_collection_time(session, row) or row.started_at
+            )
+        for namespace in namespaces:
+            if stop_event.is_set():
+                break
+            try:
+                snapshot = app.state.provider.discover_log_recording_pods(
+                    namespace,
+                    max_pods=policy.max_namespace_pods,
+                )
+            except Exception:
+                continue
+            with app.state.session_factory() as session:
+                result = log_recording_service.ingest_recording_snapshot(session, recording_id, snapshot)
+                if result.status != LogRecordingStatus.recording:
+                    stop_event.set()
+                    break
+            _ensure_container_streams(app, recording_id, snapshot, since_time, stop_event)
+        for _ in range(15):
+            if stop_event.is_set():
+                break
+            sleep(1)
+    _stop_streaming(recording_id)
+
+
+def _ensure_container_streams(
+    app,
+    recording_id: int,
+    snapshot: LogRecordingSnapshot,
+    since_time: datetime,
+    stop_event: Event,
+) -> None:
+    with _STREAM_LOCK:
+        handle = _STREAMS.get(recording_id)
+        if handle is None:
+            return
+        for pod in snapshot.pods:
+            for container_name in pod.container_names:
+                key = (snapshot.namespace, pod.pod_name, container_name)
+                current = handle.worker_threads.get(key)
+                if current is not None and current.is_alive():
+                    continue
+                worker = Thread(
+                    target=_stream_container_worker,
+                    args=(app, recording_id, snapshot.namespace, pod, container_name, since_time, stop_event),
+                    name=f"log-recording-stream-{recording_id}-{pod.pod_name}-{container_name}",
+                    daemon=True,
+                )
+                handle.worker_threads[key] = worker
+                worker.start()
+
+
+def _stream_container_worker(
+    app,
+    recording_id: int,
+    namespace: str,
+    pod: LogRecordingPodSnapshot,
+    container_name: str,
+    since_time: datetime,
+    stop_event: Event,
+) -> None:
+    try:
+        for entry in app.state.provider.stream_log_recording_entries(
+            namespace,
+            pod_uid=pod.pod_uid,
+            pod_name=pod.pod_name,
+            container_name=container_name,
+            since_time=since_time,
+        ):
+            if stop_event.is_set():
+                break
+            snapshot = LogRecordingSnapshot(
+                namespace=namespace,
+                collected_at=entry.collected_at,
+                pods=[
+                    LogRecordingPodSnapshot(
+                        namespace=namespace,
+                        pod_uid=pod.pod_uid,
+                        pod_name=pod.pod_name,
+                        node_name=pod.node_name,
+                        owner_kind=pod.owner_kind,
+                        owner_name=pod.owner_name,
+                        container_names=pod.container_names,
+                        entries=[entry],
+                    )
+                ],
+                total_bytes=len(entry.text.encode("utf-8")),
+            )
+            with app.state.session_factory() as session:
+                result = log_recording_service.ingest_recording_snapshot(session, recording_id, snapshot)
+                if result.status != LogRecordingStatus.recording:
+                    stop_event.set()
+                    break
+    except Exception:
+        return
 
 
 def _auto_stop_reason(duration_source: str) -> str:

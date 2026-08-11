@@ -287,6 +287,38 @@ def collect_recording_once(
         return _collect_recording_once_locked(session, provider, recording_id)
 
 
+def ingest_recording_snapshot(
+    session: Session,
+    recording_id: int,
+    snapshot: LogRecordingSnapshot,
+) -> LogRecordingRead:
+    lock = _collection_lock(recording_id)
+    with lock:
+        row = get_recording(session, recording_id)
+        if row.status != LogRecordingStatus.recording.value:
+            return LogRecordingRead.model_validate(row)
+        policy = _policy(session)
+        if row.total_bytes >= policy.max_recording_bytes:
+            row.truncated = True
+            row.status = LogRecordingStatus.auto_completed.value
+            row.stop_reason = LogRecordingStopReason.max_recording_bytes_reached.value
+            row.ended_at = _utcnow()
+            row.updated_at = row.ended_at
+            session.commit()
+            session.refresh(row)
+            return LogRecordingRead.model_validate(row)
+        _ingest_snapshot(session, row, snapshot)
+        if row.total_bytes >= policy.max_recording_bytes:
+            row.truncated = True
+            row.status = LogRecordingStatus.auto_completed.value
+            row.stop_reason = LogRecordingStopReason.max_recording_bytes_reached.value
+            row.ended_at = _utcnow()
+            row.updated_at = row.ended_at
+        session.commit()
+        session.refresh(row)
+        return LogRecordingRead.model_validate(row)
+
+
 def _collect_recording_once_locked(
     session: Session,
     provider: InspectionProvider,
@@ -362,7 +394,7 @@ def list_pods(session: Session, recording_id: int) -> list[LogRecordingPodRead]:
     ).all()
     return [
         LogRecordingPodRead.model_validate(row).model_copy(
-            update={"container_names": _pod_container_names(session, recording_id, row.pod_name)}
+            update={"container_names": _stored_pod_container_names(row) or _pod_container_names(session, recording_id, row.pod_name)}
         )
         for row in rows
     ]
@@ -423,6 +455,7 @@ def match_recording_templates(session: Session, recording_id: int) -> list[LogRe
     )
     templates = _log_templates(session)
     created: list[LogRecordingTemplateMatch] = []
+    seen_matches: set[tuple[int, str, str, str, str]] = set()
     for template in templates:
         context = _build_recording_template_context(session, recording, template)
         matched = match_template(
@@ -439,15 +472,23 @@ def match_recording_templates(session: Session, recording_id: int) -> list[LogRe
         for evidence in matched["evidence"]:
             if evidence.get("type") != "log_keyword":
                 continue
+            pod_name = str(evidence.get("pod") or "")
+            container_name = str(evidence.get("container_name") or "")
+            keyword = _evidence_keyword(evidence)
+            matched_context = str(evidence.get("context_text") or evidence.get("matched_text") or "")
+            match_key = (template.id, pod_name, container_name, keyword, matched_context)
+            if match_key in seen_matches:
+                continue
+            seen_matches.add(match_key)
             match_row = LogRecordingTemplateMatch(
                 recording_id=recording_id,
                 template_id=template.id,
                 template_name=template.name,
                 severity=_template_severity(template),
-                pod_name=str(evidence.get("pod") or ""),
-                container_name=str(evidence.get("container_name") or ""),
-                keyword=_evidence_keyword(evidence),
-                matched_context=str(evidence.get("context_text") or evidence.get("matched_text") or ""),
+                pod_name=pod_name,
+                container_name=container_name,
+                keyword=keyword,
+                matched_context=matched_context,
                 suggestion=template.suggestion,
                 created_at=_utcnow(),
             )
@@ -482,6 +523,7 @@ def _ingest_snapshot(session: Session, row: LogRecording, snapshot: LogRecording
                 node_name=pod_snapshot.node_name,
                 owner_kind=pod_snapshot.owner_kind,
                 owner_name=pod_snapshot.owner_name,
+                container_names=_encode_container_names(pod_snapshot.container_names),
                 container_count=len(pod_snapshot.container_names),
                 raw_line_count=0,
                 folded_line_count=0,
@@ -497,6 +539,7 @@ def _ingest_snapshot(session: Session, row: LogRecording, snapshot: LogRecording
             pod_row.node_name = pod_snapshot.node_name
             pod_row.owner_kind = pod_snapshot.owner_kind
             pod_row.owner_name = pod_snapshot.owner_name
+            pod_row.container_names = _encode_container_names(pod_snapshot.container_names)
             pod_row.container_count = len(pod_snapshot.container_names)
             pod_row.deleted_during_recording = False
         pod_row.truncated = pod_row.truncated or pod_snapshot.truncated
@@ -742,6 +785,23 @@ def _pod_container_names(session: Session, recording_id: int, pod_name: str) -> 
             .distinct()
         ).all()
     )
+
+
+def _encode_container_names(container_names: list[str]) -> str:
+    names = [name for name in dict.fromkeys(container_names) if name]
+    return json.dumps(names, ensure_ascii=False)
+
+
+def _stored_pod_container_names(pod: LogRecordingPod) -> list[str]:
+    if not pod.container_names:
+        return []
+    try:
+        parsed = json.loads(pod.container_names)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if item]
 
 
 def _latest_folded_line(

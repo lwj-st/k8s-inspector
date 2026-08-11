@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from datetime import datetime, timezone
 
 from kubernetes import client, config
@@ -498,7 +499,7 @@ class KubernetesInspectionProvider:
                         name=pod_name,
                         namespace=namespace,
                         container=container.name,
-                        since_time=self._k8s_log_time(since_time),
+                        since_seconds=self._k8s_since_seconds(since_time),
                         timestamps=True,
                         _request_timeout=self.settings.k8s_request_timeout,
                     )
@@ -508,6 +509,7 @@ class KubernetesInspectionProvider:
                 except (TypeError, ValueError) as exc:
                     failures.append(f"{container.name}: {type(exc).__name__}: {exc}")
                     continue
+                raw_log = self._filter_timestamped_log_range(raw_log, since_time, None)
                 sample, accepted, sample_truncated = self._bounded_log_sample(raw_log, allowed)
                 pod_bytes += accepted
                 collected_total += accepted
@@ -543,6 +545,86 @@ class KubernetesInspectionProvider:
             total_bytes=collected_total,
             truncated=truncated,
         )
+
+    def discover_log_recording_pods(
+        self,
+        namespace: str,
+        *,
+        max_pods: int,
+    ) -> LogRecordingSnapshot:
+        collected_at = datetime.now(timezone.utc)
+        try:
+            pods = self.core.list_namespaced_pod(
+                namespace=namespace,
+                _request_timeout=self.settings.k8s_request_timeout,
+            ).items
+        except ApiException as exc:
+            reason = exc.reason or str(exc)
+            raise RuntimeError(f"无法读取名称空间 {namespace} 的 Pod 名单：{reason}") from exc
+        if len(pods) > max_pods:
+            raise LogPodLimitExceededError(len(pods), max_pods)
+        snapshots: list[LogRecordingPodSnapshot] = []
+        for pod in pods:
+            containers = list(pod.spec.containers if pod.spec and pod.spec.containers else [])
+            owner_kind, owner_name = self._pod_owner(pod)
+            snapshots.append(
+                LogRecordingPodSnapshot(
+                    namespace=namespace,
+                    pod_uid=str(getattr(pod.metadata, "uid", None) or pod.metadata.name),
+                    pod_name=str(pod.metadata.name),
+                    node_name=getattr(pod.spec, "node_name", None) if pod.spec else None,
+                    owner_kind=owner_kind,
+                    owner_name=owner_name,
+                    container_names=[container.name for container in containers],
+                    entries=[],
+                )
+            )
+        return LogRecordingSnapshot(namespace=namespace, collected_at=collected_at, pods=snapshots)
+
+    def stream_log_recording_entries(
+        self,
+        namespace: str,
+        *,
+        pod_uid: str,
+        pod_name: str,
+        container_name: str,
+        since_time: datetime,
+    ) -> Iterator[LogRecordingEntry]:
+        collected_at = datetime.now(timezone.utc)
+        response = self.core.read_namespaced_pod_log(
+            name=pod_name,
+            namespace=namespace,
+            container=container_name,
+            since_seconds=self._k8s_since_seconds(since_time),
+            follow=True,
+            timestamps=True,
+            _preload_content=False,
+            _request_timeout=self.settings.k8s_request_timeout,
+        )
+        try:
+            for raw_line in response.stream(decode_content=True):
+                if not raw_line:
+                    continue
+                line = raw_line.decode("utf-8", errors="ignore") if isinstance(raw_line, bytes) else str(raw_line)
+                line = line.rstrip("\r\n")
+                log_time, text = self._split_log_timestamp(line)
+                if not text:
+                    continue
+                yield LogRecordingEntry(
+                    pod_uid=pod_uid,
+                    pod_name=pod_name,
+                    container_name=container_name,
+                    log_time=log_time,
+                    text=text,
+                    collected_at=collected_at,
+                )
+        finally:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            release = getattr(response, "release_conn", None)
+            if callable(release):
+                release()
 
     def _k8s_since_time(self, value: datetime) -> datetime:
         return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value

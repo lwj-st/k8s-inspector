@@ -1,21 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import {
-  ApiClientError,
   createLogRecording,
   discoverNamespacePods,
-  getLogRecording,
   getSettings,
   ignoreWhitelistLogHit,
-  listLogRecordings,
   previewLogRecording,
   runNamespaceLogInspection,
-  stopLogRecording,
 } from "../api/client";
 import type {
   InspectedPod,
   KeywordHit,
-  LogRecording,
   LogRecordingDurationSource,
   LogTimeRangeRequest,
   SavedInspectionTarget,
@@ -49,10 +44,6 @@ type IgnoreDraft = {
   note: string;
 };
 type RecordingDurationMode = LogRecordingDurationSource;
-type RecordingLists = {
-  running: LogRecording[];
-  ended: LogRecording[];
-};
 
 function logHitContext(hit: KeywordHit) {
   const context = hit.context_text?.trim();
@@ -169,19 +160,6 @@ function formatLogCollectionTimeRange(data: ReturnType<typeof useRunNamespaceIns
   return `${startText} 至 ${endText}`;
 }
 
-function formatRecordingTime(value?: string | null) {
-  if (!value) {
-    return "服务端未返回";
-  }
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-}
-
-function displayRecordingNamespaces(recording: LogRecording) {
-  const namespaces = (recording as LogRecording & { namespaces?: string[] }).namespaces ?? [];
-  return namespaces.length > 0 ? namespaces : [recording.namespace];
-}
-
 export function PodInspectionPage({ initialScopeMode = "single" }: PodInspectionPageProps) {
   const [namespaceSearch, setNamespaceSearch] = useState("");
   const [namespace, setNamespace] = useState("");
@@ -205,10 +183,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [selectedRecordingNamespaces, setSelectedRecordingNamespaces] = useState<string[]>([]);
   const [recordDurationMode, setRecordDurationMode] = useState<RecordingDurationMode>("system_default");
   const [recordDurationMinutes, setRecordDurationMinutes] = useState(20);
-  const [runningRecordings, setRunningRecordings] = useState<LogRecording[]>([]);
-  const [endedRecordings, setEndedRecordings] = useState<LogRecording[]>([]);
   const [recordingBusy, setRecordingBusy] = useState(false);
-  const [stoppingRecordingIds, setStoppingRecordingIds] = useState<number[]>([]);
   const [recordingMessage, setRecordingMessage] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [selectedRangePodName, setSelectedRangePodName] = useState<string | null>(null);
@@ -263,43 +238,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       alive = false;
     };
   }, []);
-
-  useEffect(() => {
-    const normalizedNamespace = namespace.trim();
-    if (!normalizedNamespace) {
-      setRunningRecordings([]);
-      setEndedRecordings([]);
-      return;
-    }
-
-    let alive = true;
-    void loadRecordingLists(normalizedNamespace)
-      .then((recordings) => {
-        if (!alive) {
-          return;
-        }
-        setRunningRecordings(recordings.running);
-        setEndedRecordings(recordings.ended);
-      })
-      .catch(() => {
-        if (alive) {
-          setRunningRecordings([]);
-          setEndedRecordings([]);
-        }
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [namespace]);
-
-  async function loadRecordingLists(targetNamespace: string): Promise<RecordingLists> {
-    const result = await listLogRecordings({ namespace: targetNamespace, page: 1, page_size: 20 });
-    return {
-      running: result.items.filter((item) => item.status === "recording"),
-      ended: result.items.filter((item) => item.status !== "recording").slice(0, 10),
-    };
-  }
 
   const filteredNamespaces = useMemo(() => {
     const keyword = namespaceSearch.trim().toLowerCase();
@@ -555,45 +493,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     );
   }
 
-  async function handleStopRecording(recording: LogRecording) {
-    setStoppingRecordingIds((current) => [...current, recording.id]);
-    setRecordingError(null);
-    setRecordingMessage(null);
-    try {
-      const stopped = await stopLogRecording(recording.id);
-      setRunningRecordings((current) => current.filter((item) => item.id !== recording.id));
-      setEndedRecordings((current) => [stopped, ...current.filter((item) => item.id !== stopped.id)].slice(0, 10));
-      setRecordingMessage(`已停止记录：${stopped.name}`);
-    } catch (reason) {
-      if (reason instanceof ApiClientError && reason.status === 409) {
-        try {
-          const latest = await getLogRecording(recording.id);
-          if (latest.status === "recording") {
-            setRunningRecordings((current) => current.map((item) => item.id === latest.id ? latest : item));
-            setRecordingError("记录仍在运行，请稍后重试结束");
-          } else {
-            setRunningRecordings((current) => current.filter((item) => item.id !== recording.id));
-            setEndedRecordings((current) => [latest, ...current.filter((item) => item.id !== latest.id)].slice(0, 10));
-            setRecordingMessage(`记录已结束：${latest.name}`);
-          }
-        } catch {
-          const latestLists = await loadRecordingLists(recording.namespace);
-          setRunningRecordings(latestLists.running);
-          setEndedRecordings(latestLists.ended);
-          if (latestLists.running.some((item) => item.id === recording.id)) {
-            setRecordingError("记录状态已变化，请稍后重试结束");
-          } else {
-            setRecordingMessage("记录已结束");
-          }
-        }
-        return;
-      }
-      setRecordingError(reason instanceof Error ? reason.message : "停止记录失败");
-    } finally {
-      setStoppingRecordingIds((current) => current.filter((item) => item !== recording.id));
-    }
-  }
-
   async function handleStartRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedName = recordName.trim();
@@ -630,12 +529,8 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
         duration_source: recordDurationMode,
         duration_minutes: recordDurationMode === "system_default" ? null : recordDurationMinutes,
       });
-      setRunningRecordings((current) => [
-        created,
-        ...current.filter((item) => item.id !== created.id),
-      ]);
       setRecordPanelOpen(false);
-      setRecordingMessage(`已开始日志记录：${created.name}`);
+      setRecordingMessage(`已开始日志记录：${created.name}。请到“日志记录”页面查看和停止。`);
     } catch (reason) {
       setRecordingError(reason instanceof Error ? reason.message : "开始记录失败");
     } finally {
@@ -1124,72 +1019,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                 </button>
               </div>
             </form>
-          ) : null}
-          {runningRecordings.length > 0 ? (
-            <div className="running-recording-panel">
-              <div className="section-header">
-                <div>
-                  <h4>进行中的日志记录</h4>
-                  <span className="section-tip">离开页面后再次回来，会按当前名称空间重新加载。</span>
-                </div>
-              </div>
-              <div className="running-recording-list">
-                {runningRecordings.map((recording) => {
-                  const stopping = stoppingRecordingIds.includes(recording.id);
-                  return (
-                    <article key={recording.id} className="running-recording-item">
-                      <div>
-                        <strong>{recording.name}</strong>
-                        <div className="diagnosis-inline-metrics">
-                          <span>名称空间：{recording.namespace}</span>
-                          {displayRecordingNamespaces(recording).length > 1 ? <span>包含：{displayRecordingNamespaces(recording).join("、")}</span> : null}
-                          <span>开始：{formatRecordingTime(recording.started_at)}</span>
-                          <span>计划结束：{formatRecordingTime(recording.planned_end_at)}</span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="mini-button button-danger"
-                        onClick={() => void handleStopRecording(recording)}
-                        disabled={stopping}
-                      >
-                        {stopping ? "结束中..." : "结束记录"}
-                      </button>
-                    </article>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-          {endedRecordings.length > 0 ? (
-            <div className="recording-history-panel">
-              <div className="section-header">
-                <div>
-                  <h4>最近结束的日志记录</h4>
-                  <span className="section-tip">点击查看日志可进入记录详情和搜索。</span>
-                </div>
-              </div>
-              <div className="running-recording-list">
-                {endedRecordings.map((recording) => (
-                  <article key={recording.id} className="running-recording-item">
-                    <div>
-                      <strong>{recording.name}</strong>
-                      <div className="diagnosis-inline-metrics">
-                        <span>状态：{recording.status === "failed" ? "失败" : "已结束"}</span>
-                        {recording.error_message ? <span>原因：{recording.error_message}</span> : null}
-                        {displayRecordingNamespaces(recording).length > 1 ? <span>包含：{displayRecordingNamespaces(recording).join("、")}</span> : <span>名称空间：{recording.namespace}</span>}
-                        <span>开始：{formatRecordingTime(recording.started_at)}</span>
-                        <span>结束：{formatRecordingTime(recording.ended_at)}</span>
-                        <span>日志行：{recording.folded_line_count} / {recording.raw_line_count}</span>
-                      </div>
-                    </div>
-                    <a className="mini-button text-button" href={`/log-recordings?recordingId=${recording.id}`}>
-                      查看日志
-                    </a>
-                  </article>
-                ))}
-              </div>
-            </div>
           ) : null}
           {recordingMessage ? <p className="inline-note">{recordingMessage}</p> : null}
           {recordingError ? <p className="inline-note">记录日志失败：{recordingError}</p> : null}

@@ -8,6 +8,7 @@ import { getRouterBasename } from "./config";
 
 const fetchMock = vi.fn();
 let localStorageData: Record<string, string> = {};
+let systemPrefersDark = false;
 
 function authenticatedSession() {
   return {
@@ -22,7 +23,18 @@ function authenticatedSession() {
 describe("App", () => {
   beforeEach(() => {
     localStorageData = {};
+    systemPrefersDark = false;
     vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      matches: query === "(prefers-color-scheme: dark)" ? systemPrefersDark : false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
     Object.defineProperty(window, "localStorage", {
       configurable: true,
       value: {
@@ -84,6 +96,7 @@ describe("App", () => {
     cleanup();
     localStorageData = {};
     delete document.documentElement.dataset.theme;
+    delete document.documentElement.dataset.themePreference;
     vi.unstubAllGlobals();
     fetchMock.mockReset();
   });
@@ -195,7 +208,8 @@ describe("App", () => {
     const userCard = await screen.findByRole("button", { name: /admin/ });
     await user.click(userCard);
     expect(screen.getByText("主题切换")).toBeInTheDocument();
-    expect(screen.getByRole("menuitemradio", { name: "亮色" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("menuitemradio", { name: "系统" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("menuitemradio", { name: "亮色" })).toHaveAttribute("aria-checked", "false");
     expect(screen.getByRole("menuitemradio", { name: "暗色" })).toHaveAttribute("aria-checked", "false");
     expect(screen.getByRole("menuitem", { name: "更改密码" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "注销" })).toBeInTheDocument();
@@ -221,6 +235,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
     expect(document.documentElement.dataset.theme).toBe("light");
+    expect(document.documentElement.dataset.themePreference).toBe("system");
 
     await user.click(screen.getByRole("button", { name: /admin/ }));
     await user.click(screen.getByRole("menuitemradio", { name: "暗色" }));
@@ -239,6 +254,21 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
     expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("follows the operating system theme when system preference is selected", async () => {
+    systemPrefersDark = true;
+    localStorageData["k8s-inspector:theme"] = "system";
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+      basename: getRouterBasename(""),
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.dataset.themePreference).toBe("system");
   });
 
   it("logs out from the user menu", async () => {

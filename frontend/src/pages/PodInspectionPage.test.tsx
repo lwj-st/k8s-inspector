@@ -8,9 +8,6 @@ const fetchMock = vi.fn();
 let discoveredPodCount: number | null = 3;
 let configuredMaxLogPods = 120;
 let failDemoPodDiscovery = false;
-let stopRecordingConflict = false;
-let listRunningRecording = false;
-let listEndedRecording = false;
 
 describe("PodInspectionPage", () => {
   beforeEach(() => {
@@ -18,9 +15,6 @@ describe("PodInspectionPage", () => {
     discoveredPodCount = 3;
     configuredMaxLogPods = 120;
     failDemoPodDiscovery = false;
-    stopRecordingConflict = false;
-    listRunningRecording = false;
-    listEndedRecording = false;
     const savedTargets = [
       {
         id: 1,
@@ -53,67 +47,6 @@ describe("PodInspectionPage", () => {
         return Promise.resolve(
           new Response(
             JSON.stringify({ inspection_policy: { max_log_pods: configuredMaxLogPods } }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
-        );
-      }
-
-      if (url.includes("/log-recordings?") && (!init || init.method === undefined)) {
-        const items = [
-          ...(listRunningRecording
-            ? [{
-              id: 7,
-              name: "接口恢复的记录",
-              namespace: "demo",
-              namespaces: ["demo"],
-              note: null,
-              status: "recording",
-              started_at: "2026-07-19T10:00:00Z",
-              ended_at: null,
-              planned_end_at: "2026-07-19T10:20:00Z",
-              duration_source: "system_default",
-              duration_minutes: 20,
-              stop_reason: null,
-              pod_count: 2,
-              container_count: 3,
-              raw_line_count: 0,
-              folded_line_count: 0,
-              total_bytes: 0,
-              truncated: false,
-              created_by: "admin",
-              created_at: "2026-07-19T10:00:00Z",
-              updated_at: "2026-07-19T10:00:00Z",
-            }]
-            : []),
-          ...(listEndedRecording
-            ? [{
-              id: 8,
-              name: "已结束的复现记录",
-              namespace: "demo",
-              namespaces: ["demo"],
-              note: null,
-              status: "completed",
-              started_at: "2026-07-19T09:00:00Z",
-              ended_at: "2026-07-19T09:10:00Z",
-              planned_end_at: "2026-07-19T09:20:00Z",
-              duration_source: "system_default",
-              duration_minutes: 20,
-              stop_reason: "user_stopped",
-              pod_count: 2,
-              container_count: 3,
-              raw_line_count: 12,
-              folded_line_count: 6,
-              total_bytes: 200,
-              truncated: false,
-              created_by: "admin",
-              created_at: "2026-07-19T09:00:00Z",
-              updated_at: "2026-07-19T09:10:00Z",
-            }]
-            : []),
-        ];
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({ items, total: items.length, page: 1, page_size: 20 }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
         );
@@ -480,76 +413,6 @@ describe("PodInspectionPage", () => {
         );
       }
 
-      if (url.endsWith("/log-recordings/1/stop") && init?.method === "POST") {
-        if (stopRecordingConflict) {
-          return Promise.resolve(
-            new Response(JSON.stringify({ detail: "日志记录已结束" }), {
-              status: 409,
-              headers: { "Content-Type": "application/json" },
-            }),
-          );
-        }
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              id: 1,
-              name: "支付 500 复现",
-              namespace: "demo",
-              namespaces: ["demo"],
-              note: "点击支付后复现",
-              status: "completed",
-              started_at: "2026-07-19T10:00:00Z",
-              ended_at: "2026-07-19T10:05:00Z",
-              planned_end_at: "2026-07-19T10:20:00Z",
-              duration_source: "preset",
-              duration_minutes: 20,
-              stop_reason: "user_stopped",
-              pod_count: 2,
-              container_count: 3,
-              raw_line_count: 1,
-              folded_line_count: 1,
-              total_bytes: 20,
-              truncated: false,
-              created_by: "admin",
-              created_at: "2026-07-19T10:00:00Z",
-              updated_at: "2026-07-19T10:05:00Z",
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
-        );
-      }
-
-      if (url.endsWith("/log-recordings/1") && (!init || init.method === undefined)) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              id: 1,
-              name: "支付 500 复现",
-              namespace: "demo",
-              namespaces: ["demo"],
-              note: "点击支付后复现",
-              status: "auto_completed",
-              started_at: "2026-07-19T10:00:00Z",
-              ended_at: "2026-07-19T10:20:00Z",
-              planned_end_at: "2026-07-19T10:20:00Z",
-              duration_source: "system_default",
-              duration_minutes: 20,
-              stop_reason: "system_default_timeout",
-              pod_count: 2,
-              container_count: 3,
-              raw_line_count: 1,
-              folded_line_count: 1,
-              total_bytes: 20,
-              truncated: false,
-              created_by: "admin",
-              created_at: "2026-07-19T10:00:00Z",
-              updated_at: "2026-07-19T10:20:00Z",
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
-        );
-      }
-
       throw new Error(`Unexpected request: ${url}`);
     });
   });
@@ -624,7 +487,7 @@ describe("PodInspectionPage", () => {
     });
   });
 
-  it("starts and stops reproduction log recording inside the log inspection page", async () => {
+  it("starts reproduction log recording from the log inspection page without showing recording lists", async () => {
     render(<PodInspectionPage initialScopeMode="all" />);
 
     await screen.findByRole("option", { name: "demo" });
@@ -636,10 +499,11 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("记录备注"), { target: { value: "点击支付后复现" } });
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
 
-    expect(await screen.findByText("已开始日志记录：支付 500 复现")).toBeInTheDocument();
-    expect(screen.getByText("进行中的日志记录")).toBeInTheDocument();
+    expect(await screen.findByText("已开始日志记录：支付 500 复现。请到“日志记录”页面查看和停止。")).toBeInTheDocument();
+    expect(screen.queryByText("进行中的日志记录")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近结束的日志记录")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "结束记录" })).not.toBeInTheDocument();
 
     const createRequest = fetchMock.mock.calls.find(
       ([input, init]) => String(input).endsWith("/log-recordings") && init?.method === "POST",
@@ -652,10 +516,6 @@ describe("PodInspectionPage", () => {
       duration_source: "system_default",
       duration_minutes: null,
     });
-
-    fireEvent.click(screen.getByRole("button", { name: "结束记录" }));
-    expect(await screen.findByText("已停止记录：支付 500 复现")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
   });
 
   it("starts recordings after selecting namespaces in the recording tree", async () => {
@@ -671,7 +531,7 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByLabelText("记录名称空间 prod"));
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
 
-    expect(await screen.findByText("已开始日志记录：批量复现")).toBeInTheDocument();
+    expect(await screen.findByText("已开始日志记录：批量复现。请到“日志记录”页面查看和停止。")).toBeInTheDocument();
     const createRequests = fetchMock.mock.calls.filter(
       ([input, init]) => String(input).endsWith("/log-recordings") && init?.method === "POST",
     );
@@ -681,55 +541,20 @@ describe("PodInspectionPage", () => {
       namespace: "demo",
       namespaces: ["demo", "prod"],
     });
-    expect(screen.getByText("包含：demo、prod")).toBeInTheDocument();
+    expect(screen.queryByText("包含：demo、prod")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "日志记录" })).toHaveAttribute("href", "/log-recordings");
   });
 
-  it("loads running recordings as a list after returning to the log inspection page", async () => {
-    listRunningRecording = true;
+  it("does not load recording lists when namespace changes on the log inspection page", async () => {
     render(<PodInspectionPage initialScopeMode="all" />);
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
 
-    expect(await screen.findByText("进行中的日志记录")).toBeInTheDocument();
-    expect(screen.getByText("接口恢复的记录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
-  });
-
-  it("shows ended recordings history inside the log inspection page", async () => {
-    listEndedRecording = true;
-    render(<PodInspectionPage initialScopeMode="all" />);
-
-    await screen.findByRole("option", { name: "demo" });
-    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-
-    expect(await screen.findByText("最近结束的日志记录")).toBeInTheDocument();
-    expect(screen.getByText("已结束的复现记录")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "查看日志" })).toHaveAttribute(
-      "href",
-      "/log-recordings?recordingId=8",
-    );
-  });
-
-  it("recovers when stopping a recording that already ended in the backend", async () => {
-    stopRecordingConflict = true;
-    render(<PodInspectionPage initialScopeMode="all" />);
-
-    await screen.findByRole("option", { name: "demo" });
-    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.click(screen.getByRole("button", { name: "记录日志" }));
-
-    await screen.findByRole("heading", { name: "记录日志" });
-    fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "支付 500 复现" } });
-    fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
-    expect(await screen.findByRole("button", { name: "结束记录" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "结束记录" }));
-
-    expect(await screen.findByText("记录已结束：支付 500 复现")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
-    expect(screen.queryByText(/记录日志失败/)).not.toBeInTheDocument();
+    expect(screen.queryByText("进行中的日志记录")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近结束的日志记录")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes("/log-recordings?") && !init?.method)).toBe(false);
   });
 
   it("runs saved label inspection point on the first click after resolving pod count", async () => {

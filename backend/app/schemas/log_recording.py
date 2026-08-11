@@ -157,6 +157,19 @@ class LogRecordingPodRead(LogRecordingContract):
     collection_error: str | None = None
     container_names: list[str] = Field(default_factory=list)
 
+    @field_validator("container_names", mode="before")
+    @classmethod
+    def parse_container_names(cls, value: object) -> object:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except ValueError:
+                return []
+            return parsed if isinstance(parsed, list) else []
+        return value
+
 
 class LogRecordingLineRead(LogRecordingContract):
     id: int
