@@ -52,6 +52,15 @@ describe("PodInspectionPage", () => {
         );
       }
 
+      if (url.includes("/log-recordings?") && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ items: [], total: 0, page: 1, page_size: 20 }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       if (url.endsWith("/discovery/namespaces")) {
         return Promise.resolve(
           new Response(
@@ -374,6 +383,73 @@ describe("PodInspectionPage", () => {
         );
       }
 
+      if (url.endsWith("/log-recordings/preview") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ namespace: "demo", pod_count: 2, container_count: 3, allowed: true, reason: null }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/log-recordings") && init?.method === "POST") {
+        const payload = JSON.parse(String(init.body));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 1,
+              status: "recording",
+              started_at: "2026-07-19T10:00:00Z",
+              ended_at: null,
+              planned_end_at: "2026-07-19T10:20:00Z",
+              stop_reason: null,
+              pod_count: 2,
+              container_count: 3,
+              raw_line_count: 0,
+              folded_line_count: 0,
+              total_bytes: 0,
+              truncated: false,
+              created_by: "admin",
+              created_at: "2026-07-19T10:00:00Z",
+              updated_at: "2026-07-19T10:00:00Z",
+              ...payload,
+              duration_minutes: payload.duration_minutes ?? 20,
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
+      if (url.endsWith("/log-recordings/1/stop") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 1,
+              name: "支付 500 复现",
+              namespace: "demo",
+              note: "点击支付后复现",
+              status: "completed",
+              started_at: "2026-07-19T10:00:00Z",
+              ended_at: "2026-07-19T10:05:00Z",
+              planned_end_at: "2026-07-19T10:20:00Z",
+              duration_source: "preset",
+              duration_minutes: 20,
+              stop_reason: "user_stopped",
+              pod_count: 2,
+              container_count: 3,
+              raw_line_count: 1,
+              folded_line_count: 1,
+              total_bytes: 20,
+              truncated: false,
+              created_by: "admin",
+              created_at: "2026-07-19T10:00:00Z",
+              updated_at: "2026-07-19T10:05:00Z",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+
       throw new Error(`Unexpected request: ${url}`);
     });
   });
@@ -448,6 +524,38 @@ describe("PodInspectionPage", () => {
     });
   });
 
+  it("starts and stops reproduction log recording inside the log inspection page", async () => {
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "开始记录日志" }));
+
+    expect(await screen.findByRole("heading", { name: "开始记录日志" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "支付 500 复现" } });
+    fireEvent.change(screen.getByLabelText("记录备注"), { target: { value: "点击支付后复现" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
+
+    expect(await screen.findByText("已开始记录：支付 500 复现")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "停止记录" })).toBeInTheDocument();
+
+    const createRequest = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith("/log-recordings") && init?.method === "POST",
+    );
+    expect(createRequest).toBeDefined();
+    expect(JSON.parse(String(createRequest?.[1]?.body))).toMatchObject({
+      name: "支付 500 复现",
+      namespace: "demo",
+      note: "点击支付后复现",
+      duration_source: "system_default",
+      duration_minutes: null,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "停止记录" }));
+    expect(await screen.findByText("已停止记录：支付 500 复现")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+  });
+
   it("runs saved label inspection point on the first click after resolving pod count", async () => {
     render(<PodInspectionPage />);
 
@@ -494,6 +602,15 @@ describe("PodInspectionPage", () => {
 
       if (url.endsWith("/inspection-targets") && (!init || init.method === undefined)) {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.includes("/log-recordings?") && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [], total: 0, page: 1, page_size: 20 }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
       }
 
       if (url.endsWith("/discovery/namespaces/demo/labels")) {

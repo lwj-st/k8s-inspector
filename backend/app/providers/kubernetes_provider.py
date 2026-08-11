@@ -376,13 +376,16 @@ class KubernetesInspectionProvider:
                         "_request_timeout": self.settings.k8s_request_timeout,
                     }
                     if since_time is not None:
-                        log_kwargs["since_time"] = self._k8s_since_time(since_time)
+                        if until_time is None:
+                            log_kwargs["since_seconds"] = self._k8s_since_seconds(since_time)
+                        else:
+                            log_kwargs["since_time"] = self._k8s_log_time(since_time)
                     if until_time is not None:
                         log_kwargs["timestamps"] = True
                     raw_log = self.core.read_namespaced_pod_log(
                         **log_kwargs,
                     )
-                except ApiException:
+                except (ApiException, TypeError, ValueError):
                     continue
                 if until_time is not None:
                     raw_log = self._filter_timestamped_log_until(raw_log, until_time)
@@ -540,6 +543,14 @@ class KubernetesInspectionProvider:
 
     def _k8s_since_time(self, value: datetime) -> datetime:
         return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+    def _k8s_log_time(self, value: datetime) -> str:
+        return self._k8s_since_time(value).isoformat().replace("+00:00", "Z")
+
+    def _k8s_since_seconds(self, value: datetime) -> int:
+        since_time = self._k8s_since_time(value)
+        seconds = int((datetime.now(timezone.utc) - since_time).total_seconds())
+        return max(1, seconds)
 
     def _parse_timestamped_log_lines(
         self,

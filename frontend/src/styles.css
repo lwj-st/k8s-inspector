@@ -1455,6 +1455,49 @@ a {
   min-width: 0;
 }
 
+.log-time-range-panel {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+}
+
+.log-inspection-action-row {
+  padding-top: 2px;
+}
+
+.log-inspection-action-row button {
+  min-width: 128px;
+}
+
+.recording-inline-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.recording-inline-panel .section-header {
+  margin-bottom: 0;
+}
+
+.recording-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.recording-note-field {
+  grid-column: 1 / -1;
+}
+
+.recording-note-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
 .quick-target-grid,
 .stack-list,
 .alert-list,
@@ -3633,6 +3676,11 @@ summary:focus-visible {
   .entry-form-grid.entry-form-grid-compact textarea {
     width: 100%;
     box-sizing: border-box;
+  }
+
+  .log-time-range-panel,
+  .recording-form-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

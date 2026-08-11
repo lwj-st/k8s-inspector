@@ -1,7 +1,23 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
-import { discoverNamespacePods, getSettings, ignoreWhitelistLogHit, runNamespaceLogInspection } from "../api/client";
-import type { InspectedPod, KeywordHit, LogTimeRangeRequest, SavedInspectionTarget } from "../api/types";
+import {
+  createLogRecording,
+  discoverNamespacePods,
+  getSettings,
+  ignoreWhitelistLogHit,
+  listLogRecordings,
+  previewLogRecording,
+  runNamespaceLogInspection,
+  stopLogRecording,
+} from "../api/client";
+import type {
+  InspectedPod,
+  KeywordHit,
+  LogRecording,
+  LogRecordingDurationSource,
+  LogTimeRangeRequest,
+  SavedInspectionTarget,
+} from "../api/types";
 import { ConfirmDeleteButton } from "../components/ConfirmDeleteButton";
 import { KeyValueList } from "../components/KeyValueList";
 import { StatusBadge } from "../components/StatusBadge";
@@ -30,6 +46,7 @@ type IgnoreDraft = {
   keyword: string;
   note: string;
 };
+type RecordingDurationMode = LogRecordingDurationSource;
 
 function logHitContext(hit: KeywordHit) {
   const context = hit.context_text?.trim();
@@ -146,6 +163,14 @@ function formatLogCollectionTimeRange(data: ReturnType<typeof useRunNamespaceIns
   return `${startText} 至 ${endText}`;
 }
 
+function formatRecordingTime(value?: string | null) {
+  if (!value) {
+    return "服务端未返回";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
 export function PodInspectionPage({ initialScopeMode = "single" }: PodInspectionPageProps) {
   const [namespaceSearch, setNamespaceSearch] = useState("");
   const [namespace, setNamespace] = useState("");
@@ -163,6 +188,15 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [recentLogMinutes, setRecentLogMinutes] = useState(15);
   const [customLogStart, setCustomLogStart] = useState(defaultCustomLogStart);
   const [customLogEnd, setCustomLogEnd] = useState(defaultCustomLogEnd);
+  const [recordPanelOpen, setRecordPanelOpen] = useState(false);
+  const [recordName, setRecordName] = useState("");
+  const [recordNote, setRecordNote] = useState("");
+  const [recordDurationMode, setRecordDurationMode] = useState<RecordingDurationMode>("system_default");
+  const [recordDurationMinutes, setRecordDurationMinutes] = useState(20);
+  const [activeRecording, setActiveRecording] = useState<LogRecording | null>(null);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const [recordingMessage, setRecordingMessage] = useState<string | null>(null);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const [selectedRangePodName, setSelectedRangePodName] = useState<string | null>(null);
   const [targetName, setTargetName] = useState("");
   const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
@@ -215,6 +249,32 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    const normalizedNamespace = namespace.trim();
+    if (!normalizedNamespace) {
+      setActiveRecording(null);
+      return;
+    }
+
+    let alive = true;
+    void listLogRecordings({ namespace: normalizedNamespace, page: 1, page_size: 20 })
+      .then((result) => {
+        if (!alive) {
+          return;
+        }
+        setActiveRecording(result.items.find((item) => item.status === "recording") ?? null);
+      })
+      .catch(() => {
+        if (alive) {
+          setActiveRecording(null);
+        }
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [namespace]);
 
   const filteredNamespaces = useMemo(() => {
     const keyword = namespaceSearch.trim().toLowerCase();
@@ -446,6 +506,78 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     );
   }
 
+  async function handleToggleRecording() {
+    if (activeRecording) {
+      setRecordingBusy(true);
+      setRecordingError(null);
+      setRecordingMessage(null);
+      try {
+        const stopped = await stopLogRecording(activeRecording.id);
+        setActiveRecording(null);
+        setRecordingMessage(`已停止记录：${stopped.name}`);
+      } catch (reason) {
+        setRecordingError(reason instanceof Error ? reason.message : "停止记录失败");
+      } finally {
+        setRecordingBusy(false);
+      }
+      return;
+    }
+
+    if (!namespace.trim()) {
+      setRecordingError("请先选择名称空间");
+      return;
+    }
+    setRecordingError(null);
+    setRecordingMessage(null);
+    setRecordPanelOpen(true);
+    if (!recordName.trim()) {
+      setRecordName(`${namespace.trim()} 复现记录`);
+    }
+  }
+
+  async function handleStartRecording(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedNamespace = namespace.trim();
+    const normalizedName = recordName.trim();
+    if (!normalizedNamespace) {
+      setRecordingError("请先选择名称空间");
+      return;
+    }
+    if (!normalizedName) {
+      setRecordingError("请填写日志名称");
+      return;
+    }
+    if (recordDurationMode !== "system_default" && (!Number.isInteger(recordDurationMinutes) || recordDurationMinutes < 1)) {
+      setRecordingError("记录时长必须是正整数分钟");
+      return;
+    }
+
+    setRecordingBusy(true);
+    setRecordingError(null);
+    setRecordingMessage(null);
+    try {
+      const preview = await previewLogRecording(normalizedNamespace);
+      if (!preview.allowed) {
+        setRecordingError(preview.reason ?? "当前名称空间不允许开始记录");
+        return;
+      }
+      const created = await createLogRecording({
+        name: normalizedName,
+        namespace: normalizedNamespace,
+        note: recordNote.trim() || null,
+        duration_source: recordDurationMode,
+        duration_minutes: recordDurationMode === "system_default" ? null : recordDurationMinutes,
+      });
+      setActiveRecording(created);
+      setRecordPanelOpen(false);
+      setRecordingMessage(`已开始记录：${created.name}`);
+    } catch (reason) {
+      setRecordingError(reason instanceof Error ? reason.message : "开始记录失败");
+    } finally {
+      setRecordingBusy(false);
+    }
+  }
+
   function openIgnoreLogHit(hit: KeywordHit) {
     if (!currentPod) {
       return;
@@ -655,6 +787,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const currentRunLabel = scopeMode === "single" ? "巡检单个 Pod" : "日志巡检";
   const listTitle = scopeMode === "single" ? "最近使用范围" : "Pod 列表";
   const activeLogTimeRangeText = formatLogCollectionTimeRange(namespaceInspection.data);
+  const recordingButtonText = recordingBusy ? "处理中..." : activeRecording ? "停止记录" : "开始记录日志";
 
   return (
     <section className="page-section">
@@ -758,7 +891,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           ) : null}
 
           {scopeMode !== "single" ? (
-            <div className="compact-subpanel label-selector-panel">
+            <div className="compact-subpanel log-time-range-panel">
               <label className="label-selector-field">
                 日志时间范围
                 <select
@@ -807,7 +940,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             </div>
           ) : null}
 
-          <div className="button-row">
+          <div className="button-row log-inspection-action-row">
             <button
               type="button"
               onClick={() => void handleRunInspection()}
@@ -819,9 +952,104 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             >
               {podInspection.loading || namespaceInspection.loading ? "巡检中..." : currentRunLabel}
             </button>
+            <button
+              type="button"
+              className={activeRecording ? "button-danger" : "button-success"}
+              onClick={() => void handleToggleRecording()}
+              disabled={recordingBusy || !namespace.trim()}
+            >
+              {recordingButtonText}
+            </button>
           </div>
-              {namespaceLoading ? <p className="inline-note">名称空间发现中...</p> : null}
-              {logLimitError ? <p className="inline-note">日志采集上限读取失败：{logLimitError}。范围日志巡检已安全阻断。</p> : null}
+          {recordPanelOpen && !activeRecording ? (
+            <form className="recording-inline-panel" onSubmit={(event) => void handleStartRecording(event)}>
+              <div className="section-header">
+                <div>
+                  <h4>开始记录日志</h4>
+                  <span className="section-tip">记录开始后，系统只保存该名称空间后续新增日志。</span>
+                </div>
+              </div>
+              <div className="recording-form-grid">
+                <label>
+                  日志名称
+                  <input
+                    aria-label="日志名称"
+                    value={recordName}
+                    onChange={(event) => setRecordName(event.target.value)}
+                    placeholder="例如：支付 500 复现"
+                  />
+                </label>
+                <label>
+                  名称空间
+                  <input aria-label="记录名称空间" value={namespace.trim()} readOnly />
+                </label>
+                <label>
+                  记录时长
+                  <select
+                    aria-label="记录时长"
+                    value={recordDurationMode === "system_default" ? "system_default" : String(recordDurationMinutes)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === "system_default") {
+                        setRecordDurationMode("system_default");
+                        return;
+                      }
+                      setRecordDurationMode(value === "custom" ? "custom" : "preset");
+                      if (value !== "custom") {
+                        setRecordDurationMinutes(Number(value));
+                      }
+                    }}
+                  >
+                    <option value="system_default">使用系统默认</option>
+                    {[5, 10, 20, 30, 60].map((minutes) => (
+                      <option key={minutes} value={minutes}>
+                        {minutes} 分钟
+                      </option>
+                    ))}
+                    <option value="custom">自定义</option>
+                  </select>
+                </label>
+                {recordDurationMode === "custom" ? (
+                  <label>
+                    自定义分钟数
+                    <input
+                      aria-label="自定义记录分钟数"
+                      type="number"
+                      min={1}
+                      value={recordDurationMinutes}
+                      onChange={(event) => setRecordDurationMinutes(Number(event.target.value))}
+                    />
+                  </label>
+                ) : null}
+                <label className="recording-note-field">
+                  备注
+                  <textarea
+                    aria-label="记录备注"
+                    value={recordNote}
+                    onChange={(event) => setRecordNote(event.target.value)}
+                    placeholder="可填写复现步骤、业务场景或工单号"
+                  />
+                </label>
+              </div>
+              <div className="button-row">
+                <button type="submit" className="button-success" disabled={recordingBusy}>
+                  {recordingBusy ? "开始中..." : "确认开始"}
+                </button>
+                <button type="button" className="text-button mini-button" onClick={() => setRecordPanelOpen(false)} disabled={recordingBusy}>
+                  取消
+                </button>
+              </div>
+            </form>
+          ) : null}
+          {activeRecording ? (
+            <p className="inline-note">
+              正在记录：{activeRecording.name}；计划结束：{formatRecordingTime(activeRecording.planned_end_at)}
+            </p>
+          ) : null}
+          {recordingMessage ? <p className="inline-note">{recordingMessage}</p> : null}
+          {recordingError ? <p className="inline-note">记录日志失败：{recordingError}</p> : null}
+          {namespaceLoading ? <p className="inline-note">名称空间发现中...</p> : null}
+          {logLimitError ? <p className="inline-note">日志采集上限读取失败：{logLimitError}。范围日志巡检已安全阻断。</p> : null}
           {namespaceError ? <p>名称空间读取失败：{namespaceError}</p> : null}
           {scopeMode === "single" && podOptionsError ? <p>Pod 下拉加载失败：{podOptionsError}</p> : null}
         </div>

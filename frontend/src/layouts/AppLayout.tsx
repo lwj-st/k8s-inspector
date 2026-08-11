@@ -8,7 +8,6 @@ const navItems = [
   { to: "/", label: "问题工作台", end: true },
   { to: "/inspections/status", label: "状态巡检" },
   { to: "/inspections/namespace", label: "日志巡检" },
-  { to: "/log-recordings", label: "复现日志" },
   { to: "/diagnosis", label: "模板检查" },
   { to: "/templates", label: "故障模板" },
   { to: "/whitelists", label: "关键字与白名单" },

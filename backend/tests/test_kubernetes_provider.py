@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from kubernetes.client.exceptions import ApiException
@@ -789,8 +789,35 @@ def test_targeted_log_collection_uses_since_time_and_filters_until_time() -> Non
     assert result.time_range_start == since_time
     assert result.time_range_end == until_time
     provider.core.read_namespaced_pod_log.assert_called_once()
-    assert provider.core.read_namespaced_pod_log.call_args.kwargs["since_time"] == since_time
+    assert provider.core.read_namespaced_pod_log.call_args.kwargs["since_time"] == "2026-08-09T10:00:00Z"
     assert provider.core.read_namespaced_pod_log.call_args.kwargs["timestamps"] is True
+
+
+def test_targeted_log_collection_uses_since_seconds_for_recent_range() -> None:
+    provider = _make_provider()
+    since_time = datetime.now(timezone.utc) - timedelta(minutes=15)
+    provider.core.read_namespaced_pod = Mock(
+        return_value=SimpleNamespace(
+            spec=SimpleNamespace(containers=[SimpleNamespace(name="api")]),
+            status=SimpleNamespace(container_statuses=[]),
+        )
+    )
+    provider.core.read_namespaced_pod_log = Mock(return_value="ERROR recent window")
+
+    result = provider.collect_pod_log_samples(
+        "demo",
+        ["target-api-0"],
+        CollectionLimits(),
+        since_time=since_time,
+    )
+
+    assert result.container_samples == {
+        "target-api-0": {"api": "ERROR recent window"}
+    }
+    log_kwargs = provider.core.read_namespaced_pod_log.call_args.kwargs
+    assert "since_time" not in log_kwargs
+    assert 1 <= log_kwargs["since_seconds"] <= 16 * 60
+    assert "timestamps" not in log_kwargs
 
 
 def test_log_pod_limit_rejects_before_any_log_or_pod_read() -> None:
