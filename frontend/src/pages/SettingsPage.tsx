@@ -1325,7 +1325,15 @@ export function SettingsPage() {
                     </div>
                     <div className="required-component-actions">
                       <StatusBadge status={component.enabled ? "enabled" : "disabled"} />
-                      <button type="button" className="danger-button mini-button" onClick={() => removeRequiredComponent(index)}>移除</button>
+                      <ConfirmPopoverButton
+                        className="danger-button mini-button"
+                        title="确认移除"
+                        message={`确定要从巡检策略中移除必需组件“${component.name}”吗？保存巡检策略后生效。`}
+                        confirmText="确认移除"
+                        onConfirm={() => removeRequiredComponent(index)}
+                      >
+                        移除
+                      </ConfirmPopoverButton>
                     </div>
                   </article>
                 ))}

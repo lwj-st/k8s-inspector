@@ -585,6 +585,19 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("已选择组件定位")).toHaveTextContent("DaemonSet");
     await user.click(screen.getByRole("button", { name: "加入策略" }));
     expect(screen.getByText("入口控制器")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "移除" }));
+    expect(screen.getByText("确定要从巡检策略中移除必需组件“入口控制器”吗？保存巡检策略后生效。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.getByText("入口控制器")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "移除" }));
+    await user.click(screen.getByRole("button", { name: "确认移除" }));
+    expect(screen.queryByText("入口控制器")).not.toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("选择组件"),
+      "ingress-nginx|daemonset|app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller",
+    );
+    await user.click(screen.getByRole("button", { name: "加入策略" }));
+    expect(screen.getByText("入口控制器")).toBeInTheDocument();
 
     const concurrency = screen.getByLabelText("名称空间并发数");
     await user.clear(concurrency);
