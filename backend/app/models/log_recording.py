@@ -105,6 +105,7 @@ class LogRecordingTemplateMatch(Base):
     template_id: Mapped[int | None] = mapped_column(ForeignKey("fault_templates.id", ondelete="SET NULL"))
     template_name: Mapped[str] = mapped_column(String(128), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    namespace: Mapped[str | None] = mapped_column(String(253))
     pod_name: Mapped[str] = mapped_column(String(253), nullable=False)
     container_name: Mapped[str] = mapped_column(String(253), nullable=False)
     keyword: Mapped[str] = mapped_column(String(255), nullable=False)

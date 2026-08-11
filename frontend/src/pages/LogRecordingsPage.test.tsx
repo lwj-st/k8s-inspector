@@ -6,6 +6,7 @@ import { LogRecordingsPage } from "./LogRecordingsPage";
 
 const fetchMock = vi.fn();
 const scrollIntoViewMock = vi.fn();
+const writeTextMock = vi.fn();
 
 const baseRecording = {
   id: 1,
@@ -37,6 +38,10 @@ function json(data: unknown, status = 200) {
 describe("LogRecordingsPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    });
     Element.prototype.scrollIntoView = scrollIntoViewMock;
     configureApiSession("csrf-token-at-least-16");
   });
@@ -46,6 +51,7 @@ describe("LogRecordingsPage", () => {
     vi.unstubAllGlobals();
     fetchMock.mockReset();
     scrollIntoViewMock.mockReset();
+    writeTextMock.mockReset();
     configureApiSession(null);
   });
 
@@ -142,6 +148,7 @@ describe("LogRecordingsPage", () => {
           template_id: 7,
           template_name: "数据库超时",
           severity: "warning",
+          namespace: "demo",
           pod_name: "api-0",
           container_name: "api",
           keyword: "timeout",
@@ -158,6 +165,9 @@ describe("LogRecordingsPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "查看" }));
     expect(await screen.findByText("api-0")).toBeInTheDocument();
+    expect(screen.getByText(/名称空间：demo/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("api-0"));
     expect(await screen.findByText(/database timeout while checkout/)).toBeInTheDocument();
     expect(screen.getByText(/Bearer \[REDACTED]/)).toBeInTheDocument();
     expect(screen.getByText(/Bearer \[REDACTED]/).closest(".log-recording-line")?.querySelector(".log-recording-repeat")).not.toBeNull();
@@ -172,6 +182,15 @@ describe("LogRecordingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "模板匹配" }));
     const row = await screen.findByText("数据库超时");
-    expect(within(row.closest("tr") as HTMLElement).getByText("检查数据库连接")).toBeInTheDocument();
+    expect(screen.getByText("已命中 1 条模板结果，是否查看？")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("alertdialog", { name: "发现命中模板" })).getByRole("button", { name: "查看" }));
+    await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled());
+    expect(screen.getByRole("columnheader", { name: "命中模板" })).toHaveClass("log-recording-match-heading");
+    const matchRow = row.closest("tr") as HTMLElement;
+    expect(within(matchRow).getByText("demo")).toBeInTheDocument();
+    expect(within(matchRow).getByText("检查数据库连接")).toBeInTheDocument();
+    fireEvent.click(within(matchRow).getByRole("button", { name: "详情" }));
+    const detail = screen.getByText("匹配上下文").closest(".log-recording-match-detail") as HTMLElement;
+    expect(within(detail).getByText("database timeout while checkout")).toBeInTheDocument();
   });
 });

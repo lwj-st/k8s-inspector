@@ -462,6 +462,7 @@ def test_log_recording_template_match_executes_only_log_templates(client) -> Non
     item = response.json()[0]
     assert item["template_id"] == log_template.json()["id"]
     assert item["template_name"] == "数据库连接失败"
+    assert item["namespace"] == "demo"
     assert item["pod_name"] == "demo-api-7c8f6f7c6b-fh2ns"
     assert item["container_name"] == "demo-api"
     assert item["keyword"] == "connection refused"

@@ -1308,6 +1308,19 @@ a {
   box-shadow: none !important;
 }
 
+.log-recording-pod-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.log-recording-copy-button {
+  min-height: 28px !important;
+  padding: 5px 8px !important;
+  box-shadow: none !important;
+}
+
 .log-recording-pod-summary strong,
 .log-recording-pod-summary span {
   min-width: 0;
@@ -1424,6 +1437,26 @@ a {
   font-weight: 800;
 }
 
+.log-recording-match-heading {
+  color: var(--danger);
+}
+
+.log-recording-match-detail {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+}
+
+.log-recording-match-detail code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.6 "SFMono-Regular", Consolas, monospace;
+}
+
 .text-button {
   border: none !important;
   background: transparent !important;
@@ -1535,6 +1568,94 @@ a {
   border: 1px solid var(--line) !important;
   background: var(--paper) !important;
   color: var(--ink) !important;
+}
+
+.confirm-popover-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.confirm-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  z-index: 80;
+  display: grid;
+  min-width: 280px;
+  max-width: min(360px, calc(100vw - 32px));
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+  transform: translateX(-50%);
+}
+
+.confirm-popover::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.confirm-popover-title {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.confirm-popover-title span {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.confirm-popover-message {
+  position: relative;
+  z-index: 1;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.confirm-popover-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-popover-actions button {
+  min-height: 32px !important;
+  padding: 6px 12px !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  font-size: 13px;
+}
+
+[data-theme="dark"] .confirm-popover {
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
 }
 
 .modal-card-wide {

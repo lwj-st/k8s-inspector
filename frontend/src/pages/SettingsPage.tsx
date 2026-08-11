@@ -44,6 +44,7 @@ import type {
   SystemStatus,
 } from "../api/types";
 import { CoveragePanel } from "../components/CoveragePanel";
+import { ConfirmPopoverButton, ConfirmPopoverPrompt } from "../components/ConfirmPopoverButton";
 import { StatusBadge } from "../components/StatusBadge";
 
 type SettingsTab = "plans" | "notifications" | "silence" | "policy" | "status" | "basic";
@@ -269,6 +270,7 @@ export function SettingsPage() {
   const [componentCandidateLoading, setComponentCandidateLoading] = useState(false);
   const [componentCandidateError, setComponentCandidateError] = useState<string | null>(null);
   const [selectedComponentKey, setSelectedComponentKey] = useState("");
+  const [pendingMentionAllConfirm, setPendingMentionAllConfirm] = useState(false);
   const [componentDraft, setComponentDraft] = useState<RequiredComponentPolicy>({
     name: "",
     namespace: "",
@@ -484,9 +486,6 @@ export function SettingsPage() {
   }
 
   async function removePlan(plan: InspectionPlan) {
-    if (!window.confirm(`删除计划“${plan.name}”？历史执行记录会保留。`)) {
-      return;
-    }
     try {
       await perform(async () => {
         await deleteInspectionPlan(plan.id);
@@ -582,9 +581,11 @@ export function SettingsPage() {
   }
 
   function changeMentionAll(enabled: boolean) {
-    if (enabled && !window.confirm("开启后仅 critical 告警会提醒群内所有人，可能造成较强打扰。确认开启吗？")) {
+    if (enabled) {
+      setPendingMentionAllConfirm(true);
       return;
     }
+    setPendingMentionAllConfirm(false);
     setChannelDraft((current) => ({ ...current, mention_all_on_critical: enabled }));
   }
 
@@ -617,9 +618,6 @@ export function SettingsPage() {
   }
 
   async function removeChannel(channel: NotificationChannel) {
-    if (!window.confirm(`删除通知渠道“${channel.name}”？`)) {
-      return;
-    }
     try {
       await perform(async () => {
         await deleteNotificationChannel(channel.id);
@@ -631,9 +629,6 @@ export function SettingsPage() {
   }
 
   async function testChannel(channel: NotificationChannel) {
-    if (!window.confirm(`将向“${channel.name}”发送一条明确标识的测试通知，不会创建问题。继续吗？`)) {
-      return;
-    }
     setSaving(true);
     setMessage(null);
     setActionError(null);
@@ -748,9 +743,6 @@ export function SettingsPage() {
   }
 
   async function removeSilenceWindow(item: MaintenanceSilenceWindow) {
-    if (!window.confirm(`删除静默窗口“${item.name}”？`)) {
-      return;
-    }
     try {
       await perform(async () => {
         await deleteMaintenanceSilenceWindow(item.id);
@@ -1057,7 +1049,17 @@ export function SettingsPage() {
                       </button>
                       <button type="button" onClick={() => editPlan(plan)} disabled={saving}>编辑</button>
                       <button type="button" onClick={() => void togglePlan(plan)} disabled={saving}>{plan.enabled ? "停用" : "启用"}</button>
-                      <button type="button" className="danger-button" onClick={() => void removePlan(plan)} disabled={saving}>删除</button>
+                      <ConfirmPopoverButton
+                        className="danger-button"
+                        disabled={saving}
+                        title="确认删除"
+                        message={`确定要删除计划“${plan.name}”吗？历史执行记录会保留。`}
+                        confirmText="确认删除"
+                        confirmingText="删除中..."
+                        onConfirm={() => removePlan(plan)}
+                      >
+                        删除
+                      </ConfirmPopoverButton>
                     </div>
                   </article>
                 ))}
@@ -1137,10 +1139,29 @@ export function SettingsPage() {
                     <small>签名：{channel.signing_secret_configured ? "已配置（内容始终隐藏）" : "未配置"} · 超时 {channel.timeout_seconds} 秒</small>
                     {channel.type === "feishu_custom_bot" ? <small>仅发送群告警，不接收消息。</small> : null}
                     <div className="button-row">
-                      <button type="button" onClick={() => void testChannel(channel)} disabled={saving}>发送测试</button>
+                      <ConfirmPopoverButton
+                        disabled={saving}
+                        title="确认发送"
+                        message={`将向“${channel.name}”发送一条明确标识的测试通知，不会创建问题。继续吗？`}
+                        confirmText="发送"
+                        confirmingText="发送中..."
+                        onConfirm={() => testChannel(channel)}
+                      >
+                        发送测试
+                      </ConfirmPopoverButton>
                       <button type="button" onClick={() => editChannel(channel)} disabled={saving}>编辑</button>
                       <button type="button" onClick={() => void toggleChannel(channel)} disabled={saving}>{channel.enabled ? "停用" : "启用"}</button>
-                      <button type="button" className="danger-button" onClick={() => void removeChannel(channel)} disabled={saving}>删除</button>
+                      <ConfirmPopoverButton
+                        className="danger-button"
+                        disabled={saving}
+                        title="确认删除"
+                        message={`确定要删除通知渠道“${channel.name}”吗？删除后无法恢复。`}
+                        confirmText="确认删除"
+                        confirmingText="删除中..."
+                        onConfirm={() => removeChannel(channel)}
+                      >
+                        删除
+                      </ConfirmPopoverButton>
                     </div>
                   </article>
                 ))}
@@ -1181,6 +1202,18 @@ export function SettingsPage() {
                   <label className="checkbox-label">
                     <input type="checkbox" checked={channelDraft.mention_all_on_critical} onChange={(event) => changeMentionAll(event.target.checked)} />
                     仅 critical 时提醒所有人（默认关闭）
+                    {pendingMentionAllConfirm ? (
+                      <ConfirmPopoverPrompt
+                        title="确认开启"
+                        message="开启后仅 critical 告警会提醒群内所有人，可能造成较强打扰。确认开启吗？"
+                        confirmText="确认开启"
+                        onCancel={() => setPendingMentionAllConfirm(false)}
+                        onConfirm={() => {
+                          setChannelDraft((current) => ({ ...current, mention_all_on_critical: true }));
+                          setPendingMentionAllConfirm(false);
+                        }}
+                      />
+                    ) : null}
                   </label>
                 </>
               ) : (
@@ -1220,7 +1253,17 @@ export function SettingsPage() {
                     <div className="button-row">
                       <button type="button" onClick={() => editSilenceWindow(item)} disabled={saving}>编辑</button>
                       <button type="button" onClick={() => void toggleSilenceWindow(item)} disabled={saving}>{item.enabled ? "停用" : "启用"}</button>
-                      <button type="button" className="danger-button" onClick={() => void removeSilenceWindow(item)} disabled={saving}>删除</button>
+                      <ConfirmPopoverButton
+                        className="danger-button"
+                        disabled={saving}
+                        title="确认删除"
+                        message={`确定要删除静默窗口“${item.name}”吗？删除后无法恢复。`}
+                        confirmText="确认删除"
+                        confirmingText="删除中..."
+                        onConfirm={() => removeSilenceWindow(item)}
+                      >
+                        删除
+                      </ConfirmPopoverButton>
                     </div>
                   </article>
                 ))}

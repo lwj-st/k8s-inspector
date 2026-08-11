@@ -455,7 +455,13 @@ def match_recording_templates(session: Session, recording_id: int) -> list[LogRe
     )
     templates = _log_templates(session)
     created: list[LogRecordingTemplateMatch] = []
-    seen_matches: set[tuple[int, str, str, str, str]] = set()
+    pod_namespaces = {
+        pod.pod_name: pod.namespace
+        for pod in session.scalars(
+            select(LogRecordingPod).where(LogRecordingPod.recording_id == recording_id)
+        ).all()
+    }
+    seen_matches: set[tuple[int, str, str, str, str, str]] = set()
     for template in templates:
         context = _build_recording_template_context(session, recording, template)
         matched = match_template(
@@ -473,10 +479,11 @@ def match_recording_templates(session: Session, recording_id: int) -> list[LogRe
             if evidence.get("type") != "log_keyword":
                 continue
             pod_name = str(evidence.get("pod") or "")
+            namespace = str(evidence.get("namespace") or pod_namespaces.get(pod_name) or recording.namespace)
             container_name = str(evidence.get("container_name") or "")
             keyword = _evidence_keyword(evidence)
             matched_context = str(evidence.get("context_text") or evidence.get("matched_text") or "")
-            match_key = (template.id, pod_name, container_name, keyword, matched_context)
+            match_key = (template.id, namespace, pod_name, container_name, keyword, matched_context)
             if match_key in seen_matches:
                 continue
             seen_matches.add(match_key)
@@ -485,6 +492,7 @@ def match_recording_templates(session: Session, recording_id: int) -> list[LogRe
                 template_id=template.id,
                 template_name=template.name,
                 severity=_template_severity(template),
+                namespace=namespace,
                 pod_name=pod_name,
                 container_name=container_name,
                 keyword=keyword,
@@ -674,18 +682,16 @@ def _build_recording_template_context(
     ).all()
     for target in template.target_groups or [{"target_ref": "default"}]:
         target_ref = str(target.get("target_ref") or target.get("ref") or "default")
-        target_namespace = target.get("namespace")
-        if target_namespace and target_namespace != recording.namespace:
-            targets[target_ref] = {"namespace": target_namespace, "pods": [], "related_objects": {}}
-            continue
+        target_namespace = str(target.get("namespace") or "")
         pod_pattern = target.get("pod_name_pattern") or target.get("name")
         target_pods = [
             _pod_context(session, recording, pod, template)
             for pod in pods
+            if not target_namespace or pod.namespace == target_namespace
             if not pod_pattern or fnmatchcase(pod.pod_name, str(pod_pattern))
         ]
         targets[target_ref] = {
-            "namespace": recording.namespace,
+            "namespace": target_namespace or recording.namespace,
             "label_selector": target.get("label_selector"),
             "pods": target_pods,
             "related_objects": {},
@@ -714,7 +720,7 @@ def _pod_context(session: Session, recording: LogRecording, pod: LogRecordingPod
             hit.model_dump()
             for hit in keyword_service.match_log_text(
                 session=session,
-                namespace=recording.namespace,
+                namespace=pod.namespace,
                 label_selector=None,
                 pod_name=pod.pod_name,
                 container_name=container_name,
@@ -726,7 +732,7 @@ def _pod_context(session: Session, recording: LogRecording, pod: LogRecordingPod
             hit.model_dump()
             for hit in keyword_service.match_explicit_log_keywords(
                 session=session,
-                namespace=recording.namespace,
+                namespace=pod.namespace,
                 label_selector=None,
                 pod_name=pod.pod_name,
                 container_name=container_name,
@@ -737,6 +743,7 @@ def _pod_context(session: Session, recording: LogRecording, pod: LogRecordingPod
         )
     return {
         "name": pod.pod_name,
+        "namespace": pod.namespace,
         "containers": [{"name": name} for name in logs_by_container],
         "log_hits": log_hits,
     }

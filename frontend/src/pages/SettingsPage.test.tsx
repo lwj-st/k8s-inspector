@@ -297,6 +297,8 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Webhook 地址"), "https://open.feishu.cn/open-apis/bot/v2/hook/example");
     await user.type(screen.getByLabelText("签名密钥（可选）"), "secret-value");
     await user.click(mentionAll);
+    expect(screen.getByText("开启后仅 critical 告警会提醒群内所有人，可能造成较强打扰。确认开启吗？")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认开启" }));
     await user.click(screen.getByRole("button", { name: "保存渠道" }));
     expect(await screen.findByText("通知渠道已创建")).toBeInTheDocument();
     expect(createdPayload).toMatchObject({
@@ -308,6 +310,7 @@ describe("SettingsPage", () => {
 
     const existingCard = screen.getByText("运维飞书群").closest(".management-card") as HTMLElement;
     await user.click(within(existingCard).getByRole("button", { name: "发送测试" }));
+    await user.click(screen.getByRole("button", { name: "发送" }));
     expect(await screen.findByText("测试通知已送达（已送达）")).toBeInTheDocument();
   });
 
@@ -397,6 +400,7 @@ describe("SettingsPage", () => {
     expect(within(existingCard).getByText(/摘要待处理记录：/)).toBeInTheDocument();
 
     await user.click(within(existingCard).getByRole("button", { name: "删除" }));
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
     expect(await screen.findByText("静默窗口已删除")).toBeInTheDocument();
     expect(screen.queryByText("发布窗口")).not.toBeInTheDocument();
   });
@@ -550,10 +554,12 @@ describe("SettingsPage", () => {
     const card = (await screen.findByText("运维飞书群")).closest(".management-card") as HTMLElement;
 
     await user.click(within(card).getByRole("button", { name: "发送测试" }));
+    await user.click(screen.getByRole("button", { name: "发送" }));
     expect(await screen.findByText("测试通知进入队列（已受理，仍在投递或重试）")).toBeInTheDocument();
     expect(screen.queryByText("测试通知已发送")).not.toBeInTheDocument();
 
     await user.click(within(card).getByRole("button", { name: "发送测试" }));
+    await user.click(screen.getByRole("button", { name: "发送" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("目标返回失败（投递失败）");
     expect(screen.queryByText("测试通知已发送")).not.toBeInTheDocument();
   });

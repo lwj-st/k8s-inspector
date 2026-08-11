@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiClientError,
@@ -22,6 +22,7 @@ import type {
   NamespaceSummary,
   Page,
 } from "../api/types";
+import { ConfirmPopoverButton, ConfirmPopoverPrompt } from "../components/ConfirmPopoverButton";
 
 const pageSize = 20;
 const logPageSize = 100;
@@ -135,12 +136,15 @@ export function LogRecordingsPage() {
   const [logPage, setLogPage] = useState(1);
   const [search, setSearch] = useState("");
   const [matches, setMatches] = useState<LogRecordingTemplateMatch[]>([]);
+  const [expandedMatchId, setExpandedMatchId] = useState<number | null>(null);
+  const [pendingTemplateMatchCount, setPendingTemplateMatchCount] = useState<number | null>(null);
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const logLineRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const matchesRef = useRef<HTMLDivElement | null>(null);
 
   const hasRunningRecords = useMemo(() => (records?.items ?? []).some((item) => item.status === "recording"), [records]);
   const searchLineIds = useMemo(() => {
@@ -343,9 +347,6 @@ export function LogRecordingsPage() {
   }
 
   async function remove(recording: LogRecording) {
-    if (!window.confirm(`删除日志记录 ${recording.name}？`)) {
-      return;
-    }
     try {
       await deleteLogRecording(recording.id);
       if (selected?.id === recording.id) {
@@ -369,6 +370,8 @@ export function LogRecordingsPage() {
     try {
       const result = await matchLogRecordingTemplates(selected.id);
       setMatches(result);
+      setExpandedMatchId(null);
+      setPendingTemplateMatchCount(result.length > 0 ? result.length : null);
       setMessage(result.length > 0 ? `命中 ${result.length} 条模板结果` : "未命中日志类模板");
     } catch (err) {
       setError(errorMessage(err));
@@ -390,6 +393,15 @@ export function LogRecordingsPage() {
     setSelectedContainer(containerName);
     setLogs(null);
     setLogPage(1);
+  }
+
+  async function copyPodName(podName: string) {
+    try {
+      await navigator.clipboard.writeText(podName);
+      setMessage(`已复制 Pod 名：${podName}`);
+    } catch {
+      setError("当前环境不支持自动复制 Pod 名");
+    }
   }
 
   function moveSearch(delta: number) {
@@ -452,7 +464,17 @@ export function LogRecordingsPage() {
                 <td>
                   <button type="button" onClick={() => selectRecord(item)}>查看</button>
                   {item.status === "recording" ? <button type="button" onClick={() => void stop(item.id)}>结束</button> : null}
-                  <button type="button" className="button-danger" onClick={() => void remove(item)}>删除</button>
+                  <ConfirmPopoverButton
+                    className="button-danger"
+                    disabled={busy}
+                    title="确认删除"
+                    message={`确定要删除日志记录“${item.name}”吗？删除后无法恢复。`}
+                    confirmText="确认删除"
+                    confirmingText="删除中..."
+                    onConfirm={() => remove(item)}
+                  >
+                    删除
+                  </ConfirmPopoverButton>
                 </td>
               </tr>
             ))}
@@ -479,7 +501,21 @@ export function LogRecordingsPage() {
               <button type="button" onClick={renameSelected}>改名</button>
               <button type="button" onClick={updateNote}>备注</button>
               {displaySelected.status === "recording" ? <button type="button" className="button-danger" onClick={() => void stop(displaySelected.id)}>结束记录</button> : null}
-              <button type="button" onClick={() => void runTemplateMatch()} disabled={busy}>模板匹配</button>
+              <span className="log-recording-template-action">
+                <button type="button" onClick={() => void runTemplateMatch()} disabled={busy}>模板匹配</button>
+                {pendingTemplateMatchCount ? (
+                  <ConfirmPopoverPrompt
+                    title="发现命中模板"
+                    message={`已命中 ${pendingTemplateMatchCount} 条模板结果，是否查看？`}
+                    confirmText="查看"
+                    onCancel={() => setPendingTemplateMatchCount(null)}
+                    onConfirm={() => {
+                      setPendingTemplateMatchCount(null);
+                      window.setTimeout(() => matchesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                    }}
+                  />
+                ) : null}
+              </span>
             </div>
           </div>
           <dl className="log-recording-meta">
@@ -498,15 +534,25 @@ export function LogRecordingsPage() {
                   key={pod.pod_uid}
                   className={selectedPod === pod.pod_name ? "log-recording-pod-card log-recording-pod-active" : "log-recording-pod-card"}
                 >
-                  <button
-                    type="button"
-                    className="log-recording-pod-summary"
-                    title={pod.pod_name}
-                    onClick={() => selectPodContainer(pod)}
-                  >
-                    <strong>{pod.pod_name}</strong>
-                    <span>异常关键字 {pod.keyword_hit_count} · 日志 {pod.folded_line_count}/{pod.raw_line_count} 行{pod.deleted_during_recording ? " · 已删除" : ""}{pod.truncated ? " · 已截断" : ""}</span>
-                  </button>
+                  <div className="log-recording-pod-heading">
+                    <button
+                      type="button"
+                      className="log-recording-pod-summary"
+                      title={pod.pod_name}
+                      onClick={() => selectPodContainer(pod)}
+                    >
+                      <strong>{pod.pod_name}</strong>
+                      <span>名称空间：{pod.namespace} · 异常关键字 {pod.keyword_hit_count} · 日志 {pod.folded_line_count}/{pod.raw_line_count} 行{pod.truncated ? " · 已截断" : ""}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="log-recording-copy-button"
+                      title="复制 Pod 名"
+                      onClick={() => void copyPodName(pod.pod_name)}
+                    >
+                      复制
+                    </button>
+                  </div>
                   {pod.container_names.length > 0 ? (
                     <div className="log-recording-container-list">
                       {pod.container_names.map((container) => (
@@ -572,20 +618,41 @@ export function LogRecordingsPage() {
           </div>
 
           {matches.length > 0 ? (
-            <div className="table-scroll-shell">
+            <div className="table-scroll-shell" ref={matchesRef}>
               <table className="compact-table">
                 <thead>
-                  <tr><th>模板</th><th>Pod</th><th>容器</th><th>关键字</th><th>建议</th></tr>
+                  <tr><th className="log-recording-match-heading">命中模板</th><th>名称空间</th><th>Pod</th><th>容器</th><th>关键字</th><th>建议</th><th>操作</th></tr>
                 </thead>
                 <tbody>
                   {matches.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.template_name}</td>
-                      <td>{item.pod_name}</td>
-                      <td>{item.container_name}</td>
-                      <td>{item.keyword}</td>
-                      <td>{item.suggestion ?? "--"}</td>
-                    </tr>
+                    <Fragment key={item.id}>
+                      <tr>
+                        <td>{item.template_name}</td>
+                        <td>{item.namespace ?? "--"}</td>
+                        <td>{item.pod_name}</td>
+                        <td>{item.container_name}</td>
+                        <td>{item.keyword}</td>
+                        <td>{item.suggestion ?? "--"}</td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedMatchId((current) => current === item.id ? null : item.id)}
+                          >
+                            {expandedMatchId === item.id ? "收起" : "详情"}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedMatchId === item.id ? (
+                        <tr>
+                          <td colSpan={7}>
+                            <div className="log-recording-match-detail">
+                              <strong>匹配上下文</strong>
+                              <code>{item.matched_context || "--"}</code>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

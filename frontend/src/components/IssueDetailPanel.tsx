@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { Issue, IssueEvent, ResourceRef } from "../api/types";
+import { ConfirmPopoverButton } from "./ConfirmPopoverButton";
 import { StatusBadge } from "./StatusBadge";
 
 const sourceLabels: Record<string, string> = {
@@ -480,10 +481,6 @@ export function IssueDetailPanel({
   }
 
   async function handleIgnore() {
-    const confirmed = window.confirm("忽略后，此问题默认不再出现在开放问题列表，可通过“已忽略”筛选查看。确认忽略吗？");
-    if (!confirmed) {
-      return;
-    }
     setIgnoring(true);
     setIgnoreError(null);
     try {
@@ -496,10 +493,6 @@ export function IssueDetailPanel({
   }
 
   async function handleUnignore() {
-    const confirmed = window.confirm("取消忽略后，此问题会重新出现在开放问题列表。确认取消忽略吗？");
-    if (!confirmed) {
-      return;
-    }
     setUnignoring(true);
     setUnignoreError(null);
     try {
@@ -781,26 +774,32 @@ export function IssueDetailPanel({
           <>
             <p className="acknowledged-note"><strong>此问题已忽略</strong></p>
             {unignoreError ? <p className="field-error" role="alert">{unignoreError}</p> : null}
-            <button
-              type="button"
+            <ConfirmPopoverButton
               className="issue-ignore-action issue-ignore-action-restore"
               disabled={unignoring}
-              onClick={() => void handleUnignore()}
+              title="确认恢复"
+              message="取消忽略后，此问题会重新出现在开放问题列表。确认恢复显示吗？"
+              confirmText="确认恢复"
+              confirmingText="恢复中..."
+              onConfirm={handleUnignore}
             >
               {unignoring ? "恢复中…" : "恢复显示"}
-            </button>
+            </ConfirmPopoverButton>
           </>
         ) : (
           <>
             {ignoreError ? <p className="field-error" role="alert">{ignoreError}</p> : null}
-            <button
-              type="button"
+            <ConfirmPopoverButton
               className="issue-ignore-action issue-ignore-action-muted"
               disabled={ignoring}
-              onClick={() => void handleIgnore()}
+              title="确认忽略"
+              message="忽略后，此问题默认不再出现在开放问题列表，可通过“已忽略”筛选查看。确认忽略吗？"
+              confirmText="确认忽略"
+              confirmingText="忽略中..."
+              onConfirm={handleIgnore}
             >
               {ignoring ? "忽略中…" : "忽略此问题"}
-            </button>
+            </ConfirmPopoverButton>
           </>
         )}
       </section>

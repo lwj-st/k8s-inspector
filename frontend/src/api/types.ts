@@ -847,6 +847,7 @@ export type LogRecordingTemplateMatch = {
   template_id?: number | null;
   template_name: string;
   severity: string;
+  namespace?: string | null;
   pod_name: string;
   container_name: string;
   keyword: string;

@@ -23,6 +23,7 @@ import type {
   Page,
 } from "../api/types";
 import { CoveragePanel } from "../components/CoveragePanel";
+import { ConfirmPopoverButton } from "../components/ConfirmPopoverButton";
 import { StatusBadge } from "../components/StatusBadge";
 
 const allowedSeverities = new Set<IssueSeverity>(["critical", "warning", "info"]);
@@ -399,12 +400,6 @@ export function ProblemWorkbenchPage() {
       setBatchError("请填写批量确认备注");
       return;
     }
-    if (action === "ignore" && !window.confirm(`确认忽略选中的 ${issueIds.length} 个问题？`)) {
-      return;
-    }
-    if (action === "unignore" && !window.confirm(`确认恢复显示选中的 ${issueIds.length} 个问题？`)) {
-      return;
-    }
     setBatchSaving(true);
     try {
       const result = action === "acknowledge"
@@ -591,23 +586,29 @@ export function ProblemWorkbenchPage() {
               批量确认
             </button>
             {status !== "ignored" ? (
-              <button
-                type="button"
+              <ConfirmPopoverButton
                 className="danger-action"
                 disabled={batchSaving || selectedCount === 0}
-                onClick={() => void runBatchAction("ignore")}
+                title="确认忽略"
+                message={`确认忽略选中的 ${selectedCount} 个问题？忽略后默认不再出现在开放问题列表。`}
+                confirmText="确认忽略"
+                confirmingText="忽略中..."
+                onConfirm={() => runBatchAction("ignore")}
               >
                 批量忽略
-              </button>
+              </ConfirmPopoverButton>
             ) : (
-              <button
-                type="button"
+              <ConfirmPopoverButton
                 className="primary-action"
                 disabled={batchSaving || selectedCount === 0}
-                onClick={() => void runBatchAction("unignore")}
+                title="确认恢复"
+                message={`确认恢复显示选中的 ${selectedCount} 个问题？恢复后会重新出现在开放问题列表。`}
+                confirmText="确认恢复"
+                confirmingText="恢复中..."
+                onConfirm={() => runBatchAction("unignore")}
               >
                 批量恢复显示
-              </button>
+              </ConfirmPopoverButton>
             )}
           </div>
         </div>

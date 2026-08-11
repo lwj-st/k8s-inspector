@@ -317,7 +317,6 @@ describe("ProblemWorkbenchPage", () => {
 
   it("runs batch acknowledge, ignore and unignore actions for selected issues", async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const requestedBodies: Array<{ url: string; body: unknown }> = [];
     const first = issue({ id: 1, fingerprint: "a".repeat(64), summary: "结算入口没有可用后端" });
     const second = issue({
@@ -401,7 +400,8 @@ describe("ProblemWorkbenchPage", () => {
     await user.click(screen.getByLabelText("选择问题 1"));
     await user.click(screen.getByLabelText("选择问题 2"));
     await user.click(screen.getByRole("button", { name: "批量忽略" }));
-    expect(confirmSpy).toHaveBeenCalledWith("确认忽略选中的 2 个问题？");
+    expect(screen.getByText("确认忽略选中的 2 个问题？忽略后默认不再出现在开放问题列表。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认忽略" }));
     expect(requestedBodies.some((item) => (
       item.url.includes("/issues/batch/ignore")
       && JSON.stringify(item.body) === JSON.stringify({ issue_ids: [1, 2] })
@@ -411,7 +411,8 @@ describe("ProblemWorkbenchPage", () => {
     expect(await screen.findByRole("heading", { name: "已忽略问题" })).toBeInTheDocument();
     await user.click(screen.getByLabelText("选择当前页全部问题"));
     await user.click(screen.getByRole("button", { name: "批量恢复显示" }));
-    expect(confirmSpy).toHaveBeenCalledWith("确认恢复显示选中的 2 个问题？");
+    expect(screen.getByText("确认恢复显示选中的 2 个问题？恢复后会重新出现在开放问题列表。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认恢复" }));
     expect(requestedBodies.some((item) => (
       item.url.includes("/issues/batch/unignore")
       && JSON.stringify(item.body) === JSON.stringify({ issue_ids: [1, 2] })
@@ -434,7 +435,6 @@ describe("ProblemWorkbenchPage", () => {
         },
       ],
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const writeText = vi.fn().mockResolvedValue(undefined);
     const createObjectUrl = vi.fn(() => "blob:issue-md");
     const revokeObjectUrl = vi.fn();
@@ -599,11 +599,13 @@ describe("ProblemWorkbenchPage", () => {
     expect(screen.getByText(/确认只表示你已知晓/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "忽略此问题" }));
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(screen.getByText("忽略后，此问题默认不再出现在开放问题列表，可通过“已忽略”筛选查看。确认忽略吗？")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认忽略" }));
     expect(await screen.findByText("此问题已忽略")).toBeInTheDocument();
     expect(screen.getByText("已忽略")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "恢复显示" }));
-    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("取消忽略后，此问题会重新出现在开放问题列表。确认恢复显示吗？")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "确认恢复" }));
     expect(await screen.findByRole("button", { name: "忽略此问题" })).toBeInTheDocument();
   });
 

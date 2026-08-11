@@ -195,6 +195,7 @@ class LogRecordingTemplateMatchRead(LogRecordingContract):
     template_id: int | None = None
     template_name: str
     severity: str
+    namespace: str | None = None
     pod_name: str
     container_name: str
     keyword: str
