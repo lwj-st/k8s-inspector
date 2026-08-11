@@ -65,6 +65,7 @@ describe("PodInspectionPage", () => {
               id: 7,
               name: "接口恢复的记录",
               namespace: "demo",
+              namespaces: ["demo"],
               note: null,
               status: "recording",
               started_at: "2026-07-19T10:00:00Z",
@@ -89,6 +90,7 @@ describe("PodInspectionPage", () => {
               id: 8,
               name: "已结束的复现记录",
               namespace: "demo",
+              namespaces: ["demo"],
               note: null,
               status: "completed",
               started_at: "2026-07-19T09:00:00Z",
@@ -454,6 +456,8 @@ describe("PodInspectionPage", () => {
           new Response(
             JSON.stringify({
               id: payload.namespace === "prod" ? 2 : 1,
+              namespace: payload.namespace,
+              namespaces: payload.namespaces ?? [payload.namespace],
               status: "recording",
               started_at: "2026-07-19T10:00:00Z",
               ended_at: null,
@@ -491,6 +495,7 @@ describe("PodInspectionPage", () => {
               id: 1,
               name: "支付 500 复现",
               namespace: "demo",
+              namespaces: ["demo"],
               note: "点击支付后复现",
               status: "completed",
               started_at: "2026-07-19T10:00:00Z",
@@ -521,6 +526,7 @@ describe("PodInspectionPage", () => {
               id: 1,
               name: "支付 500 复现",
               namespace: "demo",
+              namespaces: ["demo"],
               note: "点击支付后复现",
               status: "auto_completed",
               started_at: "2026-07-19T10:00:00Z",
@@ -630,7 +636,7 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("记录备注"), { target: { value: "点击支付后复现" } });
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
 
-    expect(await screen.findByText("已开始 1 条日志记录")).toBeInTheDocument();
+    expect(await screen.findByText("已开始日志记录：支付 500 复现")).toBeInTheDocument();
     expect(screen.getByText("进行中的日志记录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
@@ -665,12 +671,17 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByLabelText("记录名称空间 prod"));
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
 
-    expect(await screen.findByText("已开始 2 条日志记录")).toBeInTheDocument();
+    expect(await screen.findByText("已开始日志记录：批量复现")).toBeInTheDocument();
     const createRequests = fetchMock.mock.calls.filter(
       ([input, init]) => String(input).endsWith("/log-recordings") && init?.method === "POST",
     );
-    expect(createRequests).toHaveLength(2);
-    expect(createRequests.map((request) => JSON.parse(String(request[1]?.body)).namespace)).toEqual(["demo", "prod"]);
+    expect(createRequests).toHaveLength(1);
+    expect(JSON.parse(String(createRequests[0]?.[1]?.body))).toMatchObject({
+      name: "批量复现",
+      namespace: "demo",
+      namespaces: ["demo", "prod"],
+    });
+    expect(screen.getByText("包含：demo、prod")).toBeInTheDocument();
   });
 
   it("loads running recordings as a list after returning to the log inspection page", async () => {

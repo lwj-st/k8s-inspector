@@ -82,6 +82,78 @@ def test_log_recording_crud_and_stop_flow(client) -> None:
     assert client.get(f"/api/v1/log-recordings/{created['id']}").status_code == 404
 
 
+def test_log_recording_create_and_collects_multi_namespace_task(client) -> None:
+    class MultiNamespaceProvider:
+        def __init__(self) -> None:
+            self.collected: list[str] = []
+
+        def list_namespace_pods(self, namespace: str, label_selector: str | None = None) -> dict:
+            return {
+                "namespace": namespace,
+                "label_selector": label_selector,
+                "executed_at": datetime.now(timezone.utc).isoformat(),
+                "pods": [{"name": f"{namespace}-api-0", "labels": {"app": "api"}, "containers": ["api"]}],
+            }
+
+        def collect_log_recording_snapshot(
+            self,
+            namespace: str,
+            *,
+            since_time: datetime,
+            max_pods: int,
+            max_total_bytes: int,
+            max_pod_bytes: int,
+        ) -> LogRecordingSnapshot:
+            self.collected.append(namespace)
+            collected_at = datetime.now(timezone.utc)
+            return LogRecordingSnapshot(
+                namespace=namespace,
+                collected_at=collected_at,
+                pods=[
+                    LogRecordingPodSnapshot(
+                        namespace=namespace,
+                        pod_uid=f"{namespace}-uid",
+                        pod_name=f"{namespace}-api-0",
+                        container_names=["api"],
+                        entries=[
+                            LogRecordingEntry(
+                                pod_uid=f"{namespace}-uid",
+                                pod_name=f"{namespace}-api-0",
+                                container_name="api",
+                                log_time=collected_at,
+                                text=f"{namespace} error",
+                                collected_at=collected_at,
+                            )
+                        ],
+                    )
+                ],
+                total_bytes=100,
+                truncated=False,
+            )
+
+    provider = MultiNamespaceProvider()
+    with client.app.state.session_factory() as session:
+        recording = log_recording_engine.log_recording_service.create_recording(
+            session,
+            provider,
+            LogRecordingCreate(
+                name="多名称空间复现",
+                namespaces=["demo", "prod"],
+                duration_source=LogRecordingDurationSource.preset,
+                duration_minutes=10,
+            ),
+            created_by="test",
+        )
+        assert recording.namespace == "demo"
+        result = log_recording_engine.log_recording_service.collect_recording_once(session, provider, recording.id)
+
+    assert result.namespaces == ["demo", "prod"]
+    assert provider.collected == ["demo", "prod"]
+    pods_response = client.get(f"/api/v1/log-recordings/{recording.id}/pods")
+    assert pods_response.status_code == 200
+    assert {item["namespace"] for item in pods_response.json()} == {"demo", "prod"}
+
+
 def test_log_recording_auto_stop_due_recordings(client) -> None:
     created = _create_recording(client)
 

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from enum import Enum
 
@@ -44,8 +45,27 @@ class LogRecordingViewMode(str, Enum):
 
 class LogRecordingBase(LogRecordingContract):
     name: str = Field(min_length=1, max_length=128)
-    namespace: str = Field(min_length=1, max_length=253)
+    namespace: str | None = Field(default=None, min_length=1, max_length=253)
+    namespaces: list[str] = Field(default_factory=list, min_length=0, max_length=100)
     note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("namespaces", mode="before")
+    @classmethod
+    def parse_namespaces(cls, value: object) -> object:
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return [value]
+            return parsed if isinstance(parsed, list) else [value]
+        if value is None:
+            return []
+        return value
+
+    @field_validator("namespaces", mode="after")
+    @classmethod
+    def normalize_namespaces(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
 
 
 class LogRecordingCreate(LogRecordingBase):
@@ -56,6 +76,12 @@ class LogRecordingCreate(LogRecordingBase):
     def require_duration_for_non_default(self) -> "LogRecordingCreate":
         if self.duration_source != LogRecordingDurationSource.system_default and self.duration_minutes is None:
             raise ValueError("duration_minutes is required when duration_source is not system_default")
+        if not self.namespace and not self.namespaces:
+            raise ValueError("namespace or namespaces is required")
+        if self.namespace and not self.namespaces:
+            self.namespaces = [self.namespace]
+        if not self.namespace and self.namespaces:
+            self.namespace = self.namespaces[0]
         return self
 
 
@@ -87,6 +113,7 @@ class LogRecordingUpdate(LogRecordingContract):
 
 class LogRecordingRead(LogRecordingBase):
     id: int
+    namespace: str
     status: LogRecordingStatus
     started_at: datetime
     ended_at: datetime | None = None
@@ -103,6 +130,12 @@ class LogRecordingRead(LogRecordingBase):
     created_by: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def fallback_namespaces(self) -> "LogRecordingRead":
+        if not self.namespaces:
+            self.namespaces = [self.namespace]
+        return self
 
 
 class LogRecordingPodRead(LogRecordingContract):

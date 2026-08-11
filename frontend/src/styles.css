@@ -1523,8 +1523,7 @@ a {
   background: var(--paper);
 }
 
-.recording-tree-header,
-.recording-tree-all {
+.recording-tree-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1534,11 +1533,6 @@ a {
 .recording-tree-header span {
   color: var(--muted);
   font-size: 12px;
-}
-
-.recording-tree-all {
-  justify-content: flex-start;
-  font-weight: 700;
 }
 
 .recording-tree-list {

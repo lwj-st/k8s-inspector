@@ -423,7 +423,7 @@ class MockInspectionProvider:
         sample = accepted.decode("utf-8", errors="ignore")
         entries = [
             LogRecordingEntry(
-                pod_uid="mock-demo-api-uid",
+                pod_uid=f"mock-{namespace}-demo-api-uid",
                 pod_name=pod["name"],
                 container_name="demo-api",
                 log_time=collected_at,

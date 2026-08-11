@@ -752,6 +752,7 @@ export type LogRecording = {
   id: number;
   name: string;
   namespace: string;
+  namespaces: string[];
   note?: string | null;
   status: LogRecordingStatus;
   started_at: string;
@@ -773,7 +774,8 @@ export type LogRecording = {
 
 export type LogRecordingCreate = {
   name: string;
-  namespace: string;
+  namespace?: string | null;
+  namespaces?: string[];
   note?: string | null;
   duration_source: LogRecordingDurationSource;
   duration_minutes?: number | null;

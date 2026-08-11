@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatchcase
@@ -106,6 +107,25 @@ def storage_usage(session: Session) -> LogRecordingStorageUsage:
     )
 
 
+def _recording_namespaces_from_payload(payload: LogRecordingCreate) -> list[str]:
+    values = payload.namespaces or ([payload.namespace] if payload.namespace else [])
+    return list(dict.fromkeys(item.strip() for item in values if item and item.strip()))
+
+
+def _recording_namespaces(row: LogRecording) -> list[str]:
+    raw = getattr(row, "namespaces", None)
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = []
+        if isinstance(parsed, list):
+            values = [str(item).strip() for item in parsed if str(item).strip()]
+            if values:
+                return list(dict.fromkeys(values))
+    return [row.namespace]
+
+
 def preview_recording(
     session: Session,
     provider: InspectionProvider,
@@ -152,16 +172,23 @@ def create_recording(
     usage = storage_usage(session)
     if usage.full:
         raise LogRecordingStorageFullError("复现日志存储已达到上限")
-    discovery = discovery_service.discover_namespace_pods(provider, payload.namespace)
-    pods = discovery.get("pods", [])
-    pod_count = len(pods)
-    if pod_count > policy.max_namespace_pods:
-        raise LogRecordingScopeTooLargeError(pod_count, policy.max_namespace_pods)
+    target_namespaces = _recording_namespaces_from_payload(payload)
+    pod_count = 0
+    container_count = 0
+    for target_namespace in target_namespaces:
+        discovery = discovery_service.discover_namespace_pods(provider, target_namespace)
+        pods = discovery.get("pods", [])
+        namespace_pod_count = len(pods)
+        if namespace_pod_count > policy.max_namespace_pods:
+            raise LogRecordingScopeTooLargeError(namespace_pod_count, policy.max_namespace_pods)
+        pod_count += namespace_pod_count
+        container_count += sum(len(item.get("containers") or []) for item in pods)
     duration_minutes = _resolve_duration_minutes(payload, policy)
     now = _utcnow()
     row = LogRecording(
         name=payload.name,
-        namespace=payload.namespace,
+        namespace=target_namespaces[0],
+        namespaces=json.dumps(target_namespaces, ensure_ascii=False),
         status=LogRecordingStatus.recording.value,
         started_at=now,
         planned_end_at=now + timedelta(minutes=duration_minutes),
@@ -169,7 +196,7 @@ def create_recording(
         duration_minutes=duration_minutes,
         stop_reason=None,
         pod_count=pod_count,
-        container_count=sum(len(item.get("containers") or []) for item in pods),
+        container_count=container_count,
         raw_line_count=0,
         folded_line_count=0,
         total_bytes=0,
@@ -195,8 +222,9 @@ def list_recordings(
     statement: Select[tuple[LogRecording]] = select(LogRecording)
     count_statement = select(func.count()).select_from(LogRecording)
     if namespace:
-        statement = statement.where(LogRecording.namespace == namespace)
-        count_statement = count_statement.where(LogRecording.namespace == namespace)
+        namespace_filter = (LogRecording.namespace == namespace) | LogRecording.namespaces.like(f'%"{namespace}"%')
+        statement = statement.where(namespace_filter)
+        count_statement = count_statement.where(namespace_filter)
     total = session.scalar(count_statement) or 0
     rows = session.scalars(
         statement.order_by(LogRecording.started_at.desc(), LogRecording.id.desc())
@@ -279,20 +307,37 @@ def _collect_recording_once_locked(
         session.refresh(row)
         return LogRecordingRead.model_validate(row)
     try:
-        snapshot = provider.collect_log_recording_snapshot(
-            row.namespace,
-            since_time=_ensure_utc(since_time),
-            max_pods=policy.max_namespace_pods,
-            max_total_bytes=remaining_total,
-            max_pod_bytes=policy.max_pod_bytes,
-        )
+        collected_total = 0
+        collected_namespaces = 0
+        namespace_failures: list[str] = []
+        for target_namespace in _recording_namespaces(row):
+            remaining_namespace_total = max(0, remaining_total - collected_total)
+            if remaining_namespace_total <= 0:
+                break
+            try:
+                snapshot = provider.collect_log_recording_snapshot(
+                    target_namespace,
+                    since_time=_ensure_utc(since_time),
+                    max_pods=policy.max_namespace_pods,
+                    max_total_bytes=remaining_namespace_total,
+                    max_pod_bytes=policy.max_pod_bytes,
+                )
+            except LogPodLimitExceededError:
+                raise
+            except Exception as exc:
+                namespace_failures.append(f"{target_namespace}: {type(exc).__name__}")
+                continue
+            _ingest_snapshot(session, row, snapshot)
+            collected_total += snapshot.total_bytes
+            collected_namespaces += 1
+        if collected_namespaces == 0 and namespace_failures:
+            raise LogRecordingCollectionFailedError("; ".join(namespace_failures))
     except LogPodLimitExceededError as exc:
         _fail_recording(session, row, f"Pod 数 {exc.requested_pods} 超过上限 {exc.limit}")
         raise LogRecordingScopeTooLargeError(exc.requested_pods, exc.limit) from exc
     except Exception as exc:
         _fail_recording(session, row, "采集失败")
         raise LogRecordingCollectionFailedError("日志采集失败") from exc
-    _ingest_snapshot(session, row, snapshot)
     if row.total_bytes >= policy.max_recording_bytes:
         row.truncated = True
         row.status = LogRecordingStatus.auto_completed.value
@@ -489,7 +534,7 @@ def _ingest_snapshot(session: Session, row: LogRecording, snapshot: LogRecording
                     hit
                     for hit in keyword_service.match_log_text(
                         session,
-                        namespace=row.namespace,
+                        namespace=pod_snapshot.namespace,
                         label_selector=None,
                         pod_name=entry.pod_name,
                         log_text=redacted_text,
