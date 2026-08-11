@@ -1449,8 +1449,24 @@ a {
 }
 
 .entry-form-grid-compact {
-  grid-template-columns: minmax(180px, 0.9fr) minmax(180px, 0.95fr) minmax(160px, 0.85fr) minmax(180px, 1fr);
-  max-width: 980px;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  max-width: none;
+}
+
+.log-filter-search-field {
+  min-width: 0;
+}
+
+.log-filter-namespace-field {
+  min-width: 190px;
+}
+
+.log-filter-scope-field {
+  min-width: 190px;
+}
+
+.log-filter-time-field {
+  min-width: 190px;
 }
 
 .compact-subpanel {

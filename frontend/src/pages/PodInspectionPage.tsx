@@ -862,7 +862,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             </div>
           </div>
           <div className="entry-form-grid entry-form-grid-compact">
-            <label className="inline-search">
+            <label className="inline-search log-filter-search-field">
               筛选名称空间
               <input
                 aria-label="筛选名称空间"
@@ -871,11 +871,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                 placeholder="例如：demo、prod、kube-system"
               />
             </label>
-            <label>
+            <label className="log-filter-namespace-field">
               名称空间
               <select
                 aria-label="名称空间"
                 value={namespace}
+                title={namespace || "请选择名称空间"}
                 onChange={(event) => resetNamespaceContext(event.target.value)}
               >
                 <option value="">请选择名称空间</option>
@@ -886,7 +887,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                 ))}
               </select>
             </label>
-            <label>
+            <label className="log-filter-scope-field">
               范围类型
               <select
                 aria-label="范围类型"
@@ -902,7 +903,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               </select>
             </label>
             {scopeMode !== "single" ? (
-              <label className="label-selector-field">
+              <label className="label-selector-field log-filter-time-field">
                 日志时间范围
                 <select
                   aria-label="日志时间范围"
