@@ -453,7 +453,7 @@ describe("PodInspectionPage", () => {
         return Promise.resolve(
           new Response(
             JSON.stringify({
-              id: 1,
+              id: payload.namespace === "prod" ? 2 : 1,
               status: "recording",
               started_at: "2026-07-19T10:00:00Z",
               ended_at: null,
@@ -630,7 +630,7 @@ describe("PodInspectionPage", () => {
     fireEvent.change(screen.getByLabelText("记录备注"), { target: { value: "点击支付后复现" } });
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
 
-    expect(await screen.findByText("已开始记录：支付 500 复现")).toBeInTheDocument();
+    expect(await screen.findByText("已开始 1 条日志记录")).toBeInTheDocument();
     expect(screen.getByText("进行中的日志记录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
@@ -650,6 +650,27 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "结束记录" }));
     expect(await screen.findByText("已停止记录：支付 500 复现")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+  });
+
+  it("starts recordings after selecting namespaces in the recording tree", async () => {
+    render(<PodInspectionPage initialScopeMode="all" />);
+
+    await screen.findByRole("option", { name: "demo" });
+    fireEvent.click(screen.getByRole("button", { name: "开始记录日志" }));
+
+    expect(await screen.findByRole("heading", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "日志记录" })).toHaveAttribute("href", "/log-recordings");
+    fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "批量复现" } });
+    fireEvent.click(screen.getByLabelText("记录名称空间 demo"));
+    fireEvent.click(screen.getByLabelText("记录名称空间 prod"));
+    fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
+
+    expect(await screen.findByText("已开始 2 条日志记录")).toBeInTheDocument();
+    const createRequests = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).endsWith("/log-recordings") && init?.method === "POST",
+    );
+    expect(createRequests).toHaveLength(2);
+    expect(createRequests.map((request) => JSON.parse(String(request[1]?.body)).namespace)).toEqual(["demo", "prod"]);
   });
 
   it("loads running recordings as a list after returning to the log inspection page", async () => {

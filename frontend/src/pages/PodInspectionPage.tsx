@@ -177,6 +177,18 @@ function formatRecordingTime(value?: string | null) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
+function recordingNamespaceGroups(namespaces: string[]) {
+  const groups = new Map<string, string[]>();
+  namespaces.forEach((item) => {
+    const groupName = item.includes("-") ? item.split("-")[0] : "其他";
+    groups.set(groupName, [...(groups.get(groupName) ?? []), item]);
+  });
+  return Array.from(groups.entries()).map(([name, items]) => ({
+    name,
+    items: items.sort((left, right) => left.localeCompare(right)),
+  })).sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export function PodInspectionPage({ initialScopeMode = "single" }: PodInspectionPageProps) {
   const [namespaceSearch, setNamespaceSearch] = useState("");
   const [namespace, setNamespace] = useState("");
@@ -197,6 +209,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   const [recordPanelOpen, setRecordPanelOpen] = useState(false);
   const [recordName, setRecordName] = useState("");
   const [recordNote, setRecordNote] = useState("");
+  const [selectedRecordingNamespaces, setSelectedRecordingNamespaces] = useState<string[]>([]);
   const [recordDurationMode, setRecordDurationMode] = useState<RecordingDurationMode>("system_default");
   const [recordDurationMinutes, setRecordDurationMinutes] = useState(20);
   const [runningRecordings, setRunningRecordings] = useState<LogRecording[]>([]);
@@ -303,6 +316,11 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     }
     return items.filter((item) => item.name.toLowerCase().includes(keyword));
   }, [namespaceDiscovery, namespaceSearch]);
+  const recordingNamespaceNames = useMemo(
+    () => (namespaceDiscovery?.namespaces ?? []).map((item) => item.name).sort((left, right) => left.localeCompare(right)),
+    [namespaceDiscovery],
+  );
+  const recordingNamespaceTree = useMemo(() => recordingNamespaceGroups(recordingNamespaceNames), [recordingNamespaceNames]);
 
   const rangePods = namespaceInspection.data?.pods ?? [];
   const getActiveLogHits = (pod: InspectedPod) =>
@@ -526,16 +544,27 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
   }
 
   async function handleToggleRecording() {
-    if (!namespace.trim()) {
-      setRecordingError("请先选择名称空间");
-      return;
-    }
     setRecordingError(null);
     setRecordingMessage(null);
     setRecordPanelOpen(true);
-    if (!recordName.trim()) {
-      setRecordName(`${namespace.trim()} 复现记录`);
+    if (namespace.trim() && selectedRecordingNamespaces.length === 0) {
+      setSelectedRecordingNamespaces([namespace.trim()]);
     }
+    if (!recordName.trim()) {
+      setRecordName(namespace.trim() ? `${namespace.trim()} 复现记录` : "复现日志记录");
+    }
+  }
+
+  function toggleRecordingNamespace(targetNamespace: string) {
+    setSelectedRecordingNamespaces((current) =>
+      current.includes(targetNamespace)
+        ? current.filter((item) => item !== targetNamespace)
+        : [...current, targetNamespace].sort((left, right) => left.localeCompare(right)),
+    );
+  }
+
+  function toggleAllRecordingNamespaces(checked: boolean) {
+    setSelectedRecordingNamespaces(checked ? recordingNamespaceNames : []);
   }
 
   async function handleStopRecording(recording: LogRecording) {
@@ -579,10 +608,10 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
   async function handleStartRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const normalizedNamespace = namespace.trim();
     const normalizedName = recordName.trim();
-    if (!normalizedNamespace) {
-      setRecordingError("请先选择名称空间");
+    const targetNamespaces = selectedRecordingNamespaces.filter((item) => recordingNamespaceNames.includes(item));
+    if (targetNamespaces.length === 0) {
+      setRecordingError("请选择至少一个名称空间");
       return;
     }
     if (!normalizedName) {
@@ -598,21 +627,30 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     setRecordingError(null);
     setRecordingMessage(null);
     try {
-      const preview = await previewLogRecording(normalizedNamespace);
-      if (!preview.allowed) {
-        setRecordingError(preview.reason ?? "当前名称空间不允许开始记录");
-        return;
+      for (const targetNamespace of targetNamespaces) {
+        const preview = await previewLogRecording(targetNamespace);
+        if (!preview.allowed) {
+          setRecordingError(`${targetNamespace}：${preview.reason ?? "当前名称空间不允许开始记录"}`);
+          return;
+        }
       }
-      const created = await createLogRecording({
-        name: normalizedName,
-        namespace: normalizedNamespace,
-        note: recordNote.trim() || null,
-        duration_source: recordDurationMode,
-        duration_minutes: recordDurationMode === "system_default" ? null : recordDurationMinutes,
-      });
-      setRunningRecordings((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      const createdRecordings: LogRecording[] = [];
+      for (const targetNamespace of targetNamespaces) {
+        const created = await createLogRecording({
+          name: targetNamespaces.length > 1 ? `${normalizedName} / ${targetNamespace}` : normalizedName,
+          namespace: targetNamespace,
+          note: recordNote.trim() || null,
+          duration_source: recordDurationMode,
+          duration_minutes: recordDurationMode === "system_default" ? null : recordDurationMinutes,
+        });
+        createdRecordings.push(created);
+      }
+      setRunningRecordings((current) => [
+        ...createdRecordings,
+        ...current.filter((item) => !createdRecordings.some((created) => created.id === item.id)),
+      ]);
       setRecordPanelOpen(false);
-      setRecordingMessage(`已开始记录：${created.name}`);
+      setRecordingMessage(`已开始 ${createdRecordings.length} 条日志记录`);
     } catch (reason) {
       setRecordingError(reason instanceof Error ? reason.message : "开始记录失败");
     } finally {
@@ -832,7 +870,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
   return (
     <section className="page-section">
-      <section className="panel workbench-hero">
+      <section className="panel workbench-hero log-inspection-hero">
         <div className="workbench-copy">
           <div className="section-header">
             <div>
@@ -997,10 +1035,12 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               type="button"
               className="button-success"
               onClick={() => void handleToggleRecording()}
-              disabled={!namespace.trim()}
             >
               开始记录日志
             </button>
+            <a className="mini-button text-button" href="/log-recordings">
+              日志记录
+            </a>
           </div>
           {recordPanelOpen ? (
             <form className="recording-inline-panel" onSubmit={(event) => void handleStartRecording(event)}>
@@ -1019,10 +1059,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     onChange={(event) => setRecordName(event.target.value)}
                     placeholder="例如：支付 500 复现"
                   />
-                </label>
-                <label>
-                  名称空间
-                  <input aria-label="记录名称空间" value={namespace.trim()} readOnly />
                 </label>
                 <label>
                   记录时长
@@ -1062,6 +1098,43 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                     />
                   </label>
                 ) : null}
+                <div className="recording-namespace-tree">
+                  <div className="recording-tree-header">
+                    <strong>选择名称空间</strong>
+                    <span>{selectedRecordingNamespaces.length} / {recordingNamespaceNames.length}</span>
+                  </div>
+                  <label className="recording-tree-all">
+                    <input
+                      aria-label="选择全部记录名称空间"
+                      type="checkbox"
+                      checked={recordingNamespaceNames.length > 0 && selectedRecordingNamespaces.length === recordingNamespaceNames.length}
+                      onChange={(event) => toggleAllRecordingNamespaces(event.target.checked)}
+                      disabled={recordingNamespaceNames.length === 0}
+                    />
+                    全部名称空间
+                  </label>
+                  <div className="recording-tree-list">
+                    {recordingNamespaceTree.map((group) => (
+                      <details key={group.name} open>
+                        <summary>{group.name}</summary>
+                        <div className="recording-tree-children">
+                          {group.items.map((item) => (
+                            <label key={item}>
+                              <input
+                                aria-label={`记录名称空间 ${item}`}
+                                type="checkbox"
+                                checked={selectedRecordingNamespaces.includes(item)}
+                                onChange={() => toggleRecordingNamespace(item)}
+                              />
+                              {item}
+                            </label>
+                          ))}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                  {namespaceLoading ? <span className="inline-note">名称空间发现中...</span> : null}
+                </div>
                 <label className="recording-note-field">
                   备注
                   <textarea

@@ -357,6 +357,25 @@ a {
   min-height: 104px;
 }
 
+.log-inspection-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.28fr);
+}
+
+.log-inspection-hero .hero-metric-stack {
+  gap: 10px;
+}
+
+.log-inspection-hero .hero-metric {
+  min-height: 72px;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+.log-inspection-hero .hero-metric strong {
+  margin-top: 6px;
+  font-size: 24px;
+}
+
 .quick-action-grid {
   display: grid;
   gap: 14px;
@@ -1464,7 +1483,8 @@ a {
   padding-top: 2px;
 }
 
-.log-inspection-action-row button {
+.log-inspection-action-row button,
+.log-inspection-action-row a {
   min-width: 128px;
 }
 
@@ -1491,6 +1511,69 @@ a {
 
 .recording-note-field {
   grid-column: 1 / -1;
+}
+
+.recording-namespace-tree {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.recording-tree-header,
+.recording-tree-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.recording-tree-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recording-tree-all {
+  justify-content: flex-start;
+  font-weight: 700;
+}
+
+.recording-tree-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.recording-tree-list details {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.recording-tree-list summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.recording-tree-children {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.recording-tree-children label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
 }
 
 .recording-note-field textarea {
@@ -3731,6 +3814,10 @@ summary:focus-visible {
 
   .log-time-range-panel,
   .recording-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recording-tree-list {
     grid-template-columns: minmax(0, 1fr);
   }
 
