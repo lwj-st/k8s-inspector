@@ -12,6 +12,7 @@ from app.schemas.log_recording import (
     LogRecordingPreview,
     LogRecordingPreviewRequest,
     LogRecordingRead,
+    LogRecordingStatus,
     LogRecordingStorageUsage,
     LogRecordingTemplateMatchRead,
     LogRecordingUpdate,
@@ -124,8 +125,16 @@ def stop_log_recording(
     recording_id: int,
     request: Request,
     session: Session = Depends(get_db_session),
+    provider: InspectionProvider = Depends(get_provider),
 ) -> LogRecordingRead:
     try:
+        try:
+            log_recording_service.collect_recording_once(session, provider, recording_id)
+        except Exception:
+            row = log_recording_service.get_recording(session, recording_id)
+            if row.status != LogRecordingStatus.recording.value:
+                log_recording_engine.remove_auto_stop(request.app, recording_id)
+                return LogRecordingRead.model_validate(row)
         row = log_recording_service.stop_recording(session, recording_id)
         log_recording_engine.remove_auto_stop(request.app, recording_id)
         return LogRecordingRead.model_validate(row)

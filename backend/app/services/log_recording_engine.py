@@ -44,6 +44,7 @@ def remove_auto_stop(app, recording_id: int) -> None:
 def auto_stop_recording(app, recording_id: int) -> None:
     now = datetime.now(timezone.utc)
     with app.state.session_factory() as session:
+        _collect_before_completion(session, app, recording_id)
         row = session.get(LogRecording, recording_id)
         if row is None or row.status != LogRecordingStatus.recording.value:
             return
@@ -59,14 +60,18 @@ def auto_stop_due_recordings(app) -> int:
     now = datetime.now(timezone.utc)
     stopped = 0
     with app.state.session_factory() as session:
-        rows = session.scalars(
-            select(LogRecording).where(
+        recording_ids = session.scalars(
+            select(LogRecording.id).where(
                 LogRecording.status == LogRecordingStatus.recording.value,
                 LogRecording.planned_end_at <= now,
             )
         ).all()
         stopped_ids: list[int] = []
-        for row in rows:
+        for recording_id in recording_ids:
+            _collect_before_completion(session, app, recording_id)
+            row = session.get(LogRecording, recording_id)
+            if row is None or row.status != LogRecordingStatus.recording.value:
+                continue
             row.status = LogRecordingStatus.auto_completed.value
             row.ended_at = now
             row.stop_reason = _auto_stop_reason(row.duration_source)
@@ -96,6 +101,17 @@ def collect_recording_once(app, recording_id: int) -> None:
             return
         if result.status != LogRecordingStatus.recording:
             remove_auto_stop(app, recording_id)
+
+
+def _collect_before_completion(session, app, recording_id: int) -> None:
+    try:
+        log_recording_service.collect_recording_once(
+            session,
+            app.state.provider,
+            recording_id,
+        )
+    except Exception:
+        pass
 
 
 def mark_interrupted_recordings(session, now: datetime | None = None) -> int:

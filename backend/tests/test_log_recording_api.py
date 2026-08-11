@@ -72,6 +72,7 @@ def test_log_recording_crud_and_stop_flow(client) -> None:
     assert stop_response.json()["status"] == "completed"
     assert stop_response.json()["stop_reason"] == "user_stopped"
     assert stop_response.json()["ended_at"] is not None
+    assert stop_response.json()["raw_line_count"] > 0
     assert scheduler.get_job(f"v1.3:log-recording:auto-stop:{created['id']}") is None
     assert scheduler.get_job(f"v1.3:log-recording:collect:{created['id']}") is None
 
@@ -213,6 +214,7 @@ def test_log_recording_auto_stop_due_recordings(client) -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "auto_completed"
     assert response.json()["stop_reason"] == "selected_duration_timeout"
+    assert response.json()["raw_line_count"] > 0
 
 
 def test_log_recording_restart_marks_incomplete_recording_failed(test_settings: Settings) -> None:
