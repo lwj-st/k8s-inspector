@@ -848,7 +848,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     }
   }
 
-  const currentModeLabel = scopeMode === "all" ? "全部 Pod" : scopeMode === "label" ? "Label Selector" : "单个 Pod";
   const currentRunLabel = scopeMode === "single" ? "巡检单个 Pod" : "日志巡检";
   const listTitle = scopeMode === "single" ? "最近使用范围" : "Pod 列表";
   const activeLogTimeRangeText = formatLogCollectionTimeRange(namespaceInspection.data);
@@ -902,6 +901,53 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
                 <option value="single">单个 Pod</option>
               </select>
             </label>
+            {scopeMode !== "single" ? (
+              <label className="label-selector-field">
+                日志时间范围
+                <select
+                  aria-label="日志时间范围"
+                  value={logTimeRangeMode === "recent" ? `recent:${recentLogMinutes}` : "custom"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value === "custom") {
+                      setLogTimeRangeMode("custom");
+                      return;
+                    }
+                    setLogTimeRangeMode("recent");
+                    setRecentLogMinutes(Number(value.split(":")[1]));
+                  }}
+                >
+                  {[5, 15, 30, 60].map((minutes) => (
+                    <option key={minutes} value={`recent:${minutes}`} disabled={minutes > maxLogTimeRangeMinutes}>
+                      最近 {minutes === 60 ? "1 小时" : `${minutes} 分钟`}{minutes > maxLogTimeRangeMinutes ? "（超过上限）" : ""}
+                    </option>
+                  ))}
+                  <option value="custom">自定义起止时间</option>
+                </select>
+              </label>
+            ) : null}
+            {scopeMode !== "single" && logTimeRangeMode === "custom" ? (
+              <>
+                <label className="label-selector-field">
+                  日志开始时间
+                  <input
+                    aria-label="日志开始时间"
+                    type="datetime-local"
+                    value={customLogStart}
+                    onChange={(event) => setCustomLogStart(event.target.value)}
+                  />
+                </label>
+                <label className="label-selector-field">
+                  日志结束时间
+                  <input
+                    aria-label="日志结束时间"
+                    type="datetime-local"
+                    value={customLogEnd}
+                    onChange={(event) => setCustomLogEnd(event.target.value)}
+                  />
+                </label>
+              </>
+            ) : null}
           </div>
 
           {scopeMode === "label" ? (
@@ -954,56 +1000,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             </label>
           ) : null}
 
-          {scopeMode !== "single" ? (
-            <div className="compact-subpanel log-time-range-panel">
-              <label className="label-selector-field">
-                日志时间范围
-                <select
-                  aria-label="日志时间范围"
-                  value={logTimeRangeMode === "recent" ? `recent:${recentLogMinutes}` : "custom"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (value === "custom") {
-                      setLogTimeRangeMode("custom");
-                      return;
-                    }
-                    setLogTimeRangeMode("recent");
-                    setRecentLogMinutes(Number(value.split(":")[1]));
-                  }}
-                >
-                  {[5, 15, 30, 60].map((minutes) => (
-                    <option key={minutes} value={`recent:${minutes}`} disabled={minutes > maxLogTimeRangeMinutes}>
-                      最近 {minutes === 60 ? "1 小时" : `${minutes} 分钟`}{minutes > maxLogTimeRangeMinutes ? "（超过上限）" : ""}
-                    </option>
-                  ))}
-                  <option value="custom">自定义起止时间</option>
-                </select>
-              </label>
-              {logTimeRangeMode === "custom" ? (
-                <>
-                  <label className="label-selector-field">
-                    日志开始时间
-                    <input
-                      aria-label="日志开始时间"
-                      type="datetime-local"
-                      value={customLogStart}
-                      onChange={(event) => setCustomLogStart(event.target.value)}
-                    />
-                  </label>
-                  <label className="label-selector-field">
-                    日志结束时间
-                    <input
-                      aria-label="日志结束时间"
-                      type="datetime-local"
-                      value={customLogEnd}
-                      onChange={(event) => setCustomLogEnd(event.target.value)}
-                    />
-                  </label>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-
           <div className="button-row log-inspection-action-row">
             <button
               type="button"
@@ -1021,7 +1017,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
               className="button-success"
               onClick={() => void handleToggleRecording()}
             >
-              开始记录日志
+              记录日志
             </button>
             <a className="mini-button text-button" href="/log-recordings">
               日志记录
@@ -1031,7 +1027,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             <form className="recording-inline-panel" onSubmit={(event) => void handleStartRecording(event)}>
               <div className="section-header">
                 <div>
-                  <h4>开始记录日志</h4>
+                  <h4>记录日志</h4>
                   <span className="section-tip">记录开始后，系统只保存该名称空间后续新增日志。</span>
                 </div>
               </div>
@@ -1202,10 +1198,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           {scopeMode === "single" && podOptionsError ? <p>Pod 下拉加载失败：{podOptionsError}</p> : null}
         </div>
         <div className="hero-metric-stack">
-          <div className="hero-metric hero-metric-compact">
-            <span>当前模式</span>
-            <strong>{currentModeLabel}</strong>
-          </div>
           <div className="hero-metric hero-metric-compact">
             <span>已发现名称空间</span>
             <strong>{namespaceDiscovery?.namespaces.length ?? 0}</strong>

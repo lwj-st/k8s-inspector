@@ -629,16 +629,16 @@ describe("PodInspectionPage", () => {
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.click(screen.getByRole("button", { name: "开始记录日志" }));
+    fireEvent.click(screen.getByRole("button", { name: "记录日志" }));
 
-    expect(await screen.findByRole("heading", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "记录日志" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "支付 500 复现" } });
     fireEvent.change(screen.getByLabelText("记录备注"), { target: { value: "点击支付后复现" } });
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
 
     expect(await screen.findByText("已开始日志记录：支付 500 复现")).toBeInTheDocument();
     expect(screen.getByText("进行中的日志记录")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
 
     const createRequest = fetchMock.mock.calls.find(
@@ -655,16 +655,16 @@ describe("PodInspectionPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "结束记录" }));
     expect(await screen.findByText("已停止记录：支付 500 复现")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
   });
 
   it("starts recordings after selecting namespaces in the recording tree", async () => {
     render(<PodInspectionPage initialScopeMode="all" />);
 
     await screen.findByRole("option", { name: "demo" });
-    fireEvent.click(screen.getByRole("button", { name: "开始记录日志" }));
+    fireEvent.click(screen.getByRole("button", { name: "记录日志" }));
 
-    expect(await screen.findByRole("heading", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "记录日志" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "日志记录" })).toHaveAttribute("href", "/log-recordings");
     fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "批量复现" } });
     fireEvent.click(screen.getByLabelText("记录名称空间 demo"));
@@ -693,7 +693,7 @@ describe("PodInspectionPage", () => {
 
     expect(await screen.findByText("进行中的日志记录")).toBeInTheDocument();
     expect(screen.getByText("接口恢复的记录")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "结束记录" })).toBeInTheDocument();
   });
 
@@ -718,9 +718,9 @@ describe("PodInspectionPage", () => {
 
     await screen.findByRole("option", { name: "demo" });
     fireEvent.change(screen.getByLabelText("名称空间"), { target: { value: "demo" } });
-    fireEvent.click(screen.getByRole("button", { name: "开始记录日志" }));
+    fireEvent.click(screen.getByRole("button", { name: "记录日志" }));
 
-    await screen.findByRole("heading", { name: "开始记录日志" });
+    await screen.findByRole("heading", { name: "记录日志" });
     fireEvent.change(screen.getByLabelText("日志名称"), { target: { value: "支付 500 复现" } });
     fireEvent.click(screen.getByRole("button", { name: "确认开始" }));
     expect(await screen.findByRole("button", { name: "结束记录" })).toBeInTheDocument();
@@ -728,7 +728,7 @@ describe("PodInspectionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "结束记录" }));
 
     expect(await screen.findByText("记录已结束：支付 500 复现")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始记录日志" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "记录日志" })).toBeInTheDocument();
     expect(screen.queryByText(/记录日志失败/)).not.toBeInTheDocument();
   });
 

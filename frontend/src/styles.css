@@ -358,7 +358,7 @@ a {
 }
 
 .log-inspection-hero {
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.28fr);
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.16fr);
 }
 
 .log-inspection-hero .hero-metric-stack {
@@ -366,14 +366,14 @@ a {
 }
 
 .log-inspection-hero .hero-metric {
-  min-height: 72px;
-  padding: 12px 14px;
+  min-height: 58px;
+  padding: 10px 12px;
   border-radius: 12px;
 }
 
 .log-inspection-hero .hero-metric strong {
-  margin-top: 6px;
-  font-size: 24px;
+  margin-top: 4px;
+  font-size: 20px;
 }
 
 .quick-action-grid {
@@ -1449,7 +1449,8 @@ a {
 }
 
 .entry-form-grid-compact {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(180px, 0.9fr) minmax(180px, 0.95fr) minmax(160px, 0.85fr) minmax(180px, 1fr);
+  max-width: 980px;
 }
 
 .compact-subpanel {
