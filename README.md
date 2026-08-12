@@ -165,7 +165,7 @@ python3 -c 'from getpass import getpass; from argon2 import PasswordHasher; prin
 replicaCount: 1
 
 image:
-  repository: ghcr.io/your-org/k8s-inspector
+  repository: ghcr.io/lwj-st/k8s-inspector
   tag: v1.3.0
 
 env:
@@ -331,7 +331,7 @@ kubectl get secret TLS_SECRET -n INGRESS_NAMESPACE \
 ```bash
 docker build \
   --build-arg VITE_BASE_PATH=/inspector \
-  -t ghcr.io/your-org/k8s-inspector:v1.3.0 .
+  -t ghcr.io/lwj-st/k8s-inspector:v1.3.0 .
 ```
 
 发布镜像由 GitHub Actions 使用 Buildx 构建 `linux/amd64` 和 `linux/arm64`
@@ -341,7 +341,7 @@ docker build \
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   --build-arg VITE_BASE_PATH=/inspector \
-  -t ghcr.io/your-org/k8s-inspector:v1.3.0 .
+  -t ghcr.io/lwj-st/k8s-inspector:v1.3.0 .
 ```
 
 双入口部署使用根路径镜像，不设置 `VITE_BASE_PATH=/inspector`。子路径入口由网关

@@ -15,7 +15,7 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
   -f ./deploy/helm/k8s-inspector/values-root.yaml \
-  --set image.tag=v1.2.0 \
+  --set image.tag=v1.3.0 \
   --atomic \
   --timeout 15m
 ```
@@ -32,7 +32,7 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
   -f ./deploy/helm/k8s-inspector/values-subpath.yaml \
-  --set image.tag=v1.2.0 \
+  --set image.tag=v1.3.0 \
   --atomic \
   --timeout 15m
 ```
@@ -49,7 +49,7 @@ helm upgrade --install k8s-inspector ./deploy/helm/k8s-inspector \
   --namespace k8s-inspector \
   --create-namespace \
   -f ./deploy/helm/k8s-inspector/values-dual.yaml \
-  --set image.tag=v1.2.0 \
+  --set image.tag=v1.3.0 \
   --atomic \
   --timeout 15m
 ```
