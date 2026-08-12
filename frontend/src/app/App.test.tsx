@@ -101,7 +101,7 @@ describe("App", () => {
     fetchMock.mockReset();
   });
 
-  it("renders the problem workbench and preserves all v1.0 entries", async () => {
+  it("renders the problem workbench and exposes the main navigation", async () => {
     const router = createMemoryRouter(appRoutes, {
       initialEntries: ["/"],
       basename: getRouterBasename(""),
@@ -111,11 +111,12 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "K8s 巡检台" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "问题工作台" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "状态巡检" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "资源巡检" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "日志巡检" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "模板检查" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "故障模板" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "关键字与白名单" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "日志记录" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "模板匹配" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "模板管理" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "日志规则" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "系统设置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开菜单" })).toHaveAttribute("aria-expanded", "false");
   });
