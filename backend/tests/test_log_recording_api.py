@@ -347,6 +347,18 @@ def test_log_recording_pods_and_logs_read_existing_rows(client) -> None:
     assert logs_response.json()["items"][0]["repeat_count"] == 2
     assert "Bearer ***" in logs_response.json()["items"][0]["line_text"]
 
+    download_response = client.get(
+        f"/api/v1/log-recordings/{created['id']}/pods/demo-api-1/containers/demo-api/logs/download",
+        params={"view": "folded"},
+    )
+    assert download_response.status_code == 200
+    assert download_response.headers["content-type"].startswith("text/plain")
+    assert "attachment;" in download_response.headers["content-disposition"]
+    assert "recording-" in download_response.headers["content-disposition"]
+    assert ".log" in download_response.headers["content-disposition"]
+    assert "x2 Authorization: Bearer *** error" in download_response.text
+    assert "Bearer mock-token" not in download_response.text
+
 
 def test_log_recording_pods_return_container_names_without_log_lines(client) -> None:
     created = _create_recording(client)

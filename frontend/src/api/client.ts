@@ -154,6 +154,44 @@ async function requestVoid(path: string, init?: InternalRequestInit): Promise<vo
   }
 }
 
+async function requestBlob(path: string, init?: InternalRequestInit): Promise<{ blob: Blob; filename: string | null }> {
+  const { skipUnauthorizedHandler = false, ...fetchInit } = init ?? {};
+  const headers = new Headers(fetchInit.headers);
+  const method = (fetchInit.method ?? "GET").toUpperCase();
+  if (currentCsrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    headers.set("X-CSRF-Token", currentCsrfToken);
+  }
+  const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
+    credentials: "same-origin",
+    ...fetchInit,
+    headers,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 && !skipUnauthorizedHandler) {
+      unauthorizedHandler?.();
+    }
+    throw await responseError(response);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: filenameFromContentDisposition(response.headers.get("Content-Disposition")),
+  };
+}
+
+function filenameFromContentDisposition(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1]);
+  }
+  const quotedMatch = value.match(/filename="([^"]+)"/i);
+  return quotedMatch?.[1] ?? null;
+}
+
 function queryString(params: Record<string, string | number | boolean | null | undefined>) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -827,5 +865,16 @@ export function listLogRecordingLogs(
 ): Promise<LogRecordingLogPage> {
   return request(
     `/log-recordings/${recordingId}/pods/${encodeURIComponent(podName)}/containers/${encodeURIComponent(containerName)}/logs${queryString(params)}`,
+  );
+}
+
+export function downloadLogRecordingLogs(
+  recordingId: number,
+  podName: string,
+  containerName: string,
+  view: LogRecordingViewMode,
+): Promise<{ blob: Blob; filename: string | null }> {
+  return requestBlob(
+    `/log-recordings/${recordingId}/pods/${encodeURIComponent(podName)}/containers/${encodeURIComponent(containerName)}/logs/download${queryString({ view })}`,
   );
 }

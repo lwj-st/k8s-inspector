@@ -6,6 +6,9 @@ import { LogRecordingsPage } from "./LogRecordingsPage";
 
 const fetchMock = vi.fn();
 const scrollIntoViewMock = vi.fn();
+const createObjectURLMock = vi.fn(() => "blob:log-download");
+const revokeObjectURLMock = vi.fn();
+const anchorClickMock = vi.fn();
 
 const baseRecording = {
   id: 1,
@@ -37,6 +40,9 @@ function json(data: unknown, status = 200) {
 describe("LogRecordingsPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
+    URL.createObjectURL = createObjectURLMock;
+    URL.revokeObjectURL = revokeObjectURLMock;
+    HTMLAnchorElement.prototype.click = anchorClickMock;
     Element.prototype.scrollIntoView = scrollIntoViewMock;
     configureApiSession("csrf-token-at-least-16");
   });
@@ -46,6 +52,9 @@ describe("LogRecordingsPage", () => {
     vi.unstubAllGlobals();
     fetchMock.mockReset();
     scrollIntoViewMock.mockReset();
+    createObjectURLMock.mockClear();
+    revokeObjectURLMock.mockClear();
+    anchorClickMock.mockClear();
     configureApiSession(null);
   });
 
@@ -120,6 +129,16 @@ describe("LogRecordingsPage", () => {
           collection_error: null,
           container_names: ["api"],
         }]);
+      }
+      if (url.includes("/log-recordings/1/pods/api-0/containers/api/logs/download")) {
+        expect(url).toContain("view=folded");
+        return Promise.resolve(new Response("2026-08-09T10:02:00Z x2 database timeout while checkout\n", {
+          status: 200,
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Disposition": "attachment; filename=\"recording-1_api-0_api_folded.log\"",
+          },
+        }));
       }
       if (url.includes("/log-recordings/1/pods/api-0/containers/api/logs")) {
         expect(url).toContain("view=folded");
@@ -196,9 +215,18 @@ describe("LogRecordingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "清空" }));
     expect(screen.getByPlaceholderText("搜索当前日志")).toHaveValue("");
 
+    fireEvent.click(screen.getByRole("button", { name: "下载日志" }));
+    await waitFor(() => expect(createObjectURLMock).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/log-recordings/1/pods/api-0/containers/api/logs/download?view=folded"),
+      expect.anything(),
+    );
+    expect(anchorClickMock).toHaveBeenCalled();
+    expect(await screen.findByText("日志文件已开始下载")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "模板匹配" }));
     const row = await screen.findByText("数据库超时");
-    expect(screen.getByText("已命中 1 条模板结果，是否查看？")).toBeInTheDocument();
+    expect(await screen.findByText("已命中 1 条模板结果，是否查看？")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("alertdialog", { name: "发现命中模板" })).getByRole("button", { name: "查看" }));
     await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled());
     expect(screen.getByRole("columnheader", { name: "命中模板" })).toHaveClass("log-recording-match-heading");

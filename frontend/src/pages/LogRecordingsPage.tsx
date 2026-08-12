@@ -4,6 +4,7 @@ import {
   ApiClientError,
   deleteLogRecording,
   discoverNamespaces,
+  downloadLogRecordingLogs,
   getLogRecording,
   getLogRecordingStorage,
   listLogRecordingLogs,
@@ -133,6 +134,27 @@ function highlightText(text: string, keyword: string) {
 
 function uniqueContainers(lines: LogRecordingLine[]) {
   return Array.from(new Set(lines.map((line) => line.container_name))).sort();
+}
+
+function fallbackLogFilename(recording: LogRecording, podName: string, containerName: string, view: LogRecordingViewMode) {
+  const safe = (value: string) => value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "unknown";
+  return [safe(`recording-${recording.id}`), safe(podName), safe(containerName), safe(view)].join("_") + ".log";
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const createObjectURL = URL.createObjectURL;
+  const revokeObjectURL = URL.revokeObjectURL;
+  if (!createObjectURL || !revokeObjectURL) {
+    throw new Error("当前浏览器不支持自动下载");
+  }
+  const url = createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => revokeObjectURL(url), 0);
 }
 
 export function LogRecordingsPage() {
@@ -428,6 +450,24 @@ export function LogRecordingsPage() {
     }
   }
 
+  async function downloadCurrentLogs() {
+    if (!selected || !selectedPod || !selectedContainer) {
+      setError("请先选择 Pod 和容器");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await downloadLogRecordingLogs(selected.id, selectedPod, selectedContainer, view);
+      saveBlob(result.blob, result.filename ?? fallbackLogFilename(selected, selectedPod, selectedContainer, view));
+      setMessage("日志文件已开始下载");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function moveSearch(delta: number) {
     if (searchLineIds.length === 0) {
       return;
@@ -598,6 +638,7 @@ export function LogRecordingsPage() {
                 </select>
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索当前日志" />
                 <span>{search ? `${searchCount} 行命中` : ""}</span>
+                <button type="button" disabled={!selectedPod || !selectedContainer || busy} onClick={() => void downloadCurrentLogs()}>下载日志</button>
                 <button type="button" disabled={searchLineIds.length === 0} onClick={() => moveSearch(-1)}>上一个</button>
                 <button type="button" disabled={searchLineIds.length === 0} onClick={() => moveSearch(1)}>下一个</button>
                 <button type="button" disabled={!search} onClick={() => setSearch("")}>清空</button>

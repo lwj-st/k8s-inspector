@@ -438,6 +438,34 @@ def list_logs(
     )
 
 
+def download_logs(
+    session: Session,
+    recording_id: int,
+    *,
+    pod_name: str,
+    container_name: str,
+    view: LogRecordingViewMode,
+):
+    get_recording(session, recording_id)
+    filters = [
+        LogRecordingLine.recording_id == recording_id,
+        LogRecordingLine.pod_name == pod_name,
+        LogRecordingLine.container_name == container_name,
+        LogRecordingLine.folded.is_(view == LogRecordingViewMode.folded),
+    ]
+
+    def iter_lines():
+        rows = session.scalars(
+            select(LogRecordingLine)
+            .where(*filters)
+            .order_by(LogRecordingLine.first_seen_at.asc(), LogRecordingLine.id.asc())
+        ).yield_per(500)
+        for row in rows:
+            yield _format_download_line(row, folded=view == LogRecordingViewMode.folded)
+
+    return iter_lines()
+
+
 def list_template_matches(session: Session, recording_id: int) -> list[LogRecordingTemplateMatchRead]:
     get_recording(session, recording_id)
     rows = session.scalars(
@@ -828,6 +856,13 @@ def _latest_folded_line(
         .order_by(LogRecordingLine.id.desc())
         .limit(1)
     )
+
+
+def _format_download_line(row: LogRecordingLine, *, folded: bool) -> str:
+    observed_at = row.log_time or row.first_seen_at or row.collected_at
+    timestamp = _ensure_utc(observed_at).isoformat() if observed_at is not None else "--"
+    repeat = f" x{row.repeat_count}" if folded and row.repeat_count > 1 else ""
+    return f"{timestamp}{repeat} {row.line_text}\n"
 
 
 def _fail_recording(session: Session, row: LogRecording, message: str) -> None:

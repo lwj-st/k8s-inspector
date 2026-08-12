@@ -1,5 +1,8 @@
+import re
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_provider
@@ -24,6 +27,18 @@ from app.services import log_recording_service
 
 
 router = APIRouter(prefix="/log-recordings", tags=["log-recordings"])
+
+
+def _safe_log_filename(*parts: str) -> str:
+    normalized_parts = []
+    for part in parts:
+        normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", part.strip()).strip("-._")
+        normalized_parts.append(normalized[:80] or "unknown")
+    return "_".join(normalized_parts) + ".log"
+
+
+def _attachment_disposition(filename: str) -> str:
+    return f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"
 
 
 @router.post("/preview", response_model=LogRecordingPreview)
@@ -205,3 +220,34 @@ def list_log_recording_logs(
         )
     except log_recording_service.LogRecordingNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/{recording_id}/pods/{pod_name}/containers/{container_name}/logs/download")
+def download_log_recording_logs(
+    recording_id: int,
+    pod_name: str,
+    container_name: str,
+    view: LogRecordingViewMode = Query(default=LogRecordingViewMode.folded),
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    try:
+        content = log_recording_service.download_logs(
+            session,
+            recording_id,
+            pod_name=pod_name,
+            container_name=container_name,
+            view=view,
+        )
+    except log_recording_service.LogRecordingNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    filename = _safe_log_filename(
+        f"recording-{recording_id}",
+        pod_name,
+        container_name,
+        view.value,
+    )
+    return StreamingResponse(
+        content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": _attachment_disposition(filename)},
+    )
