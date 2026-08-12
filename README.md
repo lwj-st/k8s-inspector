@@ -336,6 +336,16 @@ docker build \
   -t ghcr.io/your-org/k8s-inspector:v1.3.0 .
 ```
 
+发布镜像由 GitHub Actions 使用 Buildx 构建 `linux/amd64` 和 `linux/arm64`
+两个平台。本地需要验证多架构镜像时，可以使用：
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --build-arg VITE_BASE_PATH=/inspector \
+  -t ghcr.io/your-org/k8s-inspector:v1.3.0 .
+```
+
 双入口部署使用根路径镜像，不设置 `VITE_BASE_PATH=/inspector`。子路径入口由网关
 rewrite/strip path 到根路径，应用内部仍生成根路径资源和 API 地址。
 
