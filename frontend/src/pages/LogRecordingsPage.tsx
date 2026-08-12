@@ -583,8 +583,8 @@ export function LogRecordingsPage() {
             </div>
           </div>
           <dl className="log-recording-meta">
-            <div><dt>计划结束</dt><dd>{formatTime(displaySelected.planned_end_at)}</dd></div>
-            <div><dt>实际结束</dt><dd>{formatTime(displaySelected.ended_at)}</dd></div>
+            <div><dt>开始时间</dt><dd>{formatTime(displaySelected.started_at)}</dd></div>
+            <div><dt>结束时间</dt><dd>{formatTime(displaySelected.ended_at)}</dd></div>
             <div><dt>倒计时</dt><dd>{countdown(displaySelected, nowMs)}</dd></div>
             <div><dt>Pod/容器</dt><dd>{displaySelected.pod_count}/{displaySelected.container_count}</dd></div>
             <div><dt>截断状态</dt><dd>{truncatedText(displaySelected.truncated)}</dd></div>

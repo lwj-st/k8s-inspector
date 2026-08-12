@@ -201,6 +201,11 @@ describe("LogRecordingsPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "查看" }));
     expect(await screen.findByText("api-0")).toBeInTheDocument();
+    const detail = screen.getByRole("heading", { name: "支付 500 复现" }).closest(".log-recording-detail") as HTMLElement;
+    expect(within(detail).getByText("开始时间")).toBeInTheDocument();
+    expect(within(detail).getByText("结束时间")).toBeInTheDocument();
+    expect(within(detail).queryByText("计划结束")).not.toBeInTheDocument();
+    expect(within(detail).queryByText("实际结束")).not.toBeInTheDocument();
     expect(screen.getByText(/名称空间：demo/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "复制" })).not.toBeInTheDocument();
     expect(await screen.findByText(/database timeout while checkout/)).toBeInTheDocument();
