@@ -23,15 +23,13 @@ K8s Inspector v1.3.0 是面向单个 Kubernetes 集群的只读巡检与排障�
 
 ![问题工作台](docs/assets/screenshots/issue-workbench.png)
 
-状态巡检支持按名称空间查看资源健康、异常分类、Pod 数量和资源使用情况。
+日志巡检支持按名称空间和时间范围检查 Pod 日志，展示命中关键字、异常 Pod 和日志上下文。
 
-![状态巡检](docs/assets/screenshots/status-inspection.png)
+![日志巡检](docs/assets/screenshots/log-inspection.png)
 
-关键字与白名单用于维护日志异常判断规则和忽略规则，减少已知无害日志带来的噪音。
+日志记录用于查看复现期间采集的历史任务，支持按名称空间筛选和进入详情查看 Pod 日志。
 
-![关键字与白名单](docs/assets/screenshots/keyword-whitelist.png)
-
-复现日志用于记录用户复现问题期间的名称空间日志，支持按 Pod 和容器查看折叠或原始日志。
+![日志记录](docs/assets/screenshots/log-recordings.png)
 
 系统设置集中管理巡检计划、通知渠道、巡检策略、系统状态和基础配置。
 
