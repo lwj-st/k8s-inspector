@@ -1124,6 +1124,14 @@ a {
   min-width: 0;
 }
 
+.log-recordings-page {
+  gap: 12px;
+}
+
+.log-recording-storage {
+  margin: 0;
+}
+
 .log-recording-card {
   display: flex;
   align-items: center;
@@ -1369,9 +1377,10 @@ a {
 
 .log-recording-toolbar {
   display: grid;
-  grid-template-columns: minmax(120px, 150px) minmax(240px, 1fr) minmax(72px, auto) repeat(3, minmax(70px, auto));
+  grid-template-columns: minmax(120px, 150px) minmax(220px, 520px) minmax(72px, auto) repeat(4, minmax(70px, auto));
   gap: 8px;
   align-items: center;
+  justify-content: start;
   margin-bottom: 10px;
 }
 

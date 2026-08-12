@@ -90,7 +90,7 @@ describe("LogRecordingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "结束" }));
 
-    await waitFor(() => expect(screen.getByText("记录已结束")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("已结束")).toBeInTheDocument());
     expect(screen.getByText("用户手动结束")).toBeInTheDocument();
   });
 
@@ -227,7 +227,6 @@ describe("LogRecordingsPage", () => {
       expect.anything(),
     );
     expect(anchorClickMock).toHaveBeenCalled();
-    expect(await screen.findByText("日志文件已开始下载")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "模板匹配" }));
     const row = await screen.findByText("数据库超时");

@@ -179,7 +179,6 @@ export function LogRecordingsPage() {
   const [templates, setTemplates] = useState<FaultTemplate[] | null>(null);
   const [pendingTemplateMatchCount, setPendingTemplateMatchCount] = useState<number | null>(null);
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
@@ -342,7 +341,6 @@ export function LogRecordingsPage() {
     try {
       const updated = await stopLogRecording(recordingId);
       setSelected(updated);
-      setMessage("记录已结束");
       await loadRecords(recordPage);
       await refreshStorage();
     } catch (err) {
@@ -413,7 +411,6 @@ export function LogRecordingsPage() {
       setSelectedMatch(null);
       setMatchTemplate(null);
       setPendingTemplateMatchCount(result.length > 0 ? result.length : null);
-      setMessage(result.length > 0 ? `命中 ${result.length} 条模板结果` : "未命中日志类模板");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -460,7 +457,6 @@ export function LogRecordingsPage() {
     try {
       const result = await downloadLogRecordingLogs(selected.id, selectedPod, selectedContainer, view);
       saveBlob(result.blob, result.filename ?? fallbackLogFilename(selected, selectedPod, selectedContainer, view));
-      setMessage("日志文件已开始下载");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -482,14 +478,12 @@ export function LogRecordingsPage() {
       <div className="section-header">
         <div>
           <h2>日志记录</h2>
-          <p className="inline-note">查看正在记录和已经完成的日志记录任务。</p>
         </div>
         <button type="button" onClick={() => void loadRecords()}>刷新</button>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
-      {message ? <p className="form-success">{message}</p> : null}
-      <p className={storageWarning ? "form-error" : "inline-note"}>
+      <p className={`log-recording-storage ${storageWarning ? "form-error" : "inline-note"}`}>
         日志存储：{storageText || "--"}{storageFull ? "，已达到上限，请删除旧记录或调整配置" : ""}
       </p>
 
@@ -638,10 +632,10 @@ export function LogRecordingsPage() {
                 </select>
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索当前日志" />
                 <span>{search ? `${searchCount} 行命中` : ""}</span>
-                <button type="button" disabled={!selectedPod || !selectedContainer || busy} onClick={() => void downloadCurrentLogs()}>下载日志</button>
+                <button type="button" disabled={!search} onClick={() => setSearch("")}>清空</button>
                 <button type="button" disabled={searchLineIds.length === 0} onClick={() => moveSearch(-1)}>上一个</button>
                 <button type="button" disabled={searchLineIds.length === 0} onClick={() => moveSearch(1)}>下一个</button>
-                <button type="button" disabled={!search} onClick={() => setSearch("")}>清空</button>
+                <button type="button" disabled={!selectedPod || !selectedContainer || busy} onClick={() => void downloadCurrentLogs()}>下载日志</button>
               </div>
               {!selectedPod ? <p className="empty-copy">请选择 Pod。</p> : null}
               {selectedPod && !selectedContainer ? <p className="empty-copy">该 Pod 暂无可查看的容器日志。</p> : null}
