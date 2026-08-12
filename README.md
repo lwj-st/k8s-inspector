@@ -373,4 +373,4 @@ basePath: /inspector
 
 从 v1.0.0 或 v1.1.0 升级前必须停止写入并备份 SQLite 数据库、当前镜像、values 和所有安全密钥。v1.1.0 详细步骤见 [v1.1.0 升级与回退指南](docs/v1.1.0/upgrade-guide.md)。
 
-v1.2.0 发布验收状态见 [v1.2.0 验收报告](docs/v1.2.0/acceptance-report.md)。v1.3.0 需求见 [v1.3.0 PRD](docs/v1.3.0/prd.md)。
+v1.2.0 发布验收状态见 [v1.2.0 验收报告](docs/v1.2.0/acceptance-report.md)。v1.3.0 发布验收状态见 [v1.3.0 验收报告](docs/v1.3.0/acceptance-report.md)，需求口径见 [v1.3.0 PRD](docs/v1.3.0/prd.md)。
