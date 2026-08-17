@@ -28,8 +28,15 @@ from app.services.notification_transport import SendResult
 from app.services.issue_lifecycle import LifecycleChange
 
 
-def _message(*, severity=IssueSeverity.critical, mention_all=False, evidence=None):
-    now = datetime.now(timezone.utc)
+def _message(
+    *,
+    severity=IssueSeverity.critical,
+    mention_all=False,
+    evidence=None,
+    now: datetime | None = None,
+    suggestion="检查容器状态",
+):
+    now = now or datetime.now(timezone.utc)
     return NotificationMessage(
         event_type=NotificationEventType.issue_opened,
         cluster_id="cluster-a",
@@ -42,7 +49,7 @@ def _message(*, severity=IssueSeverity.critical, mention_all=False, evidence=Non
         first_seen_at=now,
         last_seen_at=now,
         evidence_summaries=evidence or ["Ready=False"],
-        suggestion="检查容器状态",
+        suggestion=suggestion,
         detail_url="https://inspector.example.com/issues/1",
         mention_all=mention_all,
     )
@@ -59,7 +66,7 @@ def _target():
 
 def test_feishu_card_is_non_interactive_and_safely_cropped():
     payload, truncated = build_feishu_payload(
-        _message(evidence=["证" * 500 for _ in range(20)]),
+        _message(evidence=["证" * 800 for _ in range(20)], suggestion="建" * 2000),
         signing_secret="signing-secret",
         timestamp=123456,
     )
@@ -76,6 +83,17 @@ def test_mention_all_only_appears_for_explicit_critical_message():
     warning, _ = build_feishu_payload(_message(severity=IssueSeverity.warning))
     assert "<at id=all>" in str(critical)
     assert "<at id=all>" not in str(warning)
+
+
+def test_feishu_notification_times_display_as_beijing_time():
+    message = _message(now=datetime(2026, 8, 17, 7, 30, 45, tzinfo=timezone.utc))
+
+    card_payload, _ = build_feishu_payload(message)
+    text_payload, _ = build_feishu_payload(message, text_fallback=True)
+
+    assert "2026-08-17 15:30:45 CST" in card_payload["card"]["elements"][0]["content"]
+    assert "2026-08-17T07:30:45+00:00" not in card_payload["card"]["elements"][0]["content"]
+    assert "时间：2026-08-17 15:30:45 CST" in text_payload["content"]["text"]
 
 
 def test_delivery_revalidates_target_for_every_retry(client, monkeypatch):

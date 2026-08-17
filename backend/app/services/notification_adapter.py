@@ -7,7 +7,9 @@ import json
 import re
 import time
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.schemas.v1_1 import (
     IssueSeverity,
@@ -17,6 +19,7 @@ from app.schemas.v1_1 import (
 
 
 FEISHU_MAX_BODY_BYTES = 30 * 1024
+FEISHU_DISPLAY_TIMEZONE = ZoneInfo("Asia/Shanghai")
 _SENSITIVE_PATTERNS = (
     re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+"),
     re.compile(r"(?i)\b(password|passwd|token|secret|api[_-]?key)\s*[:=]\s*\S+"),
@@ -90,8 +93,8 @@ def _feishu_card(message: NotificationMessage) -> dict[str, Any]:
         f"{message.severity.value if message.severity else '-'}\n"
         f"**结论**：{message.summary}\n"
         f"**资源**：{resource}\n"
-        f"**首次发现**：{message.first_seen_at.isoformat() if message.first_seen_at else '-'}\n"
-        f"**最后变化**：{message.last_seen_at.isoformat()}\n"
+        f"**首次发现**：{_format_feishu_time(message.first_seen_at)}\n"
+        f"**最后变化**：{_format_feishu_time(message.last_seen_at)}\n"
         f"**证据摘要**：\n{evidence}\n"
         f"**建议**：{message.suggestion or '请进入系统查看详情。'}\n"
         f"**详情**：{message.detail_url}{mention}"
@@ -118,7 +121,7 @@ def _feishu_text(message: NotificationMessage) -> dict[str, Any]:
         f"{message.severity.value if message.severity else '-'}\n"
         f"结论：{message.summary}\n"
         f"资源：{_resource_label(message)}\n"
-        f"时间：{message.last_seen_at.isoformat()}\n"
+        f"时间：{_format_feishu_time(message.last_seen_at)}\n"
         f"建议：{message.suggestion or '请进入系统查看详情。'}\n"
         f"详情：{message.detail_url}{mention}"
     )
@@ -187,6 +190,13 @@ def _resource_label(message: NotificationMessage) -> str:
         return "-"
     namespace = f"{message.resource.namespace}/" if message.resource.namespace else ""
     return f"{message.resource.kind} {namespace}{message.resource.name}"
+
+
+def _format_feishu_time(value: datetime | None) -> str:
+    if value is None:
+        return "-"
+    aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return aware.astimezone(FEISHU_DISPLAY_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 def _sanitize(value: str | None, limit: int) -> str:
