@@ -3383,14 +3383,50 @@ summary:focus-visible {
   align-items: start;
 }
 
-.image-namespace-field select[multiple] {
-  min-height: 146px;
-  padding: 8px;
+.image-namespace-field {
+  display: grid;
+  gap: 8px;
 }
 
-.image-namespace-field option {
-  padding: 7px 8px;
-  border-radius: 7px;
+.image-field-label {
+  font-weight: 600;
+}
+
+.image-namespace-checklist {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  min-height: 122px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input-bg);
+}
+
+.image-namespace-option {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 9px !important;
+  min-height: 34px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.image-namespace-option:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.image-namespace-option input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  margin: 0;
+  accent-color: #2563eb;
 }
 
 .image-search-field {

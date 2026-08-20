@@ -59,6 +59,14 @@ export function ImageInventoryPage() {
     setError(null);
   }
 
+  function toggleNamespace(namespace: string) {
+    updateSelectedNamespaces(
+      selectedNamespaces.includes(namespace)
+        ? selectedNamespaces.filter((item) => item !== namespace)
+        : [...selectedNamespaces, namespace],
+    );
+  }
+
   async function handleQuery() {
     if (!canQuery) {
       setError("请选择名称空间后查看镜像清单");
@@ -149,7 +157,7 @@ export function ImageInventoryPage() {
         <div className="section-header">
           <div>
             <h3>筛选条件</h3>
-            <p className="inline-note">按住 Command 或 Shift 可一次选择多个名称空间，不会自动读取全集群。</p>
+            <p className="inline-note">勾选一个或多个名称空间后再查询，不会自动读取全集群。</p>
           </div>
           {namespacesError ? (
             <button type="button" className="mini-button" onClick={() => void refresh().catch(() => undefined)}>
@@ -158,22 +166,25 @@ export function ImageInventoryPage() {
           ) : null}
         </div>
         <div className="image-filter-grid">
-          <label className="image-namespace-field">
-            名称空间
-            <select
-              aria-label="选择名称空间"
-              multiple
-              size={Math.min(Math.max(namespaceOptions.length, 4), 8)}
-              value={selectedNamespaces}
-              disabled={namespacesLoading || namespaceOptions.length === 0}
-              onChange={(event) => updateSelectedNamespaces(Array.from(event.target.selectedOptions, (option) => option.value))}
-            >
-              {namespaceOptions.map((namespace) => (
-                <option key={namespace} value={namespace}>{namespace}</option>
-              ))}
-            </select>
+          <div className="image-namespace-field">
+            <span className="image-field-label">名称空间</span>
+            <div className="image-namespace-checklist" role="group" aria-label="选择名称空间">
+              {namespaceOptions.length > 0 ? namespaceOptions.map((namespace) => (
+                <label className="image-namespace-option" key={namespace}>
+                  <input
+                    type="checkbox"
+                    checked={selectedNamespaces.includes(namespace)}
+                    disabled={namespacesLoading}
+                    onChange={() => toggleNamespace(namespace)}
+                  />
+                  <span>{namespace}</span>
+                </label>
+              )) : (
+                <span className="inline-note">{namespacesLoading ? "正在加载名称空间..." : "当前没有可用名称空间"}</span>
+              )}
+            </div>
             {namespacesLoading ? <span className="inline-note">正在加载名称空间...</span> : null}
-          </label>
+          </div>
           <label className="image-search-field">
             镜像关键字
             <input

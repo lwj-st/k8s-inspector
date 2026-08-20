@@ -8,11 +8,11 @@
 
 - 新增“镜像清单”页面和左侧导航入口。
 - 支持选择一个或多个名称空间后查询镜像；未选择名称空间时不查询全集群。
-- 镜像来源覆盖 Pod spec 中的初始化容器、运行容器，以及 Pod status 中的 `image` 和 `imageID`。
+- 镜像来源覆盖 Pod spec 中的初始化容器、运行容器，以及 Pod status 中的 `image`；`imageID` 只作为详情字段展示。
 - 镜像按首尾空格裁剪后的地址去重，不猜测默认 registry，不改写 tag 或 digest。
 - 主列表展示镜像、名称空间数、Pod 数、容器数、最近 Pod 创建时间和最近 Pod 状态。
 - 详情展示名称空间、Pod、Pod 阶段、容器、容器类型、来源、imageID 和 Pod 创建时间。
-- 支持按镜像关键字搜索，支持导出当前筛选结果为 `.txt`；导出文件只包含镜像地址，每行一个。
+- 支持按镜像关键字搜索，支持导出当前筛选结果为 `.txt`；导出文件只包含镜像地址，每行一个，不包含 `imageID/@sha256` 运行时镜像 ID。
 - Mock Provider 提供稳定镜像数据，覆盖 init container、运行容器、Succeeded Pod 和 imageID。
 
 ## 已执行测试
@@ -49,6 +49,7 @@
 ## 运行边界
 
 - 镜像清单只来自 Kubernetes API 当前可见 Pod 的 spec/status 引用。
+- 主列表和 TXT 导出只列出 Pod spec/status 的镜像地址，不列出 `imageID/@sha256` 运行时镜像 ID。
 - 系统不读取节点本地镜像缓存，不接入镜像仓库，不拉取镜像，不扫描漏洞。
 - 已删除且 Kubernetes API 不可见的 Pod 不会被统计。
 - `imageID` 是否存在取决于 Kubernetes 运行时和当前 Pod 状态。

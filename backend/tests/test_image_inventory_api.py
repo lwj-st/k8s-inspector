@@ -22,7 +22,8 @@ def test_image_inventory_merges_namespaces_and_keeps_references(client) -> None:
     assert shared["namespace_count"] == 2
     assert shared["pod_count"] == 2
     assert shared["container_count"] == 2
-    assert any(ref["source"] == "imageID" for item in payload["items"] for ref in item["references"])
+    assert not any("@sha256:" in item["image"] for item in payload["items"])
+    assert any(ref.get("image_id") and "@sha256:" in ref["image_id"] for item in payload["items"] for ref in item["references"])
     assert any(ref["container_type"] == "init" for item in payload["items"] for ref in item["references"])
     assert any(ref["pod_phase"] == "Succeeded" for item in payload["items"] for ref in item["references"])
 
@@ -63,6 +64,7 @@ def test_image_inventory_export_matches_filter(client) -> None:
     assert response.headers["content-type"].startswith("text/plain")
     assert "attachment;" in response.headers["content-disposition"]
     assert response.text == "registry.local/platform/wait-for-db:1.2.0"
+    assert "sha256" not in response.text
 
 
 def test_image_inventory_provider_error_returns_upstream_error(client) -> None:

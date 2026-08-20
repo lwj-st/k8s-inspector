@@ -43,6 +43,8 @@ def build_inventory(
             pod_phase = str(pod.get("phase") or "Unknown")
             pod_created_at = pod.get("created_at")
             for raw_ref in pod.get("images", []):
+                if str(raw_ref.get("source") or "") == "imageID":
+                    continue
                 image = normalize_image(raw_ref.get("image"))
                 if not image:
                     continue

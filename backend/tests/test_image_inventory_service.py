@@ -27,6 +27,13 @@ class FakeProvider:
                             "image": "registry.local/api:v1",
                             "image_id": "docker-pullable://registry.local/api@sha256:abc",
                         },
+                        {
+                            "container_name": "api",
+                            "container_type": "container",
+                            "source": "imageID",
+                            "image": "docker-pullable://registry.local/api@sha256:abc",
+                            "image_id": "docker-pullable://registry.local/api@sha256:abc",
+                        },
                     ],
                 },
                 {
@@ -59,6 +66,8 @@ def test_build_inventory_deduplicates_image_and_container_counts() -> None:
     assert item["container_count"] == 4
     assert item["latest_pod_created_at"] == "2026-08-19T02:00:00+00:00"
     assert item["latest_pod_phase"] == "Running"
+    assert all("@sha256:" not in item["image"] for item in result["items"])
+    assert any(ref["image_id"] == "docker-pullable://registry.local/api@sha256:abc" for ref in item["references"])
 
 
 def test_build_inventory_requires_namespace() -> None:

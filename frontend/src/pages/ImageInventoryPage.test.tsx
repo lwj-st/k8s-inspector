@@ -123,7 +123,8 @@ describe("ImageInventoryPage", () => {
     const user = userEvent.setup();
     render(<ImageInventoryPage />);
 
-    await user.selectOptions(await screen.findByLabelText("选择名称空间"), ["demo", "prod-core"]);
+    await user.click(await screen.findByRole("checkbox", { name: "demo" }));
+    await user.click(screen.getByRole("checkbox", { name: "prod-core" }));
     fireEvent.change(screen.getByLabelText("搜索镜像关键字"), { target: { value: "demo-api" } });
     await user.click(screen.getByRole("button", { name: "查询" }));
 
@@ -145,11 +146,11 @@ describe("ImageInventoryPage", () => {
     const user = userEvent.setup();
     render(<ImageInventoryPage />);
 
-    await screen.findByLabelText("选择名称空间");
+    await screen.findByRole("group", { name: "选择名称空间" });
     await user.click(screen.getByRole("button", { name: "导出 TXT" }));
     expect(await screen.findByText("未选择名称空间时不能导出镜像清单")).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText("选择名称空间"), "demo");
+    await user.click(screen.getByRole("checkbox", { name: "demo" }));
     await user.click(screen.getByRole("button", { name: "查询" }));
     await user.click(await screen.findByRole("button", { name: "复制" }));
 
@@ -160,7 +161,7 @@ describe("ImageInventoryPage", () => {
     const user = userEvent.setup();
     render(<ImageInventoryPage />);
 
-    await user.selectOptions(await screen.findByLabelText("选择名称空间"), "demo");
+    await user.click(await screen.findByRole("checkbox", { name: "demo" }));
     fireEvent.change(screen.getByLabelText("搜索镜像关键字"), { target: { value: "api" } });
     await user.click(screen.getByRole("button", { name: "导出 TXT" }));
 

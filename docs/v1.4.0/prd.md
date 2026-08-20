@@ -127,12 +127,11 @@ v1.4.0 不做以下事项：
    - `pod.spec.initContainers[].image`
    - `pod.spec.containers[].image`
    - `pod.status.initContainerStatuses[].image`
-   - `pod.status.initContainerStatuses[].imageID`
    - `pod.status.containerStatuses[].image`
-   - `pod.status.containerStatuses[].imageID`
-3. 已完成或成功退出的 Pod，如果 Pod 对象仍然存在，必须纳入统计。
-4. 已被删除且 Kubernetes API 已不可见的 Pod，不纳入统计。
-5. Mock Provider 必须能返回稳定的模拟镜像数据，便于本地开发和测试。
+3. `pod.status.initContainerStatuses[].imageID` 和 `pod.status.containerStatuses[].imageID` 只作为详情字段展示，不作为独立镜像地址纳入主列表或导出。
+4. 已完成或成功退出的 Pod，如果 Pod 对象仍然存在，必须纳入统计。
+5. 已被删除且 Kubernetes API 已不可见的 Pod，不纳入统计。
+6. Mock Provider 必须能返回稳定的模拟镜像数据，便于本地开发和测试。
 
 #### 验收标准
 
@@ -167,7 +166,8 @@ v1.4.0 不做以下事项：
    - Pod 阶段
    - 容器
    - 容器类型：初始化容器 / 运行容器
-   - 镜像来源：spec / status / imageID
+   - 镜像来源：spec / status
+   - imageID：运行时返回时展示为详情字段
    - Pod 创建时间
 5. 长镜像地址必须支持完整查看和复制。
 6. 页面表格要支持搜索镜像关键字。
@@ -188,7 +188,7 @@ v1.4.0 不做以下事项：
 1. 导出内容必须基于当前选择的名称空间和当前搜索条件。
 2. 导出文件后缀为 `.txt`。
 3. 文件名格式建议为 `k8s-inspector-images-YYYYMMDD-HHmmss.txt`。
-4. 文本内容只列出当前筛选结果中的镜像地址，每行一个镜像；不输出导出时间、名称空间范围、镜像总数、Pod 信息或引用详情。
+4. 文本内容只列出当前筛选结果中的镜像地址，每行一个镜像；不输出导出时间、名称空间范围、镜像总数、Pod 信息、引用详情或 `imageID/@sha256` 运行时镜像 ID。
 5. 导出接口必须校验 CSRF 或使用现有下载安全机制。
 6. 导出失败时页面展示明确错误。
 
@@ -385,7 +385,7 @@ v1.4.0 发布前必须满足：
 1. 镜像提取覆盖 `initContainers`。
 2. 镜像提取覆盖 `containers`。
 3. 镜像提取覆盖 `containerStatuses.image`。
-4. 镜像提取覆盖 `containerStatuses.imageID`。
+4. 镜像详情覆盖 `containerStatuses.imageID`，但主列表和导出不包含 `imageID/@sha256` 运行时镜像 ID。
 5. 多名称空间结果去重正确。
 6. 未选择名称空间返回 422。
 7. 导出 `.txt` 内容与查询结果一致。
