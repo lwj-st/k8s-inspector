@@ -62,12 +62,7 @@ def test_image_inventory_export_matches_filter(client) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/plain")
     assert "attachment;" in response.headers["content-disposition"]
-    text = response.text
-    assert "K8s Inspector 镜像清单" in text
-    assert "名称空间范围: demo" in text
-    assert "搜索条件: wait-for-db" in text
-    assert "registry.local/platform/wait-for-db:1.2.0" in text
-    assert "registry.local/jobs/demo-migrate:20260816" not in text
+    assert response.text == "registry.local/platform/wait-for-db:1.2.0"
 
 
 def test_image_inventory_provider_error_returns_upstream_error(client) -> None:

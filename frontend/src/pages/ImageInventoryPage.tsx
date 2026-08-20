@@ -36,7 +36,6 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function ImageInventoryPage() {
   const { data: namespaceDiscovery, loading: namespacesLoading, error: namespacesError, refresh } = useDiscoverNamespaces();
-  const [namespaceInput, setNamespaceInput] = useState("");
   const [selectedNamespaces, setSelectedNamespaces] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [inventory, setInventory] = useState<ImageInventoryResponse | null>(null);
@@ -50,24 +49,14 @@ export function ImageInventoryPage() {
     () => (namespaceDiscovery?.namespaces ?? []).map((item) => item.name),
     [namespaceDiscovery],
   );
-  const availableNamespaceOptions = namespaceOptions.filter((item) => !selectedNamespaces.includes(item));
   const canQuery = selectedNamespaces.length > 0;
 
-  function addNamespace() {
-    if (!namespaceInput || selectedNamespaces.includes(namespaceInput)) {
-      return;
-    }
-    setSelectedNamespaces((current) => [...current, namespaceInput]);
-    setNamespaceInput("");
-    setMessage(null);
-  }
-
-  function removeNamespace(namespace: string) {
-    setSelectedNamespaces((current) => current.filter((item) => item !== namespace));
+  function updateSelectedNamespaces(namespaces: string[]) {
+    setSelectedNamespaces(namespaces);
     setInventory(null);
-    if (selectedImage?.references.some((ref) => ref.namespace === namespace)) {
-      setSelectedImage(null);
-    }
+    setSelectedImage(null);
+    setMessage(null);
+    setError(null);
   }
 
   async function handleQuery() {
@@ -123,47 +112,70 @@ export function ImageInventoryPage() {
   }
 
   return (
-    <section className="page-stack image-inventory-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">资源查看</p>
-          <h2>镜像清单</h2>
-          <p className="page-description">按名称空间查看 Kubernetes API 可见 Pod 引用的镜像。</p>
+    <section className="page-section image-inventory-page">
+      <section className="workbench-hero image-inventory-hero">
+        <div className="workbench-copy">
+          <div>
+            <p className="eyebrow">资源查看</p>
+            <p className="hero-summary">镜像清单</p>
+            <p className="inline-note">按名称空间查看 Kubernetes API 可见 Pod 引用的镜像。</p>
+          </div>
+          <div className="secondary-action-row">
+            <button type="button" className="mini-button button-success" disabled={!canQuery || loading} onClick={() => void handleQuery()}>
+              {loading ? "查询中..." : "查询"}
+            </button>
+            <button type="button" className="mini-button" disabled={exporting} onClick={() => void handleExport()}>
+              {exporting ? "导出中..." : "导出 TXT"}
+            </button>
+          </div>
         </div>
-      </div>
+        <div className="hero-metric-stack image-inventory-metrics">
+          <article className="hero-metric hero-metric-compact">
+            <span>镜像数</span>
+            <strong>{inventory?.summary.image_count ?? "-"}</strong>
+          </article>
+          <article className="hero-metric hero-metric-compact">
+            <span>Pod 数</span>
+            <strong>{inventory?.summary.pod_count ?? "-"}</strong>
+          </article>
+          <article className="hero-metric hero-metric-compact">
+            <span>容器数</span>
+            <strong>{inventory?.summary.container_count ?? "-"}</strong>
+          </article>
+        </div>
+      </section>
 
-      <section className="panel-card">
+      <section className="panel">
         <div className="section-header">
           <div>
             <h3>筛选条件</h3>
-            <p className="inline-note">至少选择一个名称空间后再查询，不会自动读取全集群。</p>
+            <p className="inline-note">按住 Command 或 Shift 可一次选择多个名称空间，不会自动读取全集群。</p>
           </div>
           {namespacesError ? (
-            <button type="button" className="modal-secondary-button" onClick={() => void refresh().catch(() => undefined)}>
+            <button type="button" className="mini-button" onClick={() => void refresh().catch(() => undefined)}>
               重试
             </button>
           ) : null}
         </div>
         <div className="image-filter-grid">
-          <label>
-            <span>名称空间</span>
+          <label className="image-namespace-field">
+            名称空间
             <select
               aria-label="选择名称空间"
-              value={namespaceInput}
-              disabled={namespacesLoading || availableNamespaceOptions.length === 0}
-              onChange={(event) => setNamespaceInput(event.target.value)}
+              multiple
+              size={Math.min(Math.max(namespaceOptions.length, 4), 8)}
+              value={selectedNamespaces}
+              disabled={namespacesLoading || namespaceOptions.length === 0}
+              onChange={(event) => updateSelectedNamespaces(Array.from(event.target.selectedOptions, (option) => option.value))}
             >
-              <option value="">{namespacesLoading ? "正在加载名称空间" : "选择名称空间"}</option>
-              {availableNamespaceOptions.map((namespace) => (
+              {namespaceOptions.map((namespace) => (
                 <option key={namespace} value={namespace}>{namespace}</option>
               ))}
             </select>
+            {namespacesLoading ? <span className="inline-note">正在加载名称空间...</span> : null}
           </label>
-          <button type="button" className="primary-button" disabled={!namespaceInput} onClick={addNamespace}>
-            添加
-          </button>
-          <label>
-            <span>镜像关键字</span>
+          <label className="image-search-field">
+            镜像关键字
             <input
               aria-label="搜索镜像关键字"
               value={search}
@@ -171,36 +183,17 @@ export function ImageInventoryPage() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
-          <button type="button" className="primary-button" disabled={!canQuery || loading} onClick={() => void handleQuery()}>
-            {loading ? "查询中" : "查询"}
-          </button>
-          <button type="button" className="modal-secondary-button" disabled={exporting} onClick={() => void handleExport()}>
-            {exporting ? "导出中" : "导出 TXT"}
-          </button>
         </div>
-        <div className="selected-chip-row" aria-label="已选择名称空间">
-          {selectedNamespaces.length > 0 ? selectedNamespaces.map((namespace) => (
-            <span className="selected-chip" key={namespace}>
-              {namespace}
-              <button type="button" aria-label={`移除 ${namespace}`} onClick={() => removeNamespace(namespace)}>x</button>
-            </span>
-          )) : <span className="empty-copy">请选择名称空间后查看镜像清单</span>}
-        </div>
+        <p className="inline-note">已选择 {selectedNamespaces.length} 个名称空间{selectedNamespaces.length > 0 ? `：${selectedNamespaces.join("、")}` : "。"}</p>
         {namespacesError ? <p className="form-error">名称空间读取失败：{namespacesError}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
-        {message ? <p className="form-success">{message}</p> : null}
+        {message ? <p className="inline-note">{message}</p> : null}
       </section>
 
       {inventory ? (
         <>
-          <div className="summary-card-grid">
-            <div className="summary-card"><span>镜像数</span><strong>{inventory.summary.image_count}</strong></div>
-            <div className="summary-card"><span>名称空间数</span><strong>{inventory.summary.namespace_count}</strong></div>
-            <div className="summary-card"><span>Pod 数</span><strong>{inventory.summary.pod_count}</strong></div>
-            <div className="summary-card"><span>容器数</span><strong>{inventory.summary.container_count}</strong></div>
-          </div>
           {inventory.simulated ? <p className="inline-note">当前为 Mock Provider 模拟数据。</p> : null}
-          <section className="panel-card">
+          <section className="panel">
             <div className="section-header">
               <div>
                 <h3>镜像列表</h3>
@@ -229,7 +222,7 @@ export function ImageInventoryPage() {
                         <td>
                           <div className="copyable-cell">
                             <code title={item.image}>{item.image}</code>
-                            <button type="button" className="copy-button" onClick={() => void copyImage(item.image)}>复制</button>
+                            <button type="button" className="mini-button" onClick={() => void copyImage(item.image)}>复制</button>
                           </div>
                         </td>
                         <td>{item.namespace_count}</td>
@@ -238,7 +231,7 @@ export function ImageInventoryPage() {
                         <td>{formatDateTime(item.latest_pod_created_at)}</td>
                         <td>{item.latest_pod_phase ?? "-"}</td>
                         <td>
-                          <button type="button" className="modal-secondary-button" onClick={() => setSelectedImage(item)}>
+                          <button type="button" className="mini-button" onClick={() => setSelectedImage(item)}>
                             详情
                           </button>
                         </td>
@@ -262,7 +255,7 @@ export function ImageInventoryPage() {
                 <h3>镜像引用详情</h3>
                 <p className="inline-note">{selectedImage.image}</p>
               </div>
-              <button type="button" className="modal-secondary-button" onClick={() => setSelectedImage(null)}>关闭</button>
+              <button type="button" className="mini-button" onClick={() => setSelectedImage(null)}>关闭</button>
             </div>
             <div className="table-scroll-shell">
               <table className="data-table">

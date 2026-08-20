@@ -77,42 +77,7 @@ def build_inventory(
 
 
 def export_inventory_text(inventory: dict) -> str:
-    lines = [
-        "K8s Inspector 镜像清单",
-        f"导出时间: {inventory['executed_at']}",
-        f"名称空间范围: {', '.join(inventory['namespaces'])}",
-        f"搜索条件: {inventory.get('search') or '-'}",
-        f"镜像总数: {inventory['summary']['image_count']}",
-        f"Pod 总数: {inventory['summary']['pod_count']}",
-        f"容器引用总数: {inventory['summary']['container_count']}",
-        "",
-    ]
-    for index, item in enumerate(inventory["items"], start=1):
-        lines.extend(
-            [
-                f"{index}. {item['image']}",
-                f"   名称空间数: {item['namespace_count']}",
-                f"   Pod 数: {item['pod_count']}",
-                f"   容器数: {item['container_count']}",
-                f"   最近 Pod 创建时间: {item.get('latest_pod_created_at') or '-'}",
-                f"   最近 Pod 状态: {item.get('latest_pod_phase') or '-'}",
-                "   引用详情:",
-            ]
-        )
-        for ref in item["references"]:
-            image_id = f", imageID={ref['image_id']}" if ref.get("image_id") else ""
-            lines.append(
-                "   - "
-                f"{ref['namespace']}/{ref['pod_name']} "
-                f"容器={ref['container_name']} "
-                f"类型={ref['container_type']} "
-                f"来源={ref['source']} "
-                f"Pod状态={ref['pod_phase']} "
-                f"创建时间={ref.get('pod_created_at') or '-'}"
-                f"{image_id}"
-            )
-        lines.append("")
-    return "\n".join(lines)
+    return "\n".join(item["image"] for item in inventory["items"])
 
 
 def _normalize_namespaces(namespaces: list[str]) -> list[str]:

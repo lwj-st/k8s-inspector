@@ -12,7 +12,7 @@
 - 镜像按首尾空格裁剪后的地址去重，不猜测默认 registry，不改写 tag 或 digest。
 - 主列表展示镜像、名称空间数、Pod 数、容器数、最近 Pod 创建时间和最近 Pod 状态。
 - 详情展示名称空间、Pod、Pod 阶段、容器、容器类型、来源、imageID 和 Pod 创建时间。
-- 支持按镜像关键字搜索，支持导出当前筛选结果为 `.txt`。
+- 支持按镜像关键字搜索，支持导出当前筛选结果为 `.txt`；导出文件只包含镜像地址，每行一个。
 - Mock Provider 提供稳定镜像数据，覆盖 init container、运行容器、Succeeded Pod 和 imageID。
 
 ## 已执行测试

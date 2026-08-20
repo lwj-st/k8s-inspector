@@ -2816,7 +2816,10 @@ a {
 
   .workbench-hero,
   .quick-action-grid,
-  .workbench-command-grid {
+  .workbench-command-grid,
+  .image-filter-grid,
+  .image-inventory-hero,
+  .image-inventory-metrics {
     grid-template-columns: 1fr;
   }
 
@@ -3349,45 +3352,49 @@ summary:focus-visible {
   box-shadow: 0 10px 22px rgba(13, 27, 42, 0.04);
 }
 
+.image-inventory-hero {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.5fr);
+}
+
+.image-inventory-hero .hero-summary {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.image-inventory-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.image-inventory-metrics .hero-metric {
+  min-height: 86px;
+  padding: 14px;
+}
+
+.image-inventory-metrics .hero-metric strong {
+  margin-top: 6px;
+  font-size: 28px;
+}
+
 .image-filter-grid {
   display: grid;
-  grid-template-columns: minmax(190px, 1.2fr) auto minmax(240px, 2fr) auto auto;
-  gap: 12px;
-  align-items: end;
+  grid-template-columns: minmax(240px, 0.6fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: start;
 }
 
-.image-filter-grid label {
-  display: grid;
-  gap: 6px;
+.image-namespace-field select[multiple] {
+  min-height: 146px;
+  padding: 8px;
 }
 
-.selected-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-height: 32px;
-  align-items: center;
+.image-namespace-field option {
+  padding: 7px 8px;
+  border-radius: 7px;
 }
 
-.selected-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 5px 8px 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(20, 184, 166, 0.08);
-  color: var(--ink);
-}
-
-.selected-chip button {
-  min-height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  box-shadow: none;
+.image-search-field {
+  align-self: start;
 }
 
 .data-table {
