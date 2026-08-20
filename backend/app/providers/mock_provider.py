@@ -281,6 +281,107 @@ class MockInspectionProvider:
             ],
         }
 
+    def list_namespace_pod_images(self, namespace: str) -> dict:
+        pods_by_namespace = {
+            "demo": [
+                {
+                    "name": "demo-api-7c8f6f7c6b-fh2ns",
+                    "phase": "Running",
+                    "created_at": "2026-08-17T10:00:00+00:00",
+                    "images": [
+                        {
+                            "container_name": "wait-db",
+                            "container_type": "init",
+                            "source": "spec",
+                            "image": "registry.local/platform/wait-for-db:1.2.0",
+                            "image_id": None,
+                        },
+                        {
+                            "container_name": "demo-api",
+                            "container_type": "container",
+                            "source": "spec",
+                            "image": "registry.local/apps/demo-api:1.4.0",
+                            "image_id": None,
+                        },
+                        {
+                            "container_name": "demo-api",
+                            "container_type": "container",
+                            "source": "status",
+                            "image": "registry.local/apps/demo-api:1.4.0",
+                            "image_id": "docker-pullable://registry.local/apps/demo-api@sha256:111",
+                        },
+                        {
+                            "container_name": "demo-api",
+                            "container_type": "container",
+                            "source": "imageID",
+                            "image": "docker-pullable://registry.local/apps/demo-api@sha256:111",
+                            "image_id": "docker-pullable://registry.local/apps/demo-api@sha256:111",
+                        },
+                    ],
+                },
+                {
+                    "name": "demo-job-289341",
+                    "phase": "Succeeded",
+                    "created_at": "2026-08-16T08:30:00+00:00",
+                    "images": [
+                        {
+                            "container_name": "worker",
+                            "container_type": "container",
+                            "source": "spec",
+                            "image": "registry.local/jobs/demo-migrate:20260816",
+                            "image_id": None,
+                        }
+                    ],
+                },
+            ],
+            "prod-core": [
+                {
+                    "name": "payments-api-6d97bb8d5b-g9xjr",
+                    "phase": "Running",
+                    "created_at": "2026-08-18T02:12:00+00:00",
+                    "images": [
+                        {
+                            "container_name": "payments-api",
+                            "container_type": "container",
+                            "source": "spec",
+                            "image": "registry.local/apps/demo-api:1.4.0",
+                            "image_id": None,
+                        },
+                        {
+                            "container_name": "sidecar",
+                            "container_type": "container",
+                            "source": "spec",
+                            "image": "registry.local/platform/log-agent:3.8.1",
+                            "image_id": None,
+                        },
+                    ],
+                }
+            ],
+            "kube-system": [
+                {
+                    "name": "coredns-6f6b679f8f-9d4tz",
+                    "phase": "Running",
+                    "created_at": "2026-08-15T01:00:00+00:00",
+                    "images": [
+                        {
+                            "container_name": "coredns",
+                            "container_type": "container",
+                            "source": "spec",
+                            "image": "registry.k8s.io/coredns/coredns:v1.12.0",
+                            "image_id": None,
+                        }
+                    ],
+                }
+            ],
+        }
+        return {
+            "namespace": namespace,
+            "executed_at": now_iso(),
+            "provider_mode": "mock",
+            "simulated": True,
+            "pods": pods_by_namespace.get(namespace, []),
+        }
+
     def get_overview(self) -> dict:
         return {
             "health_status": "warning",

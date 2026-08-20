@@ -114,6 +114,7 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "资源巡检" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "日志巡检" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "日志记录" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "镜像清单" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "模板匹配" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "模板管理" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "日志规则" })).toBeInTheDocument();

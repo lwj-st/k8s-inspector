@@ -9,6 +9,7 @@ const navItems = [
   { to: "/inspections/status", label: "资源巡检" },
   { to: "/inspections/namespace", label: "日志巡检" },
   { to: "/log-recordings", label: "日志记录" },
+  { to: "/images", label: "镜像清单" },
   { to: "/diagnosis", label: "模板匹配" },
   { to: "/templates", label: "模板管理" },
   { to: "/whitelists", label: "日志规则" },

@@ -51,6 +51,7 @@ import type {
   LogRecordingTemplateMatch,
   LogRecordingViewMode,
   LogTimeRangeRequest,
+  ImageInventoryResponse,
 } from "./types";
 
 let currentCsrfToken: string | null = null;
@@ -192,10 +193,16 @@ function filenameFromContentDisposition(value: string | null) {
   return quotedMatch?.[1] ?? null;
 }
 
-function queryString(params: Record<string, string | number | boolean | null | undefined>) {
+function queryString(params: Record<string, string | number | boolean | string[] | null | undefined>) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item) {
+          query.append(key, item);
+        }
+      }
+    } else if (value !== undefined && value !== null && value !== "") {
       query.set(key, String(value));
     }
   }
@@ -412,6 +419,20 @@ export function discoverNamespacePods(
       label_selector: labelSelector,
     })}`,
   );
+}
+
+export function listImages(params: {
+  namespaces: string[];
+  search?: string;
+}): Promise<ImageInventoryResponse> {
+  return request(`/images${queryString({ namespace: params.namespaces, search: params.search })}`);
+}
+
+export function exportImages(params: {
+  namespaces: string[];
+  search?: string;
+}): Promise<{ blob: Blob; filename: string | null }> {
+  return requestBlob(`/images/export${queryString({ namespace: params.namespaces, search: params.search })}`);
 }
 
 export function runNamespaceInspection(

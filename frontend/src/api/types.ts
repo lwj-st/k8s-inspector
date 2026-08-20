@@ -888,6 +888,43 @@ export type WhitelistIgnoreCreate = {
   note?: string | null;
 };
 
+export type ImageInventoryReference = {
+  namespace: string;
+  pod_name: string;
+  pod_phase: string;
+  container_name: string;
+  container_type: string;
+  source: string;
+  image: string;
+  image_id?: string | null;
+  pod_created_at?: string | null;
+};
+
+export type ImageInventoryItem = {
+  image: string;
+  namespace_count: number;
+  pod_count: number;
+  container_count: number;
+  latest_pod_created_at?: string | null;
+  latest_pod_phase?: string | null;
+  references: ImageInventoryReference[];
+};
+
+export type ImageInventoryResponse = {
+  executed_at: string;
+  namespaces: string[];
+  search?: string | null;
+  provider_mode: string;
+  simulated: boolean;
+  summary: {
+    image_count: number;
+    namespace_count: number;
+    pod_count: number;
+    container_count: number;
+  };
+  items: ImageInventoryItem[];
+};
+
 export type SettingsResponse = {
   cluster_id: string;
   base_path: string;

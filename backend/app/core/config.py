@@ -14,7 +14,7 @@ def _split_csv(value: str | None) -> list[str]:
 
 class Settings(BaseModel):
     app_name: str = "K8s Inspector API"
-    app_version: str = "1.2.0"
+    app_version: str = "1.4.0"
     app_env: str = "development"
     cluster_id: str = "local"
     base_path: str = ""
@@ -116,7 +116,7 @@ class Settings(BaseModel):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings(
-        app_version=getenv("APP_VERSION", "1.2.0"),
+        app_version=getenv("APP_VERSION", "1.4.0"),
         app_env=getenv("APP_ENV", "development"),
         cluster_id=getenv("CLUSTER_ID", "local"),
         base_path=getenv("BASE_PATH", ""),

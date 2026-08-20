@@ -4,6 +4,7 @@ from app.api.routes import auth
 from app.api.routes import diagnoses
 from app.api.routes import discovery
 from app.api.routes import inspections
+from app.api.routes import images
 from app.api.routes import inspection_plans
 from app.api.routes import inspection_runs
 from app.api.routes import issues
@@ -25,6 +26,7 @@ def build_api_router() -> APIRouter:
     router.include_router(discovery.router)
     router.include_router(overview.router)
     router.include_router(inspections.router)
+    router.include_router(images.router)
     router.include_router(issues.router)
     router.include_router(inspection_runs.router)
     router.include_router(inspection_plans.router)

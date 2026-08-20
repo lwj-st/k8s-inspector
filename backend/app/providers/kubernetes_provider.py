@@ -241,6 +241,79 @@ class KubernetesInspectionProvider:
             "pods": summaries,
         }
 
+    def list_namespace_pod_images(self, namespace: str) -> dict:
+        try:
+            pods = self.core.list_namespaced_pod(
+                namespace=namespace,
+                _request_timeout=self.settings.k8s_request_timeout,
+            ).items
+        except ApiException as exc:
+            reason = exc.reason or str(exc)
+            if exc.status == 403:
+                raise RuntimeError(
+                    f"当前账号缺少读取名称空间 {namespace} Pod 的权限，无法生成镜像清单"
+                ) from exc
+            raise RuntimeError(
+                f"无法读取名称空间 {namespace} 的 Pod 镜像清单：{reason}"
+            ) from exc
+
+        return {
+            "namespace": namespace,
+            "executed_at": now_iso(),
+            "provider_mode": "kubernetes",
+            "simulated": False,
+            "pods": [self._pod_image_snapshot(pod) for pod in pods],
+        }
+
+    def _pod_image_snapshot(self, pod: client.V1Pod) -> dict:
+        images: list[dict] = []
+        for container in getattr(pod.spec, "init_containers", None) or []:
+            images.append(self._container_image_ref(container, "init", "spec"))
+        for container in getattr(pod.spec, "containers", None) or []:
+            images.append(self._container_image_ref(container, "container", "spec"))
+        for status in getattr(pod.status, "init_container_statuses", None) or []:
+            images.extend(self._status_image_refs(status, "init"))
+        for status in getattr(pod.status, "container_statuses", None) or []:
+            images.extend(self._status_image_refs(status, "container"))
+        created_at = getattr(pod.metadata, "creation_timestamp", None)
+        return {
+            "name": pod.metadata.name,
+            "phase": pod.status.phase or "Unknown",
+            "created_at": created_at.isoformat() if created_at else None,
+            "images": images,
+        }
+
+    def _container_image_ref(self, container: client.V1Container, container_type: str, source: str) -> dict:
+        return {
+            "container_name": container.name,
+            "container_type": container_type,
+            "source": source,
+            "image": container.image,
+            "image_id": None,
+        }
+
+    def _status_image_refs(self, status: client.V1ContainerStatus, container_type: str) -> list[dict]:
+        refs = [
+            {
+                "container_name": status.name,
+                "container_type": container_type,
+                "source": "status",
+                "image": status.image,
+                "image_id": status.image_id,
+            }
+        ]
+        if status.image_id:
+            refs.append(
+                {
+                    "container_name": status.name,
+                    "container_type": container_type,
+                    "source": "imageID",
+                    "image": status.image_id,
+                    "image_id": status.image_id,
+                }
+            )
+        return refs
+
     def _pod_issue_summary(self, pod: client.V1Pod, include_logs: bool = True) -> tuple[str, str | None]:
         phase = pod.status.phase or "Unknown"
         container_statuses = pod.status.container_statuses or []

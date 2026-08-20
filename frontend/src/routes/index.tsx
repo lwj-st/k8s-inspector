@@ -5,6 +5,7 @@ import { RequireSession, SessionProvider } from "../features/auth/SessionContext
 import { AutoInspectionPage } from "../pages/AutoInspectionPage";
 import { DiagnosisPage } from "../pages/DiagnosisPage";
 import { IssueDetailPage } from "../pages/IssueDetailPage";
+import { ImageInventoryPage } from "../pages/ImageInventoryPage";
 import { LoginPage } from "../pages/LoginPage";
 import { LogRecordingsPage } from "../pages/LogRecordingsPage";
 import { NamespaceInspectionPage } from "../pages/NamespaceInspectionPage";
@@ -32,6 +33,7 @@ export const appRoutes: RouteObject[] = [
               { path: "inspections/namespace", element: <NamespaceInspectionPage /> },
               { path: "inspections/pod", element: <PodInspectionPage initialScopeMode="single" /> },
               { path: "log-recordings", element: <LogRecordingsPage /> },
+              { path: "images", element: <ImageInventoryPage /> },
               { path: "diagnosis", element: <DiagnosisPage /> },
               { path: "templates", element: <TemplatesPage /> },
               { path: "whitelists", element: <WhitelistsPage /> },

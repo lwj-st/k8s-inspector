@@ -1,13 +1,14 @@
 # K8s Inspector
 
-K8s Inspector v1.3.0 是面向单个 Kubernetes 集群的只读巡检与排障系统。它将资源状态、对象关系、事件、受限日志证据、日志记录和问题生命周期集中到一个工作台，帮助运维人员更快定位问题，但不会自动修改集群资源。
+K8s Inspector v1.4.0 是面向单个 Kubernetes 集群的只读巡检与排障系统。它将资源状态、对象关系、事件、受限日志证据、日志记录、镜像清单和问题生命周期集中到一个工作台，帮助运维人员更快定位问题，但不会自动修改集群资源。
 
-## v1.3.0 能力
+## v1.4.0 能力
 
 - 巡检 Deployment、StatefulSet、DaemonSet、Job、CronJob、Pod、Service、EndpointSlice、Ingress、PVC、PV、Node 和可选 Metrics API。
 - 区分正常、异常、跳过和采集失败；采集失败不会显示为健康。
 - 按指纹合并重复问题，记录开放、升级、确认和恢复时间线。
 - 支持“日志记录”：按名称空间启动记录，后台采集复现窗口内所有 Pod 新增日志，长期保存后可搜索、折叠查看、改名、备注、删除和执行日志模板匹配。
+- 支持“镜像清单”：按一个或多个名称空间查看 Kubernetes API 可见 Pod 引用的镜像，覆盖初始化容器、运行容器和状态中的 imageID，并可导出 `.txt`。
 - 支持手动巡检和单进程定时计划，执行记录保存 API 调用量、日志读取量和耗时。
 - 支持飞书群机器人 V2 Webhook 和通用 Webhook 告警，包含签名、失败重试、消息裁剪和目标访问控制。
 - 支持本地单管理员登录、服务端 Session、CSRF、登录限流和安全审计。
@@ -45,7 +46,8 @@ deploy/kk/                    Kubernetes E2E 配置
 docs/assets/screenshots/      README 界面截图
 docs/v1.1.0/                 v1.1.0 PRD、架构、验收和升级文档
 docs/v1.2.0/                 v1.2.0 PRD 和验收文档
-docs/v1.3.0/                 v1.3.0 PRD
+docs/v1.3.0/                 v1.3.0 PRD 和验收文档
+docs/v1.4.0/                 v1.4.0 PRD 和验收文档
 examples/                     模板与白名单示例
 ```
 
@@ -125,7 +127,7 @@ CI 还配置了 Kubernetes 1.34 和 1.36 的 KubeKey 单节点 E2E。支持范�
 
 ## 生产部署
 
-v1.3.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart 会拒绝 `replicaCount` 不等于 `1` 的部署。
+v1.4.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart 会拒绝 `replicaCount` 不等于 `1` 的部署。
 
 > 必须使用与镜像相同版本的完整 Helm Chart 部署。禁止只修改 Deployment
 > 镜像而不执行 Helm upgrade，否则应用能力与 ServiceAccount RBAC 可能不一致，
@@ -146,7 +148,7 @@ v1.3.0 使用 SQLite 和进程内调度器，只支持一个应用副本。Chart
 kubectl version
 ```
 
-v1.3.0 当前沿用 Kubernetes 1.34 至 1.36 支持范围。目标集群不在该范围时，
+v1.4.0 当前沿用 Kubernetes 1.34 至 1.36 支持范围。目标集群不在该范围时，
 不能直接作为商用环境部署，应先完成该版本的兼容性验证。
 
 可用以下命令生成随机密钥：
@@ -166,7 +168,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/lwj-st/k8s-inspector
-  tag: v1.3.0
+  tag: v1.4.0
 
 env:
   appEnv: production
@@ -331,7 +333,7 @@ kubectl get secret TLS_SECRET -n INGRESS_NAMESPACE \
 ```bash
 docker build \
   --build-arg VITE_BASE_PATH=/inspector \
-  -t ghcr.io/lwj-st/k8s-inspector:v1.3.0 .
+  -t ghcr.io/lwj-st/k8s-inspector:v1.4.0 .
 ```
 
 发布镜像由 GitHub Actions 使用 Buildx 构建 `linux/amd64` 和 `linux/arm64`
@@ -341,7 +343,7 @@ docker build \
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   --build-arg VITE_BASE_PATH=/inspector \
-  -t ghcr.io/lwj-st/k8s-inspector:v1.3.0 .
+  -t ghcr.io/lwj-st/k8s-inspector:v1.4.0 .
 ```
 
 双入口部署使用根路径镜像，不设置 `VITE_BASE_PATH=/inspector`。子路径入口由网关
@@ -358,13 +360,14 @@ basePath: /inspector
 
 ## 重要运行边界
 
-- Kubernetes 1.34 至 1.36 是 v1.3.0 计划支持范围；1.33 及以下不承诺商用支持。
+- Kubernetes 1.34 至 1.36 是 v1.4.0 计划支持范围；1.33 及以下不承诺商用支持。
 - Metrics API 是可选能力，缺失时相应检查显示为 skipped，不影响基础巡检。
 - 资源链路检查基于 Kubernetes 对象关系，只能表示“配置链路正常/异常”，不代表真实网络请求成功。
 - 日志只用于用户主动巡检、异常对象或模板明确要求的证据，不应默认读取全部正常 Pod。
 - 单次日志巡检默认只读取最近 15 分钟日志，支持自定义起止时间；超过最大允许时间范围会被拒绝。
 - 单次日志巡检默认上限为 200 个 Pod，可在“系统设置 → 巡检策略”调整；超过当前上限必须缩小范围。
 - 日志记录受单名称空间 Pod 数、单记录字节数、单 Pod 字节数和全局存储容量限制；达到上限会拒绝开始、停止采集或标记截断。
+- 镜像清单只来自 Kubernetes API 当前可见 Pod 的 spec/status 引用，不代表节点本地缓存的全部镜像；已删除且 API 不可见的 Pod 不会被统计。
 - 完整 Secret 数据和 TLS 私钥不得持久化或返回；页面只应展示受限且脱敏的日志或摘要。
 - Webhook 失败不会回滚巡检结果；生产环境必须配置目标允许列表。
 - 系统不执行自动修复，也不支持多副本写入。
@@ -373,4 +376,4 @@ basePath: /inspector
 
 从 v1.0.0 或 v1.1.0 升级前必须停止写入并备份 SQLite 数据库、当前镜像、values 和所有安全密钥。v1.1.0 详细步骤见 [v1.1.0 升级与回退指南](docs/v1.1.0/upgrade-guide.md)。
 
-v1.2.0 发布验收状态见 [v1.2.0 验收报告](docs/v1.2.0/acceptance-report.md)。v1.3.0 发布验收状态见 [v1.3.0 验收报告](docs/v1.3.0/acceptance-report.md)，需求口径见 [v1.3.0 PRD](docs/v1.3.0/prd.md)。
+v1.2.0 发布验收状态见 [v1.2.0 验收报告](docs/v1.2.0/acceptance-report.md)。v1.3.0 发布验收状态见 [v1.3.0 验收报告](docs/v1.3.0/acceptance-report.md)。v1.4.0 发布验收状态见 [v1.4.0 验收报告](docs/v1.4.0/acceptance-report.md)，需求口径见 [v1.4.0 PRD](docs/v1.4.0/prd.md)。
