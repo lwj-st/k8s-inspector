@@ -24,7 +24,7 @@ class FakeProvider:
                             "container_name": "api",
                             "container_type": "container",
                             "source": "status",
-                            "image": "registry.local/api:v1",
+                            "image": "registry.k8s.io/api:v1",
                             "image_id": "docker-pullable://registry.local/api@sha256:abc",
                         },
                         {
@@ -67,6 +67,7 @@ def test_build_inventory_deduplicates_image_and_container_counts() -> None:
     assert item["latest_pod_created_at"] == "2026-08-19T02:00:00+00:00"
     assert item["latest_pod_phase"] == "Running"
     assert all("@sha256:" not in item["image"] for item in result["items"])
+    assert all(item["image"] != "registry.k8s.io/api:v1" for item in result["items"])
     assert any(ref["image_id"] == "docker-pullable://registry.local/api@sha256:abc" for ref in item["references"])
 
 

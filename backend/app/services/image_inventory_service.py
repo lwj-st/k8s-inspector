@@ -42,8 +42,16 @@ def build_inventory(
             pod_name = str(pod.get("name") or "")
             pod_phase = str(pod.get("phase") or "Unknown")
             pod_created_at = pod.get("created_at")
+            image_ids_by_container = {
+                (
+                    str(raw_ref.get("container_name") or ""),
+                    str(raw_ref.get("container_type") or "container"),
+                ): normalize_image(raw_ref.get("image_id")) or None
+                for raw_ref in pod.get("images", [])
+                if str(raw_ref.get("source") or "") == "status" and normalize_image(raw_ref.get("image_id"))
+            }
             for raw_ref in pod.get("images", []):
-                if str(raw_ref.get("source") or "") == "imageID":
+                if str(raw_ref.get("source") or "spec") != "spec":
                     continue
                 image = normalize_image(raw_ref.get("image"))
                 if not image:
@@ -59,7 +67,12 @@ def build_inventory(
                         "container_type": str(raw_ref.get("container_type") or "container"),
                         "source": str(raw_ref.get("source") or "spec"),
                         "image": image,
-                        "image_id": normalize_image(raw_ref.get("image_id")) or None,
+                        "image_id": image_ids_by_container.get(
+                            (
+                                str(raw_ref.get("container_name") or ""),
+                                str(raw_ref.get("container_type") or "container"),
+                            )
+                        ) or normalize_image(raw_ref.get("image_id")) or None,
                         "pod_created_at": pod_created_at,
                     }
                 )
