@@ -142,6 +142,29 @@ describe("ImageInventoryPage", () => {
     expect(within(dialog).getByText("docker-pullable://registry.local/apps/demo-api@sha256:abc")).toBeInTheDocument();
   });
 
+  it("selects all namespaces and clears selection", async () => {
+    const user = userEvent.setup();
+    render(<ImageInventoryPage />);
+
+    await user.click(await screen.findByRole("button", { name: "全选" }));
+    expect(screen.getByRole("checkbox", { name: "demo" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "prod-core" })).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "查询" }));
+    await waitFor(() => {
+      const imageRequest = fetchMock.mock.calls.find(([input]) => String(input).includes("/api/v1/images?"));
+      expect(String(imageRequest?.[0])).toContain("namespace=demo");
+      expect(String(imageRequest?.[0])).toContain("namespace=prod-core");
+    });
+
+    await user.click(screen.getByRole("button", { name: "清空" }));
+    expect(screen.getByRole("checkbox", { name: "demo" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "prod-core" })).not.toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "导出 TXT" }));
+    expect(await screen.findByText("未选择名称空间时不能导出镜像清单")).toBeInTheDocument();
+  });
+
   it("copies full image and blocks export without namespace", async () => {
     const user = userEvent.setup();
     render(<ImageInventoryPage />);

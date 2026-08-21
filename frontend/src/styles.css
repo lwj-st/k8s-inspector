@@ -3388,8 +3388,22 @@ summary:focus-visible {
   gap: 8px;
 }
 
+.image-field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .image-field-label {
   font-weight: 600;
+}
+
+.image-namespace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .image-namespace-checklist {

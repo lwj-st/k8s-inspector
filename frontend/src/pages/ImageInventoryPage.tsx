@@ -50,6 +50,8 @@ export function ImageInventoryPage() {
     [namespaceDiscovery],
   );
   const canQuery = selectedNamespaces.length > 0;
+  const hasNamespaceOptions = namespaceOptions.length > 0;
+  const allNamespacesSelected = hasNamespaceOptions && selectedNamespaces.length === namespaceOptions.length;
 
   function updateSelectedNamespaces(namespaces: string[]) {
     setSelectedNamespaces(namespaces);
@@ -65,6 +67,14 @@ export function ImageInventoryPage() {
         ? selectedNamespaces.filter((item) => item !== namespace)
         : [...selectedNamespaces, namespace],
     );
+  }
+
+  function selectAllNamespaces() {
+    updateSelectedNamespaces(namespaceOptions);
+  }
+
+  function clearNamespaces() {
+    updateSelectedNamespaces([]);
   }
 
   async function handleQuery() {
@@ -167,7 +177,27 @@ export function ImageInventoryPage() {
         </div>
         <div className="image-filter-grid">
           <div className="image-namespace-field">
-            <span className="image-field-label">名称空间</span>
+            <div className="image-field-heading">
+              <span className="image-field-label">名称空间</span>
+              <div className="image-namespace-actions">
+                <button
+                  type="button"
+                  className="mini-button"
+                  disabled={namespacesLoading || !hasNamespaceOptions || allNamespacesSelected}
+                  onClick={selectAllNamespaces}
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  className="mini-button"
+                  disabled={namespacesLoading || selectedNamespaces.length === 0}
+                  onClick={clearNamespaces}
+                >
+                  清空
+                </button>
+              </div>
+            </div>
             <div className="image-namespace-checklist" role="group" aria-label="选择名称空间">
               {namespaceOptions.length > 0 ? namespaceOptions.map((namespace) => (
                 <label className="image-namespace-option" key={namespace}>
