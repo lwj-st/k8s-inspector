@@ -24,7 +24,7 @@
   --teal: #2563eb;
   --amber: #d97706;
   --danger: #dc2626;
-  --shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  --shadow: none;
 }
 
 [data-theme="dark"] {
@@ -52,7 +52,7 @@
   --amber: #fbbf24;
   --danger: #f87171;
   --modal-backdrop: rgba(2, 6, 23, 0.72);
-  --shadow: 0 16px 34px rgba(0, 0, 0, 0.32);
+  --shadow: none;
 }
 
 * {
@@ -73,12 +73,12 @@ a {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: 216px minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .app-sidebar {
-  padding: 24px 16px;
+  padding: 20px 12px;
   background: var(--sidebar-bg);
   color: var(--ink);
   border-right: 1px solid var(--line);
@@ -276,6 +276,14 @@ a {
   margin: 0;
 }
 
+.section-header h2 {
+  font-size: 18px;
+}
+
+.section-header h3 {
+  font-size: 16px;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   font-size: 12px;
@@ -294,14 +302,11 @@ a {
 .workbench-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(240px, 0.7fr);
-  gap: 18px;
-  padding: 24px;
-  border-radius: 24px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(240, 247, 253, 0.86)),
-    var(--paper);
-  box-shadow: var(--shadow);
-  border: 1px solid rgba(157, 182, 202, 0.24);
+  gap: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
 }
 
 .workbench-copy {
@@ -408,9 +413,9 @@ a {
 .panel,
 .card {
   padding: 16px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--paper);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   border: 1px solid var(--line);
 }
 
@@ -430,7 +435,7 @@ a {
 }
 
 .panel-muted {
-  background: linear-gradient(180deg, rgba(244, 248, 251, 0.88), rgba(255, 255, 255, 0.9));
+  background: var(--paper);
 }
 
 .panel label {
@@ -442,8 +447,8 @@ a {
 .panel input,
 .panel select,
 .panel textarea {
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
   border: 1px solid var(--line);
   background: var(--input-bg);
   color: var(--ink);
@@ -856,8 +861,8 @@ a {
 
 .compact-card {
   padding: 12px 14px;
-  border-radius: 14px;
-  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.05);
+  border-radius: 8px;
+  box-shadow: none;
 }
 
 .compact-table {
@@ -1088,7 +1093,7 @@ a {
 .mini-button {
   min-height: 30px !important;
   padding: 5px 10px !important;
-  border-radius: 9px !important;
+  border-radius: 6px !important;
   font-size: 12px !important;
   box-shadow: none !important;
 }
@@ -1167,8 +1172,8 @@ a {
   color: var(--teal);
   font: inherit;
   font-size: 13px;
-  font-weight: 800;
-  box-shadow: 0 8px 18px rgba(13, 27, 42, 0.06);
+  font-weight: 600;
+  box-shadow: none;
   cursor: pointer;
 }
 
@@ -1767,7 +1772,15 @@ a {
 
 .log-inspection-action-row button,
 .log-inspection-action-row a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
+  min-height: 36px !important;
+  padding: 7px 12px !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .recording-inline-panel {
@@ -3233,27 +3246,87 @@ summary:focus-visible {
   color: var(--muted);
 }
 
+.page-header {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.page-header .page-header-description {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-header-actions button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.page-header-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.inventory-overview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inventory-overview strong {
+  margin-left: 6px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
 .summary-card-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
   gap: 12px;
 }
 
 .summary-card {
   display: grid;
-  gap: 8px;
-  min-height: 104px;
-  padding: 16px;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px 14px;
   text-align: left;
   border: 1px solid rgba(157, 182, 202, 0.42);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 10px 22px rgba(13, 27, 42, 0.05);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: none;
 }
 
 .summary-card:not(:disabled):hover {
   border-color: var(--teal);
-  transform: translateY(-1px);
+
 }
 
 .summary-card:disabled {
@@ -3274,7 +3347,7 @@ summary:focus-visible {
   grid-template-columns: minmax(90px, 0.65fr) minmax(90px, 0.65fr) repeat(4, minmax(120px, 1fr)) auto;
   align-items: end;
   gap: 12px;
-  margin: 18px 0 10px;
+  margin: 8px 0;
 }
 
 .issue-filter-reset {
@@ -3338,9 +3411,9 @@ summary:focus-visible {
   gap: 16px;
   padding: 18px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--paper);
-  box-shadow: 0 10px 22px rgba(13, 27, 42, 0.04);
+  box-shadow: none;
 }
 
 .image-inventory-hero {
@@ -3469,6 +3542,31 @@ summary:focus-visible {
 
 .image-detail-modal {
   width: min(1100px, 100%);
+}
+
+.compact-table thead,
+.data-table thead {
+  background: var(--app-bg);
+}
+
+.compact-table tbody tr:hover,
+.data-table tbody tr:hover {
+  background: var(--sidebar-hover);
+}
+
+.compact-table td,
+.data-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.problem-workbench .issue-ack-badge {
+  background: var(--app-bg);
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.problem-workbench .issue-cell-summary {
+  font-weight: 600;
 }
 
 .status-symbol {
@@ -4154,7 +4252,7 @@ summary:focus-visible {
   }
 
   .summary-card {
-    min-height: 96px;
+    min-height: 72px;
   }
 
   .issue-filter-grid,

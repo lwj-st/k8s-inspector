@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -475,12 +476,9 @@ export function LogRecordingsPage() {
 
   return (
     <section className="page-section log-recordings-page">
-      <div className="section-header">
-        <div>
-          <h2>日志记录</h2>
-        </div>
-        <button type="button" onClick={() => void loadRecords()}>刷新</button>
-      </div>
+      <PageHeader title="日志记录" actions={
+        <button type="button" className="page-refresh-button" onClick={() => void loadRecords()}>刷新</button>
+      } />
 
       {error ? <p className="form-error">{error}</p> : null}
       <p className={`log-recording-storage ${storageWarning ? "form-error" : "inline-note"}`}>

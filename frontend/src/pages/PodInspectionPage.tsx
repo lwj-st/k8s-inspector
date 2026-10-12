@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import {
@@ -729,6 +730,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
   return (
     <section className="page-section">
+      <PageHeader title="日志巡检" />
       <section className="panel workbench-hero log-inspection-hero">
         <div className="workbench-copy">
           <div className="section-header">
@@ -879,6 +881,7 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           <div className="button-row log-inspection-action-row">
             <button
               type="button"
+              className="primary-action"
               onClick={() => void handleRunInspection()}
               disabled={
                 scopeMode === "single"
@@ -890,7 +893,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             </button>
             <button
               type="button"
-              className="button-success"
               onClick={() => void handleToggleRecording()}
             >
               记录日志
@@ -904,10 +906,10 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             <button type="button" className="text-button mini-button" onClick={() => setSavedTargetsOpen((current) => !current)}>
               {savedTargetsOpen ? "收起巡检点" : "巡检点"}
             </button>
-            <button type="button" className="mini-button button-success" onClick={() => setModalType("import")}>
+            <button type="button" className="mini-button" onClick={() => setModalType("import")}>
               导入
             </button>
-            <button type="button" className="mini-button button-success" onClick={() => void handleOpenExportModal()}>
+            <button type="button" className="mini-button" onClick={() => void handleOpenExportModal()}>
               导出
             </button>
           </div>

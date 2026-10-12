@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { useMemo, useState } from "react";
 
 import type {
@@ -905,6 +906,7 @@ export function TemplatesPage() {
 
   return (
     <section className="page-section">
+      <PageHeader title="模板管理" />
       {error ? <p>操作失败：{error}</p> : null}
       {message ? <p className="inline-note">{message}</p> : null}
 
@@ -915,11 +917,11 @@ export function TemplatesPage() {
             <p className="inline-note">共 {data.length} 个模板</p>
           </div>
           <div className="button-row">
-            <button type="button" onClick={startCreate}>新增模板</button>
-            <button type="button" className="mini-button button-success" onClick={() => setModalType("import")}>
+            <button type="button" className="primary-action" onClick={startCreate}>新增模板</button>
+            <button type="button" className="mini-button" onClick={() => setModalType("import")}>
               导入模板
             </button>
-            <button type="button" className="mini-button button-success" onClick={() => void handleOpenExport()}>
+            <button type="button" className="mini-button" onClick={() => void handleOpenExport()}>
               导出模板
             </button>
           </div>
@@ -983,7 +985,7 @@ export function TemplatesPage() {
               <div className="secondary-action-row">
                 <StatusBadge status={saving ? "warning" : editingId !== null ? "enabled" : "info"} />
                 {editingId === null ? (
-                  <button type="button" className="mini-button button-success" onClick={() => setFormImportOpen(true)}>
+                  <button type="button" className="mini-button" onClick={() => setFormImportOpen(true)}>
                     通过 JSON 导入
                   </button>
                 ) : null}

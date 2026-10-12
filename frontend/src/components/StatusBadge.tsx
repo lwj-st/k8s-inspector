@@ -1,5 +1,6 @@
 type StatusBadgeProps = {
   status: string;
+  tone?: "neutral";
 };
 
 const statusLabels: Record<string, string> = {
@@ -40,7 +41,7 @@ function formatStatusLabel(status: string) {
   return statusLabels[normalized] ?? status;
 }
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+export function StatusBadge({ status, tone }: StatusBadgeProps) {
   const normalized = status.toLowerCase();
   const goodStatuses = new Set(["healthy", "ready", "succeeded", "completed", "enabled", "recovered", "passed", "ok"]);
   const warningStatuses = new Set(["warning", "degraded", "matched", "open", "abnormal", "partial"]);
@@ -53,7 +54,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     normalized.includes("error") ||
     normalized.includes("crash") ||
     normalized.includes("backoff");
-  const toneName = isBad
+  const toneName = tone ?? (isBad
     ? "bad"
     : goodStatuses.has(normalized)
       ? "good"
@@ -61,7 +62,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
         ? "warn"
         : neutralStatuses.has(normalized)
           ? "neutral"
-          : "bad";
+          : "bad");
   const symbol = toneName === "good" ? "✓" : toneName === "warn" ? "!" : toneName === "bad" ? "×" : "•";
 
   return (

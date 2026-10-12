@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { useEffect, useState } from "react";
 
 import { ignoreWhitelistLogHit, runNamespaceBatchInspection } from "../api/client";
@@ -861,6 +862,7 @@ export function AutoInspectionPage() {
         : "healthy";
   return (
     <section className="page-section">
+      <PageHeader title="资源巡检" />
       <section className="workbench-hero">
         <div className="workbench-copy">
           <div className="section-header">

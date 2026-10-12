@@ -386,6 +386,11 @@ describe("ProblemWorkbenchPage", () => {
     render(<MemoryRouter><ProblemWorkbenchPage /></MemoryRouter>);
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批量确认" })).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText("选择问题 1"));
+    expect(screen.getByRole("button", { name: "批量确认" })).toBeInTheDocument();
+    await user.click(screen.getByLabelText("选择问题 1"));
+    expect(screen.queryByRole("button", { name: "批量确认" })).not.toBeInTheDocument();
     await user.click(screen.getByLabelText("选择问题 1"));
     await user.click(screen.getByLabelText("选择问题 2"));
     await user.type(screen.getByLabelText("统一确认备注"), "统一处理");

@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 
@@ -352,7 +353,6 @@ export function ProblemWorkbenchPage() {
     { label: "严重", value: summary.critical, filterKey: "severity", filterValue: "critical" },
     { label: "警告", value: summary.warning, filterKey: "severity", filterValue: "warning" },
     { label: "最近一次恢复", value: summary.latestRun?.recovered_issue_count ?? null },
-    { label: "最近巡检", value: summary.latestRun ? displayTime(summary.latestRun.finished_at ?? summary.latestRun.started_at) : null },
     { label: "检查完成率", value: coveragePercent === null ? null : `${coveragePercent}%` },
   ];
 
@@ -424,10 +424,9 @@ export function ProblemWorkbenchPage() {
 
   return (
     <section className="page-section problem-workbench">
-      <header className="workbench-heading">
-        <div>
-          <h1>问题工作台</h1>
-        </div>
+      <PageHeader title="问题工作台" description={summary.latestRun
+        ? `最近巡检：${displayTime(summary.latestRun.finished_at ?? summary.latestRun.started_at)}`
+        : "暂无巡检记录"} actions={
         <div className="status-pair">
           {summary.latestRun ? <StatusBadge status={summary.latestRun.status} /> : null}
           <button
@@ -474,7 +473,7 @@ export function ProblemWorkbenchPage() {
             </label>
           </div>
         </div>
-      </header>
+      } />
 
       {summary.error ? (
         <div className="feedback-banner feedback-warning" role="status">
@@ -502,7 +501,6 @@ export function ProblemWorkbenchPage() {
         <div className="section-header">
           <div>
             <h2 id="issue-list-title">{status === "open" ? "开放问题" : status === "ignored" ? "已忽略问题" : "已恢复问题"}</h2>
-            <p className="inline-note">结果来自所有已完成的巡检，排序由服务端在完整结果上完成。</p>
           </div>
           <span className="section-tip">共 {issues?.total ?? "--"} 项</span>
         </div>
@@ -565,53 +563,55 @@ export function ProblemWorkbenchPage() {
           </button>
         </div>
 
-        <div className="batch-action-bar" aria-label="批量操作">
-          <strong>已选择 {selectedCount} 项</strong>
-          <label>
-            统一确认备注
-            <input
-              value={batchNote}
-              onChange={(event) => setBatchNote(event.target.value)}
-              placeholder="填写批量确认备注"
-              disabled={batchSaving || selectedCount === 0}
-            />
-          </label>
-          <div className="button-row">
-            <button
-              type="button"
-              className="primary-action"
-              disabled={batchSaving || selectedCount === 0}
-              onClick={() => void runBatchAction("acknowledge")}
-            >
-              批量确认
-            </button>
-            {status !== "ignored" ? (
-              <ConfirmPopoverButton
-                className="danger-action"
+        {selectedCount > 0 ? (
+          <div className="batch-action-bar" aria-label="批量操作">
+            <strong>已选择 {selectedCount} 项</strong>
+            <label>
+              统一确认备注
+              <input
+                value={batchNote}
+                onChange={(event) => setBatchNote(event.target.value)}
+                placeholder="填写批量确认备注"
                 disabled={batchSaving || selectedCount === 0}
-                title="确认忽略"
-                message={`确认忽略选中的 ${selectedCount} 个问题？忽略后默认不再出现在开放问题列表。`}
-                confirmText="确认忽略"
-                confirmingText="忽略中..."
-                onConfirm={() => runBatchAction("ignore")}
-              >
-                批量忽略
-              </ConfirmPopoverButton>
-            ) : (
-              <ConfirmPopoverButton
+              />
+            </label>
+            <div className="button-row">
+              <button
+                type="button"
                 className="primary-action"
                 disabled={batchSaving || selectedCount === 0}
-                title="确认恢复"
-                message={`确认恢复显示选中的 ${selectedCount} 个问题？恢复后会重新出现在开放问题列表。`}
-                confirmText="确认恢复"
-                confirmingText="恢复中..."
-                onConfirm={() => runBatchAction("unignore")}
+                onClick={() => void runBatchAction("acknowledge")}
               >
-                批量恢复显示
-              </ConfirmPopoverButton>
-            )}
+                批量确认
+              </button>
+              {status !== "ignored" ? (
+                <ConfirmPopoverButton
+                  className="danger-action"
+                  disabled={batchSaving || selectedCount === 0}
+                  title="确认忽略"
+                  message={`确认忽略选中的 ${selectedCount} 个问题？忽略后默认不再出现在开放问题列表。`}
+                  confirmText="确认忽略"
+                  confirmingText="忽略中..."
+                  onConfirm={() => runBatchAction("ignore")}
+                >
+                  批量忽略
+                </ConfirmPopoverButton>
+              ) : (
+                <ConfirmPopoverButton
+                  className="primary-action"
+                  disabled={batchSaving || selectedCount === 0}
+                  title="确认恢复"
+                  message={`确认恢复显示选中的 ${selectedCount} 个问题？恢复后会重新出现在开放问题列表。`}
+                  confirmText="确认恢复"
+                  confirmingText="恢复中..."
+                  onConfirm={() => runBatchAction("unignore")}
+                >
+                  批量恢复显示
+                </ConfirmPopoverButton>
+              )}
+            </div>
           </div>
-        </div>
+        ) : null}
         {batchMessage ? <div className="feedback-banner feedback-success" role="status">{batchMessage}</div> : null}
         {batchError ? <div className="feedback-banner feedback-error" role="alert">{batchError}</div> : null}
 
@@ -684,7 +684,7 @@ export function ProblemWorkbenchPage() {
                       <td><IssueTableTextCell value={resourceLabel(issue)} /></td>
                       <td><IssueTableTextCell value={issue.resource.namespace ?? "集群级"} /></td>
                       <td><IssueTableTextCell value={sourceCheckLabels.get(issue.source_check) ?? issue.source_check} /></td>
-                      <td className="issue-cell-badge"><StatusBadge status={issue.status} /></td>
+                      <td className="issue-cell-badge"><StatusBadge status={issue.status} tone="neutral" /></td>
                       <td><IssueTableTextCell value={durationLabel(issue)} /></td>
                       <td><IssueTableTextCell value={displayTime(issue.last_seen_at)} /></td>
                       <td className="issue-cell-ack">
@@ -720,7 +720,7 @@ export function ProblemWorkbenchPage() {
                     </label>
                     <div className="status-pair">
                       <StatusBadge status={issue.severity} />
-                      <StatusBadge status={issue.status} />
+                      <StatusBadge status={issue.status} tone="neutral" />
                     </div>
                   </div>
                   <strong>{issue.summary}</strong>

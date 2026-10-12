@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { DiagnosisResultPanel } from "../features/diagnosis/DiagnosisResultPanel";
 import { useRunDiagnosis } from "../features/diagnosis/useRunDiagnosis";
 
@@ -6,17 +7,11 @@ export function DiagnosisPage() {
 
   return (
     <section className="page-section">
-      <section className="panel panel-muted">
-        <div className="section-header">
-          <div>
-            <h3>按已录入模板直接检查</h3>
-            <p className="inline-note">模板里已经绑定名称空间和对象组，这里不再手填范围。</p>
-          </div>
-        </div>
-        <button type="button" onClick={() => void submit()} disabled={loading}>
+      <PageHeader title="模板匹配" description="按已录入模板的名称空间和对象组执行检查。" actions={
+        <button type="button" className="primary-action" onClick={() => void submit()} disabled={loading}>
           {loading ? "检查中..." : "运行模板检查"}
         </button>
-      </section>
+      } />
 
       <DiagnosisResultPanel data={data} loading={loading} error={error} idleMessage="模板已录入范围，点击后直接运行匹配。" />
     </section>

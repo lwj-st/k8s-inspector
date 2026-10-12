@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -941,10 +942,7 @@ export function SettingsPage() {
 
   return (
     <section className="page-section settings-page">
-      <header className="workbench-heading">
-        <div>
-          <h1>系统设置</h1>
-        </div>
+      <PageHeader title="系统设置" actions={
         <button
           type="button"
           className="page-refresh-button"
@@ -955,7 +953,7 @@ export function SettingsPage() {
           <span aria-hidden="true" className={loading ? "page-refresh-icon page-refresh-icon-spinning" : "page-refresh-icon"}>↻</span>
           {loading ? "刷新中…" : "刷新设置"}
         </button>
-      </header>
+      } />
 
       <nav className="settings-tabs" aria-label="系统设置分类">
         {tabs.map((tab) => (

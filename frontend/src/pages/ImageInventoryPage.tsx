@@ -1,3 +1,4 @@
+import { PageHeader } from "../components/PageHeader";
 import { useMemo, useState } from "react";
 
 import { exportImages, listImages } from "../api/client";
@@ -131,42 +132,25 @@ export function ImageInventoryPage() {
 
   return (
     <section className="page-section image-inventory-page">
-      <section className="workbench-hero image-inventory-hero">
-        <div className="workbench-copy">
-          <div>
-            <p className="hero-summary">镜像清单</p>
-            <p className="inline-note">按名称空间查看 Kubernetes API 可见 Pod 引用的镜像。</p>
-          </div>
-          <div className="secondary-action-row">
-            <button type="button" className="mini-button button-success" disabled={!canQuery || loading} onClick={() => void handleQuery()}>
-              {loading ? "查询中..." : "查询"}
-            </button>
-            <button type="button" className="mini-button" disabled={exporting} onClick={() => void handleExport()}>
-              {exporting ? "导出中..." : "导出 TXT"}
-            </button>
-          </div>
-        </div>
-        <div className="hero-metric-stack image-inventory-metrics">
-          <article className="hero-metric hero-metric-compact">
-            <span>镜像数</span>
-            <strong>{inventory?.summary.image_count ?? "-"}</strong>
-          </article>
-          <article className="hero-metric hero-metric-compact">
-            <span>Pod 数</span>
-            <strong>{inventory?.summary.pod_count ?? "-"}</strong>
-          </article>
-          <article className="hero-metric hero-metric-compact">
-            <span>容器数</span>
-            <strong>{inventory?.summary.container_count ?? "-"}</strong>
-          </article>
-        </div>
-      </section>
+      <PageHeader title="镜像清单" description="按名称空间查看 Pod 引用的镜像。" actions={
+        <button type="button" disabled={exporting} onClick={() => void handleExport()}>
+          {exporting ? "导出中..." : "导出 TXT"}
+        </button>
+      } />
+      <div className="inventory-overview" aria-label="镜像概览">
+        <span>镜像 <strong>{inventory?.summary.image_count ?? "—"}</strong></span>
+        <span>Pod <strong>{inventory?.summary.pod_count ?? "—"}</strong></span>
+        <span>容器 <strong>{inventory?.summary.container_count ?? "—"}</strong></span>
+      </div>
 
       <section className="panel">
         <div className="section-header">
           <div>
             <h3>筛选条件</h3>
           </div>
+          <button type="button" className="primary-action" disabled={!canQuery || loading} onClick={() => void handleQuery()}>
+            {loading ? "查询中..." : "查询"}
+          </button>
           {namespacesError ? (
             <button type="button" className="mini-button" onClick={() => void refresh().catch(() => undefined)}>
               重试
