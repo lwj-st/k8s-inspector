@@ -3357,7 +3357,8 @@ summary:focus-visible {
 
 .responsive-table-shell {
   width: 100%;
-  overflow-x: auto;
+  max-height: 420px;
+  overflow: auto;
   margin-top: 16px;
 }
 
@@ -3546,7 +3547,11 @@ summary:focus-visible {
 
 .compact-table thead,
 .data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--app-bg);
+  box-shadow: 0 1px 0 var(--line);
 }
 
 .compact-table tbody tr:hover,
