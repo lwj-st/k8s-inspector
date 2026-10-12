@@ -358,22 +358,7 @@ a {
 }
 
 .log-inspection-hero {
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.16fr);
-}
-
-.log-inspection-hero .hero-metric-stack {
-  gap: 10px;
-}
-
-.log-inspection-hero .hero-metric {
-  min-height: 58px;
-  padding: 10px 12px;
-  border-radius: 12px;
-}
-
-.log-inspection-hero .hero-metric strong {
-  margin-top: 4px;
-  font-size: 20px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .quick-action-grid {
@@ -1782,7 +1767,7 @@ a {
 
 .log-inspection-action-row button,
 .log-inspection-action-row a {
-  min-width: 128px;
+  min-width: 0;
 }
 
 .recording-inline-panel {
@@ -3286,9 +3271,15 @@ summary:focus-visible {
 
 .issue-filter-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(135px, 1fr));
+  grid-template-columns: minmax(90px, 0.65fr) minmax(90px, 0.65fr) repeat(4, minmax(120px, 1fr)) auto;
+  align-items: end;
   gap: 12px;
   margin: 18px 0 10px;
+}
+
+.issue-filter-reset {
+  min-height: 42px !important;
+  white-space: nowrap;
 }
 
 .responsive-table-shell {
@@ -3868,6 +3859,10 @@ summary:focus-visible {
 .masked-endpoint {
   overflow-wrap: anywhere;
   word-break: break-all;
+}
+
+.settings-page button {
+  box-shadow: none !important;
 }
 
 .settings-tabs {

@@ -145,21 +145,6 @@ function formatSavedTargetScope(target: SavedInspectionTarget) {
   return "全部 Pod";
 }
 
-function formatLogCollectionTimeRange(data: ReturnType<typeof useRunNamespaceInspection>["data"]) {
-  const range = data?.log_collection?.time_range;
-  if (!range) {
-    return null;
-  }
-  if (range.mode === "recent" && range.recent_minutes) {
-    return `最近 ${range.recent_minutes === 60 ? "1 小时" : `${range.recent_minutes} 分钟`}`;
-  }
-  const start = new Date(range.start_time);
-  const end = range.end_time ? new Date(range.end_time) : null;
-  const startText = Number.isNaN(start.getTime()) ? range.start_time : start.toLocaleString();
-  const endText = end && !Number.isNaN(end.getTime()) ? end.toLocaleString() : "当前时间";
-  return `${startText} 至 ${endText}`;
-}
-
 export function PodInspectionPage({ initialScopeMode = "single" }: PodInspectionPageProps) {
   const [namespaceSearch, setNamespaceSearch] = useState("");
   const [namespace, setNamespace] = useState("");
@@ -265,10 +250,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
     null;
   const currentPod = scopeMode === "single" ? podInspection.data?.pod ?? null : selectedRangePod;
   const currentLogHits = currentPod ? getActiveLogHits(currentPod) : [];
-  const inspectedLogPods = scopeMode === "single"
-    ? (podInspection.data?.pod ? [podInspection.data.pod] : [])
-    : rangePods;
-  const activeLogHitCount = inspectedLogPods.reduce((total, pod) => total + getActiveLogHits(pod).length, 0);
   const currentScopeText =
     !namespace.trim()
       ? "未选择名称空间"
@@ -745,7 +726,6 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
 
   const currentRunLabel = scopeMode === "single" ? "巡检单个 Pod" : "日志巡检";
   const listTitle = scopeMode === "single" ? "最近使用范围" : "Pod 列表";
-  const activeLogTimeRangeText = formatLogCollectionTimeRange(namespaceInspection.data);
 
   return (
     <section className="page-section">
@@ -918,6 +898,18 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
             <a className="mini-button text-button" href="/log-recordings">
               日志记录
             </a>
+            <button type="button" className="text-button mini-button" onClick={openCreateSaveModal}>
+              保存巡检点
+            </button>
+            <button type="button" className="text-button mini-button" onClick={() => setSavedTargetsOpen((current) => !current)}>
+              {savedTargetsOpen ? "收起巡检点" : "巡检点"}
+            </button>
+            <button type="button" className="mini-button button-success" onClick={() => setModalType("import")}>
+              导入
+            </button>
+            <button type="button" className="mini-button button-success" onClick={() => void handleOpenExportModal()}>
+              导出
+            </button>
           </div>
           {recordPanelOpen ? (
             <form className="recording-inline-panel" onSubmit={(event) => void handleStartRecording(event)}>
@@ -1027,109 +1019,64 @@ export function PodInspectionPage({ initialScopeMode = "single" }: PodInspection
           {namespaceError ? <p>名称空间读取失败：{namespaceError}</p> : null}
           {scopeMode === "single" && podOptionsError ? <p>Pod 下拉加载失败：{podOptionsError}</p> : null}
         </div>
-        <div className="hero-metric-stack">
-          <div className="hero-metric hero-metric-compact">
-            <span>已发现名称空间</span>
-            <strong>{namespaceDiscovery?.namespaces.length ?? 0}</strong>
-          </div>
-        </div>
       </section>
 
-      <section className="panel panel-muted">
-        <div className="section-header">
-          <div>
-            <h3>次级操作</h3>
-          </div>
-        </div>
-        <div className="secondary-action-row">
-          <button type="button" className="text-button mini-button" onClick={openCreateSaveModal}>
-            保存巡检点
-          </button>
-          <button type="button" className="text-button mini-button" onClick={() => setSavedTargetsOpen((current) => !current)}>
-            {savedTargetsOpen ? "收起巡检点" : "巡检点"}
-          </button>
-          <button type="button" className="mini-button button-success" onClick={() => setModalType("import")}>
-            导入
-          </button>
-          <button type="button" className="mini-button button-success" onClick={() => void handleOpenExportModal()}>
-            导出
-          </button>
-        </div>
-        {saveMessage ? <p className="inline-note">{saveMessage}</p> : null}
-        {targetsError ? <p>保存对象失败：{targetsError}</p> : null}
-        {savedTargetsOpen ? (
-          <section className="saved-target-panel">
-            <div className="section-header">
-              <h4>巡检点</h4>
-              <span className="section-tip">只保存 Label Selector 筛选范围</span>
-            </div>
-            {targetsLoading ? <p>加载已保存对象中...</p> : null}
-            {!targetsLoading && inspectionPoints.length === 0 ? <p>暂无巡检点，选择 Label Selector 后可保存。</p> : null}
-            {inspectionPoints.length > 0 ? (
-              <div className="table-scroll-shell">
-                <table className="compact-table">
-                  <thead>
-                    <tr>
-                      <th>名称</th>
-                      <th>名称空间</th>
-                      <th>范围</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inspectionPoints.map((target) => (
-                      <tr key={target.id}>
-                        <td>{target.name}</td>
-                        <td>{target.namespace}</td>
-                        <td className="ellipsis-cell" title={formatSavedTargetScope(target)}>
-                          {formatSavedTargetScope(target)}
-                        </td>
-                        <td>
-                          <div className="toolbar-row">
-                            <button type="button" className="mini-button" onClick={() => applySavedTarget(target)} disabled={podInspection.loading || namespaceInspection.loading}>
-                              巡检
-                            </button>
-                            <button type="button" className="mini-button" onClick={() => startEditingTarget(target)} disabled={targetSaving}>
-                              编辑
-                            </button>
-                            <ConfirmDeleteButton itemName={`巡检点 ${target.name}`} onConfirm={() => handleDeleteTarget(target)} disabled={targetSaving}>删除</ConfirmDeleteButton>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+      {saveMessage || targetsError || savedTargetsOpen ? (
+        <section className="panel panel-muted">
+          {saveMessage ? <p className="inline-note">{saveMessage}</p> : null}
+          {targetsError ? <p>保存对象失败：{targetsError}</p> : null}
+          {savedTargetsOpen ? (
+            <section className="saved-target-panel">
+              <div className="section-header">
+                <h4>巡检点</h4>
+                <span className="section-tip">只保存 Label Selector 筛选范围</span>
               </div>
+              {targetsLoading ? <p>加载已保存对象中...</p> : null}
+              {!targetsLoading && inspectionPoints.length === 0 ? <p>暂无巡检点，选择 Label Selector 后可保存。</p> : null}
+              {inspectionPoints.length > 0 ? (
+                <div className="table-scroll-shell">
+                  <table className="compact-table">
+                    <thead>
+                      <tr>
+                        <th>名称</th>
+                        <th>名称空间</th>
+                        <th>范围</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inspectionPoints.map((target) => (
+                        <tr key={target.id}>
+                          <td>{target.name}</td>
+                          <td>{target.namespace}</td>
+                          <td className="ellipsis-cell" title={formatSavedTargetScope(target)}>
+                            {formatSavedTargetScope(target)}
+                          </td>
+                          <td>
+                            <div className="toolbar-row">
+                              <button type="button" className="mini-button" onClick={() => applySavedTarget(target)} disabled={podInspection.loading || namespaceInspection.loading}>
+                                巡检
+                              </button>
+                              <button type="button" className="mini-button" onClick={() => startEditingTarget(target)} disabled={targetSaving}>
+                                编辑
+                              </button>
+                              <ConfirmDeleteButton itemName={`巡检点 ${target.name}`} onConfirm={() => handleDeleteTarget(target)} disabled={targetSaving}>删除</ConfirmDeleteButton>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
             ) : null}
           </section>
         ) : null}
       </section>
+      ) : null}
 
       {podInspection.error ? <p>巡检失败：{podInspection.error}</p> : null}
       {namespaceInspection.error ? <p>巡检失败：{namespaceInspection.error}</p> : null}
       {ignoreMessage ? <p className="inline-note">{ignoreMessage}</p> : null}
-
-      {inspectedLogPods.length > 0 ? (
-        <section className="panel">
-          <div className="section-header">
-            <h3>日志巡检结果</h3>
-            <StatusBadge status={activeLogHitCount > 0 ? "warning" : "healthy"} />
-          </div>
-          <p>
-            已检查 {inspectedLogPods.length} 个 Pod，发现 {activeLogHitCount} 个日志命中。
-            {activeLogHitCount === 0 ? " 未命中日志关键字；这不代表 Pod 或服务状态正常。" : ""}
-          </p>
-          {scopeMode !== "single" && namespaceInspection.data?.log_collection ? (
-            <p className="inline-note">
-              日志时间范围：{activeLogTimeRangeText ?? "服务端未返回"}；
-              已读取 {namespaceInspection.data.log_collection.pods_read} / {namespaceInspection.data.log_collection.pod_count} 个 Pod；
-              {namespaceInspection.data.log_collection.truncated ? "日志已截断。" : "未发生截断。"}
-              {namespaceInspection.data.log_collection.time_range?.approximate ? " 时间范围为近似过滤。" : ""}
-              {namespaceInspection.data.log_collection.time_range?.end_time_filter_precise === false ? " 结束时间无法精确过滤。" : ""}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
 
       {scopeMode === "single" && podInspection.data ? (
         <>

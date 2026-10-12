@@ -134,7 +134,6 @@ export function ImageInventoryPage() {
       <section className="workbench-hero image-inventory-hero">
         <div className="workbench-copy">
           <div>
-            <p className="eyebrow">资源查看</p>
             <p className="hero-summary">镜像清单</p>
             <p className="inline-note">按名称空间查看 Kubernetes API 可见 Pod 引用的镜像。</p>
           </div>
@@ -167,7 +166,6 @@ export function ImageInventoryPage() {
         <div className="section-header">
           <div>
             <h3>筛选条件</h3>
-            <p className="inline-note">勾选一个或多个名称空间后再查询，不会自动读取全集群。</p>
           </div>
           {namespacesError ? (
             <button type="button" className="mini-button" onClick={() => void refresh().catch(() => undefined)}>

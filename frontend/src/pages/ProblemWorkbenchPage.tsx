@@ -560,10 +560,10 @@ export function ProblemWorkbenchPage() {
               <option value="last_changed">最近变化</option>
             </select>
           </label>
+          <button type="button" className="primary-action issue-filter-reset" onClick={() => setSearchParams({ status: "open" })}>
+            清除筛选
+          </button>
         </div>
-        <button type="button" className="text-button" onClick={() => setSearchParams({ status: "open" })}>
-          清除筛选
-        </button>
 
         <div className="batch-action-bar" aria-label="批量操作">
           <strong>已选择 {selectedCount} 项</strong>
